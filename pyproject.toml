@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "thearc"
+version = "0.1.0"
+description = "Agent-agnostic plugin & skill installer system for Codex, Claude, and Antigravity"
+readme = "README.md"
+requires-python = ">=3.8"
+dependencies = [
+    "click>=8.0.0",
+    "boto3>=1.26.0",
+    "pyyaml>=6.0",
+]
+
+[project.scripts]
+thearc = "thearc.cli:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
