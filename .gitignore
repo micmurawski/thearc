@@ -20,3 +20,6 @@ venv/
 .agents/
 .claude/
 .codex/
+
+# Downloaded public history corpora and generated indexes
+.history-bench/
