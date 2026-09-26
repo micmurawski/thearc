@@ -1,13 +1,13 @@
 import pytest
-from pathlib import Path
+
+from thearc.agents import get_installer
 from thearc.config import (
-    AGENT_ANTIGRAVITY,
-    AGENT_CLAUDE,
-    AGENT_CODEX,
     SUPPORTED_AGENTS,
     get_global_agent_paths,
     get_local_agent_paths,
+    load_thearc_config,
 )
+
 
 def test_supported_agents():
     assert "antigravity" in SUPPORTED_AGENTS
@@ -31,3 +31,15 @@ def test_local_paths(tmp_path):
 def test_invalid_agent():
     with pytest.raises(ValueError):
         get_global_agent_paths("unknown_agent")
+
+def test_thearc_toml_generation_and_loading(tmp_path):
+    claude = get_installer("claude")
+    cfg_file = claude.ensure_config_file(target_scope="project", project_dir=tmp_path, force=True)
+    
+    assert cfg_file.exists()
+    assert cfg_file.name == ".thearc.toml"
+    assert cfg_file.parent.name == ".claude"
+
+    config_data = load_thearc_config(project_dir=tmp_path, agent="claude")
+    assert config_data.get("agent", {}).get("name") == "claude"
+    assert "uploadcontext" in config_data
