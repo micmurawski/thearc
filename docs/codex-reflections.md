@@ -1,5 +1,9 @@
 # Codex-backed ACE reflections
 
+`CodexReflector` prompts a Codex SDK agent to inspect normalized sessions against a rank-free `MetaAgent`. It returns `Reflection.items`: evidence-backed helpful/neutral/harmful ratings of specific skills, sections, hooks, or other configuration parts, each with a reason. Historical ranks are hidden to avoid bias. Reflection-only runs neither update stored ranks nor curate/change the configuration.
+
+Use `scripts/generate_reflections.py` for the entire experimental session corpus: reflection-only batches, coverage reporting, and resumable artifacts, without curation or configuration changes. The implementation and offline/runtime-startup tests are available; live model quality validation is still pending.
+
 The required sequence is **reflector prompt → Codex SDK agent inspects sessions against the configuration → structured reflection → host validation**. The SDK agent generates the findings; host code does not manufacture heuristic findings for the model to reformat.
 
 The original sessions need not be Codex sessions. The existing history adapters normalize Codex, Claude, Antigravity, and Pi traces into `SessionBundle` inputs. No upload skill, foreign-session replay, or conversion into native Codex rollout files is required.
