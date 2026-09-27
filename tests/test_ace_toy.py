@@ -1,23 +1,23 @@
-import json
+from functools import partial
 
 import pytest
 
-from thearc.history import (
+from thearc import ContextDocument, Hook, MetaAgent, ResourceTarget, Skill
+from thearc.learning import (
+    AceConfig,
+    AcePipeline,
     ChangeJournal,
-    ChangeReason,
     CheckpointStore,
-    FileResourceStore,
-    Playbook,
     RunJournal,
     Session,
     SessionBundle,
     ToyCurator,
     ToyReflector,
-    ToyUpdater,
+    apply_curations,
     run_toy_flow,
 )
-from thearc.history.models import Event, SourceReference
-from thearc.models import Hook, Ranks
+from thearc.learning.models import Event, SourceReference
+from thearc.models import Ranks
 
 
 def event(tmp_path, status):
@@ -35,17 +35,17 @@ def event(tmp_path, status):
 
 
 def test_toy_reflector_hides_ranks_and_curator_uses_them(tmp_path):
-    skill = tmp_path / "skill.md"
-    skill.write_text(
-        "---\nname: demo\ndescription: Demo\nranks:\n  harmful: 5\n---\n\nDo the thing.\n",
-        encoding="utf-8",
+    target = MetaAgent(
+        name="demo",
+        skills=[Skill(name="demo", description="Demo", instructions="Do the thing.", ranks=Ranks(harmful=5))],
+        context=[
+            ContextDocument(
+                filename="AGENTS.md",
+                content="# Rules (harmful: 5, neutral: 0, helpful: 0)\n\nDo the thing.\n",
+            )
+        ],
+        hooks=[Hook(name="guard", ranks=Ranks(harmful=5))],
     )
-    context = tmp_path / "AGENTS.md"
-    context.write_text("# Rules (harmful: 5, neutral: 0, helpful: 0)\n\nDo the thing.\n", encoding="utf-8")
-    hook = tmp_path / "hook.json"
-    hook.write_text(json.dumps(Hook(name="guard", ranks=Ranks(harmful=5)).to_dict()), encoding="utf-8")
-    store = FileResourceStore({"demo": skill}, {"AGENTS.md": context}, {"guard": hook})
-    target = store.load_context()
 
     reflection = ToyReflector().reflect(
         [
@@ -59,38 +59,61 @@ def test_toy_reflector_hides_ranks_and_curator_uses_them(tmp_path):
     assert all("ranks" not in proposal for proposal in reflection.rank_proposals)
     assert reflection.rank_proposals
 
-    curator = ToyCurator(target)
-    curation = curator.curate([reflection], Playbook(id="playbook"))
+    curator = ToyCurator()
+    curation = curator.curate([reflection], target)
     assert curator.seen_ranks[0]["skill:demo:None"]["harmful"] == 5
-    assert len(curation.operations) == 3
+    assert len(curation) == 3
 
     journal = ChangeJournal(tmp_path / "changes.jsonl")
-    result = ToyUpdater(store, journal, run_id="run-1").update(Playbook(id="playbook"), [curation])
+    result = apply_curations(target.model_copy(deep=True), curation, partial(journal.record, "run-1"))
     assert len(result.applied_curation_ids) == 3
     assert len(journal.entries()) == 3
-    assert "helpful: 1" in skill.read_text(encoding="utf-8")
-    assert "helpful: 1" in context.read_text(encoding="utf-8")
-    assert json.loads(hook.read_text(encoding="utf-8"))["ranks"]["helpful"] == 1
+    assert result.agent.skills["demo"].ranks.helpful == 1
+    assert result.agent.rank_for(ResourceTarget(kind="context", name="AGENTS.md", section="Rules")).helpful == 1
+    assert result.agent.hooks["guard"].ranks.helpful == 1
     assert all(entry.reason.summary for entry in journal.entries())
 
 
-def test_mutation_requires_reason(tmp_path):
-    skill = tmp_path / "skill.md"
-    skill.write_text("---\nname: demo\ndescription: Demo\n---\n\nDo it.\n", encoding="utf-8")
-    store = FileResourceStore({"demo": skill}, {}, {})
-    with pytest.raises(ValueError):
-        store.update_skill("demo", Ranks(helpful=1), reason=ChangeReason(summary=" "))
+def test_skill_reference_is_ranked_and_journaled_independently(tmp_path):
+    target = MetaAgent(
+        name="demo",
+        skills=[
+            Skill(
+                name="demo",
+                description="Demo",
+                instructions="Do it.",
+                files={"references/hooks.md": "# Hooks\n\nUse the hook.\n"},
+            )
+        ],
+    )
+
+    reflection = ToyReflector().reflect(
+        [
+            SessionBundle(
+                session=Session(id="session", source_id="demo", harness="pi", native_id="native"),
+                events=[event(tmp_path, "success")],
+            )
+        ],
+        target,
+    )
+    proposal = next(item for item in reflection.rank_proposals if item["target"]["kind"] == "skill_file")
+    assert proposal["target"]["name"] == "demo/references/hooks.md"
+
+    journal = ChangeJournal(tmp_path / "changes.jsonl")
+    curation = ToyCurator().curate([reflection], target)
+    result = apply_curations(target.model_copy(deep=True), curation, partial(journal.record, "run-1"))
+
+    assert result.agent.rank_for(ResourceTarget(kind="skill_file", name="demo/references/hooks.md")).helpful == 1
+    assert any(entry.target.kind == "skill_file" for entry in journal.entries())
 
 
 def test_toy_runner_uses_flow_graph(tmp_path):
-    skill = tmp_path / "skill.md"
-    skill.write_text("---\nname: demo\ndescription: Demo\n---\n\nDo it.\n", encoding="utf-8")
-    context = tmp_path / "AGENTS.md"
-    context.write_text("# Rules\n\nDo it.\n", encoding="utf-8")
-    hook = tmp_path / "hook.json"
-    hook.write_text(json.dumps(Hook(name="guard").to_dict()), encoding="utf-8")
-    store = FileResourceStore({"demo": skill}, {"AGENTS.md": context}, {"guard": hook})
-    target = store.load_context()
+    target = MetaAgent(
+        name="demo",
+        skills=[Skill(name="demo", description="Demo", instructions="Do it.")],
+        context=[ContextDocument(filename="AGENTS.md", content="# Rules\n\nDo it.\n")],
+        hooks=[Hook(name="guard")],
+    )
     session = Session(id="session", source_id="demo", harness="pi", native_id="native")
 
     class Selector:
@@ -104,15 +127,16 @@ def test_toy_runner_uses_flow_graph(tmp_path):
     result = run_toy_flow(
         selector=Selector(),
         materializer=Materializer(),
-        target=target,
-        store=store,
+        agent=target,
         journal=ChangeJournal(tmp_path / "flow-journal.jsonl"),
-        playbook=Playbook(id="playbook"),
         viz_path=tmp_path / "ace-flow.html",
         run_journal=RunJournal(tmp_path / "run.jsonl"),
         checkpoint_path=tmp_path / "checkpoint.json",
     )
-    assert result.new_revision == 1
+    assert result.agent.name == target.name
+    assert result.agent.skills["demo"].ranks.helpful == 1
+    assert result.agent.hooks["guard"].ranks.helpful == 1
+    assert result.agent.rank_for(ResourceTarget(kind="context", name="AGENTS.md", section="Rules")).helpful == 1
     assert len(ChangeJournal(tmp_path / "flow-journal.jsonl").entries()) == 3
     assert "Query sessions" in (tmp_path / "ace-flow.html").read_text(encoding="utf-8")
     assert [record.event for record in RunJournal(tmp_path / "run.jsonl").records()] == [
@@ -120,3 +144,42 @@ def test_toy_runner_uses_flow_graph(tmp_path):
         "adaptation_completed",
     ]
     assert CheckpointStore(tmp_path / "checkpoint.json").load().status == "completed"
+
+
+@pytest.mark.parametrize("runner", ["pipeline", "flow"])
+@pytest.mark.parametrize("session_count", [0, 3])
+def test_metaagent_result_accumulates_batches_without_modifying_input(tmp_path, runner, session_count):
+    original = MetaAgent(skills=[Skill(
+        name="demo", ranks=Ranks(helpful=4), files={"references/query.md": "# Query\n\nSearch first."},
+    )])
+    before = original.model_dump()
+
+    class Selector:
+        def select(self, query=None):
+            return [Session(id=f"s{i}", source_id="demo", harness="pi", native_id=str(i))
+                    for i in range(session_count)]
+
+    class Materializer:
+        def materialize(self, current, config):
+            return SessionBundle(session=current, events=[event(tmp_path, "success")])
+
+    config = AceConfig(sessions_per_reflection=1, reflections_per_curation=1)
+    journal = ChangeJournal(tmp_path / "changes.jsonl")
+    if runner == "pipeline":
+        result = AcePipeline(
+            Selector(), Materializer(), ToyReflector(), ToyCurator(), config,
+            on_change=partial(journal.record, "test"),
+        ).run(original).update
+    else:
+        result = run_toy_flow(
+            selector=Selector(), materializer=Materializer(), agent=original,
+            journal=journal, config=config,
+        )
+    assert original.model_dump() == before
+    assert result.agent.skills["demo"].ranks.helpful == 4 + session_count
+    reference = ResourceTarget(kind="skill_file", name="demo/references/query.md")
+    assert result.agent.rank_for(reference).helpful == session_count
+    assert len(result.applied_curation_ids) == 2 * session_count
+    assert not result.rejected_curation_ids
+    assert len(journal.entries()) == 2 * session_count
+    assert MetaAgent.model_validate_json(result.agent.model_dump_json()) == result.agent

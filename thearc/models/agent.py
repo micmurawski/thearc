@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import json
 from collections.abc import Iterator
+from enum import Enum
 from pathlib import Path, PurePath
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, model_validator
 
-from thearc.models.markdown import MarkdownDocument
+from thearc.models.markdown import MarkdownDocument, MarkdownSection
 from thearc.models.ranks import Ranks
 
 ImplementationLiteral = Literal['claudecode', 'codex', 'anitgravity', 'antigravity', 'claude', 'pi']
@@ -164,288 +165,279 @@ class AgentResource(BaseModel):
         return Path(candidate)
 
 
-class AgentResourceSet(BaseModel):
-    """Container for agent-local text artifacts."""
-
-    resources: dict[str, AgentResource] = Field(default_factory=dict)
-
-    def add(self, resource: AgentResource | dict[str, Any]) -> AgentResourceSet:
-        if isinstance(resource, dict):
-            resource = AgentResource(**resource)
-        self.resources[f"{resource.location}/{resource.path}"] = resource
-        return self
-
-    def __iter__(self) -> Iterator[AgentResource]:
-        return iter(self.resources.values())
-
-    def __len__(self) -> int:
-        return len(self.resources)
-
-    def __bool__(self) -> bool:
-        return bool(self.resources)
+class Operation(str, Enum):
+    ADD = "ADD"
+    EDIT = "EDIT"
+    REMOVE = "REMOVE"
 
 
-class SkillSet(BaseModel):
-    """Container object for skills."""
-    skills: dict[str, Skill] = Field(default_factory=dict)
+class ResourceTarget(BaseModel):
+    """Serializable address within a MetaAgent.
 
-    def add(self, skill: Skill | dict[str, Any]) -> SkillSet:
-        if isinstance(skill, dict):
-            skill = Skill(**skill)
-        self.skills[skill.name] = skill
-        return self
-
-    def get(self, name: str) -> Skill | None:
-        return self.skills.get(name)
-
-    def remove(self, name: str) -> None:
-        self.skills.pop(name, None)
-
-    def __getitem__(self, name: str) -> Skill:
-        return self.skills[name]
-
-    def __iter__(self) -> Iterator[Skill]:
-        return iter(self.skills.values())
-
-    def __len__(self) -> int:
-        return len(self.skills)
-
-    def __bool__(self) -> bool:
-        return bool(self.skills)
-
-
-class HookSet(BaseModel):
-    """Container object for hooks."""
-    hooks: dict[str, Hook] = Field(default_factory=dict)
-
-    def add(self, hook: Hook | dict[str, Any]) -> HookSet:
-        if isinstance(hook, dict):
-            hook = Hook(**hook)
-        self.hooks[hook.name] = hook
-        return self
-
-    def get(self, name: str) -> Hook | None:
-        return self.hooks.get(name)
-
-    def remove(self, name: str) -> None:
-        self.hooks.pop(name, None)
-
-    def to_dict(self, include_ranks: bool = True) -> dict[str, Any]:
-        return {name: hook.to_dict(include_ranks=include_ranks) for name, hook in self.hooks.items()}
-
-    def __getitem__(self, name: str) -> Hook:
-        return self.hooks[name]
-
-    def __iter__(self) -> Iterator[Hook]:
-        return iter(self.hooks.values())
-
-    def __len__(self) -> int:
-        return len(self.hooks)
-
-    def __bool__(self) -> bool:
-        return bool(self.hooks)
-
-
-class MCPSet(BaseModel):
-    """Container object for MCP server configurations."""
-    mcps: dict[str, MCP] = Field(default_factory=dict)
-
-    def add(self, mcp: MCP | dict[str, Any]) -> MCPSet:
-        if isinstance(mcp, dict):
-            mcp = MCP(**mcp)
-        self.mcps[mcp.name] = mcp
-        return self
-
-    def get(self, name: str) -> MCP | None:
-        return self.mcps.get(name)
-
-    def remove(self, name: str) -> None:
-        self.mcps.pop(name, None)
-
-    def to_dict(self) -> dict[str, Any]:
-        return {name: mcp.to_dict() for name, mcp in self.mcps.items()}
-
-    def __getitem__(self, name: str) -> MCP:
-        return self.mcps[name]
-
-    def __iter__(self) -> Iterator[MCP]:
-        return iter(self.mcps.values())
-
-    def __len__(self) -> int:
-        return len(self.mcps)
-
-    def __bool__(self) -> bool:
-        return bool(self.mcps)
-
-
-class ContextSet(BaseModel):
-    """Container object for context documents (AGENTS.md, CLAUDE.md, etc.)."""
-    documents: dict[str, ContextDocument] = Field(default_factory=dict)
-
-    def add(self, doc: ContextDocument | dict[str, Any]) -> ContextSet:
-        if isinstance(doc, dict):
-            doc = ContextDocument(**doc)
-        self.documents[doc.filename] = doc
-        return self
-
-    def get(self, filename: str) -> ContextDocument | None:
-        return self.documents.get(filename)
-
-    def remove(self, filename: str) -> None:
-        self.documents.pop(filename, None)
-
-    @property
-    def agents_md(self) -> ContextDocument | None:
-        return self.get("AGENTS.md")
-
-    @property
-    def claude_md(self) -> ContextDocument | None:
-        return self.get("CLAUDE.md")
-
-    def __getitem__(self, filename: str) -> ContextDocument:
-        return self.documents[filename]
-
-    def __iter__(self) -> Iterator[ContextDocument]:
-        return iter(self.documents.values())
-
-    def __len__(self) -> int:
-        return len(self.documents)
-
-    def __bool__(self) -> bool:
-        return bool(self.documents)
-
-
-class Agent(BaseModel):
+    ``name`` is a skill/hook name or context filename. For ``skill_file`` it
+    is ``<skill>/<relative-file-path>``. ``section`` selects a Markdown heading.
     """
-    Agent representation object consisting of attributes:
+
+    model_config = {"frozen": True, "extra": "forbid"}
+    kind: Literal["skill", "skill_file", "context", "hook", "mcp", "rule", "workflow", "command"]
+    name: str = Field(min_length=1)
+    section: str | None = Field(default=None, min_length=1)
+
+    @model_validator(mode="after")
+    def validate_address(self) -> ResourceTarget:
+        if not self.name.strip() or (self.section is not None and not self.section.strip()):
+            raise ValueError("resource name and section cannot be blank")
+        if self.kind in {"hook", "mcp"} and self.section is not None:
+            raise ValueError("hooks and MCPs do not have Markdown sections")
+        if self.kind in {"skill_file", "context", "rule", "workflow", "command"}:
+            path = PurePath(self.name)
+            if path.is_absolute() or ".." in path.parts:
+                raise ValueError("file targets must stay inside their resource directory")
+        if self.kind == "skill_file":
+            skill, separator, path = self.name.partition("/")
+            if not separator or not skill or not path or ".." in PurePath(self.name).parts:
+                raise ValueError("skill file target must be '<skill>/<relative-file-path>'")
+        return self
+
+
+class MetaAgent(BaseModel):
+    """
+    MetaAgent representation object consisting of attributes:
     skills, hooks, mcps, context (e.g. AGENTS.md, CLAUDE.md), each represented as objects.
 
     Provides install(implementation: Literal['claudecode', 'codex', 'anitgravity', 'pi'], replace=True, **kwargs)
     method to install the agent definition into specific agent harness directory targets.
     """
+    model_config = {"extra": "forbid"}
     name: str = "agent"
-    skills: SkillSet = Field(default_factory=SkillSet)
-    hooks: HookSet = Field(default_factory=HookSet)
-    mcps: MCPSet = Field(default_factory=MCPSet)
-    context: ContextSet = Field(default_factory=ContextSet)
-    resources: AgentResourceSet = Field(default_factory=AgentResourceSet)
+    skills: dict[str, Skill] = Field(default_factory=dict)
+    hooks: dict[str, Hook] = Field(default_factory=dict)
+    mcps: dict[str, MCP] = Field(default_factory=dict)
+    context: dict[str, ContextDocument] = Field(default_factory=dict)
+    resources: dict[str, AgentResource] = Field(default_factory=dict)
 
-    @property
-    def conetxt(self) -> ContextSet:
-        """Alias for context attribute to support user typo compatibility."""
-        return self.context
-
-    @conetxt.setter
-    def conetxt(self, value: Any) -> None:
-        self.context = self._parse_context(value)
-
-    def __init__(
-        self,
-        name: str = "agent",
-        skills: SkillSet | list[Skill | dict[str, Any]] | dict[str, Skill | dict[str, Any]] | None = None,
-        hooks: HookSet | list[Hook | dict[str, Any]] | dict[str, Hook | dict[str, Any]] | None = None,
-        mcps: MCPSet | list[MCP | dict[str, Any]] | dict[str, MCP | dict[str, Any]] | None = None,
-        context: ContextSet | list[ContextDocument | dict[str, Any]] | dict[str, str] | None = None,
-        resources: AgentResourceSet | list[AgentResource | dict[str, Any]] | None = None,
-        conetxt: ContextSet | list[ContextDocument | dict[str, Any]] | dict[str, str] | None = None,
-        **data
-    ):
-        super().__init__(name=name, **data)
-
-        if skills is not None:
-            self.skills = self._parse_skills(skills)
-
-        if hooks is not None:
-            self.hooks = self._parse_hooks(hooks)
-
-        if mcps is not None:
-            self.mcps = self._parse_mcps(mcps)
-
-        ctx_value = context if context is not None else conetxt
-        if ctx_value is not None:
-            self.context = self._parse_context(ctx_value)
-
-        if resources is not None:
-            self.resources = self._parse_resources(resources)
-
-    def _parse_skills(self, value: Any) -> SkillSet:
-        if isinstance(value, SkillSet):
-            return value
-        s_set = SkillSet()
+    @field_validator("skills", "hooks", "mcps", "context", "resources", mode="before")
+    @classmethod
+    def normalize_collection(cls, value: Any, info: Any) -> dict:
+        """Accept named mappings or lists, storing only typed dictionaries."""
+        field = info.field_name
+        identity = "filename" if field == "context" else "name"
         if isinstance(value, list):
-            for item in value:
-                s_set.add(item)
+            items = [(None, item) for item in value]
         elif isinstance(value, dict):
-            for k, v in value.items():
-                if isinstance(v, Skill):
-                    s_set.add(v)
-                elif isinstance(v, dict):
-                    if "name" not in v:
-                        v["name"] = k
-                    s_set.add(v)
-        return s_set
+            items = list(value.items())
+        else:
+            raise ValueError(f"{field} must be a mapping or list")  # noqa: TRY004 -- Pydantic validation error
+        normalized = {}
+        for key, item in items:
+            data = item.model_dump() if isinstance(item, BaseModel) else item
+            if field == "context" and isinstance(data, str) and key is not None:
+                data = {"filename": key, "content": data}
+            if not isinstance(data, dict):
+                raise ValueError(f"invalid {field} entry: {key}")  # noqa: TRY004 -- Pydantic validation error
+            data = dict(data)
+            if field == "resources":
+                if "location" not in data or "path" not in data:
+                    raise ValueError("resource entries require location and path")
+                name = f'{data["location"]}/{data["path"]}'
+            else:
+                name = data.get(identity, key)
+                if name is None:
+                    raise ValueError(f"{field} entries require {identity}")
+                data[identity] = name
+            if key is not None and key != name:
+                raise ValueError(f"{field} key {key!r} does not match identity {name!r}")
+            if name in normalized:
+                raise ValueError(f"duplicate {field} entry: {name}")
+            normalized[name] = data
+        return normalized
 
-    def _parse_hooks(self, value: Any) -> HookSet:
-        if isinstance(value, HookSet):
-            return value
-        h_set = HookSet()
-        if isinstance(value, list):
-            for item in value:
-                h_set.add(item)
-        elif isinstance(value, dict):
-            for k, v in value.items():
-                if isinstance(v, Hook):
-                    h_set.add(v)
-                elif isinstance(v, dict):
-                    if "name" not in v:
-                        v["name"] = k
-                    h_set.add(v)
-        return h_set
+    @staticmethod
+    def _add_ranks(before: Ranks | None, delta: Ranks) -> Ranks:
+        """Return the accumulated rank counters without persisting anything."""
+        before = before or Ranks()
+        return Ranks(
+            harmful=before.harmful + delta.harmful,
+            neutral=before.neutral + delta.neutral,
+            helpful=before.helpful + delta.helpful,
+        )
 
-    def _parse_mcps(self, value: Any) -> MCPSet:
-        if isinstance(value, MCPSet):
-            return value
-        m_set = MCPSet()
-        if isinstance(value, list):
-            for item in value:
-                m_set.add(item)
-        elif isinstance(value, dict):
-            for k, v in value.items():
-                if isinstance(v, MCP):
-                    m_set.add(v)
-                elif isinstance(v, dict):
-                    if "name" not in v:
-                        v["name"] = k
-                    m_set.add(v)
-        return m_set
+    def iter_skill_files(self, *, markdown_only: bool = False) -> Iterator[tuple[str, str]]:
+        """Yield bundled skill files using stable ``skill-name/path`` keys."""
+        for skill in self.skills.values():
+            for relative_path, content in skill.files.items():
+                if not markdown_only or relative_path.endswith(".md"):
+                    yield f"{skill.name}/{relative_path}", content
 
-    def _parse_context(self, value: Any) -> ContextSet:
-        if isinstance(value, ContextSet):
-            return value
-        c_set = ContextSet()
-        if isinstance(value, list):
-            for item in value:
-                c_set.add(item)
-        elif isinstance(value, dict):
-            for k, v in value.items():
-                if isinstance(v, ContextDocument):
-                    c_set.add(v)
-                elif isinstance(v, str):
-                    c_set.add(ContextDocument(filename=k, content=v))
-                elif isinstance(v, dict):
-                    if "filename" not in v:
-                        v["filename"] = k
-                    c_set.add(v)
-        return c_set
+    def _target_collection(self, target: ResourceTarget) -> tuple[dict, str]:
+        if target.kind == "skill_file":
+            skill_name, _, path = target.name.partition("/")
+            return self.skills[skill_name].files, path
+        if target.kind in {"rule", "workflow", "command"}:
+            return self.resources, f"{target.kind}s/{target.name}"
+        collections = {
+            "skill": self.skills,
+            "hook": self.hooks,
+            "mcp": self.mcps,
+            "context": self.context,
+        }
+        return collections[target.kind], target.name
 
-    def _parse_resources(self, value: Any) -> AgentResourceSet:
-        if isinstance(value, AgentResourceSet):
-            return value
-        resource_set = AgentResourceSet()
-        if isinstance(value, list):
-            for item in value:
-                resource_set.add(item)
-        return resource_set
+    def _target_markdown(self, target: ResourceTarget) -> MarkdownDocument:
+        collection, key = self._target_collection(target)
+        item = collection[key]
+        text = item.instructions if target.kind == "skill" else (
+            item.content if target.kind in {"context", "rule", "workflow", "command"} else item
+        )
+        return MarkdownDocument.parse(text)
+
+    @staticmethod
+    def _section_matches(document: MarkdownDocument, title: str) -> list[tuple[list, int]]:
+        matches = []
+
+        def visit(sections):
+            for index, section in enumerate(sections):
+                if section.title.strip().casefold() == title.strip().casefold():
+                    matches.append((sections, index))
+                visit(section.subsections)
+
+        visit(document.sections)
+        return matches
+
+    def read_target(self, target: ResourceTarget) -> dict[str, Any] | str:
+        """Resolve a resource address to a detached, JSON-serializable value."""
+        if target.section is not None:
+            matches = self._section_matches(self._target_markdown(target), target.section)
+            if len(matches) != 1:
+                raise KeyError(f"expected one Markdown section at {target}, found {len(matches)}")
+            sections, index = matches[0]
+            return sections[index].model_dump()
+        collection, key = self._target_collection(target)
+        item = collection[key]
+        return item.model_dump() if isinstance(item, BaseModel) else item
+
+    def apply_change(
+        self, target: ResourceTarget, operation: Operation, value: dict[str, Any] | str | None = None,
+    ) -> tuple[dict[str, Any] | str | None, dict[str, Any] | str | None]:
+        """Apply ADD/EDIT/REMOVE in memory and return the before/after values.
+
+        ADD requires an absent target; EDIT and REMOVE require an existing one.
+        EDIT accepts a field patch for model resources and replacement text for
+        bundled files. Section addresses must identify a unique heading.
+        """
+        operation = Operation(operation)
+        if operation == Operation.REMOVE:
+            if value is not None:
+                raise ValueError("REMOVE does not accept a value")
+        elif value is None:
+            raise ValueError("ADD and EDIT require a value")
+        collection, key = self._target_collection(target)
+        if target.section is not None:
+            document = self._target_markdown(target)
+            matches = self._section_matches(document, target.section)
+            if len(matches) > 1:
+                raise ValueError(f"ambiguous Markdown section: {target.section}")
+            exists = bool(matches)
+            before = matches[0][0][matches[0][1]].model_dump() if exists else None
+        else:
+            exists = key in collection
+            before = self.read_target(target) if exists else None
+        if operation == Operation.ADD and exists:
+            raise ValueError(f"target already exists: {target}")
+        if operation != Operation.ADD and not exists:
+            raise KeyError(f"target does not exist: {target}")
+
+        if target.section is not None:
+            if operation == Operation.REMOVE:
+                sections, index = matches[0]
+                sections.pop(index)
+            else:
+                if not isinstance(value, dict):
+                    raise ValueError("section changes require a MarkdownSection field mapping")
+                data = {**(before or {}), **value}
+                if data.get("title", target.section) != target.section:
+                    raise ValueError("section title must match its target")
+                section = MarkdownSection.model_validate({**data, "title": target.section})
+                if exists:
+                    sections, index = matches[0]
+                    sections[index] = section
+                else:
+                    document.sections.append(section)
+            text = document.to_markdown()
+            if target.kind == "skill":
+                collection[key].instructions = text
+            elif target.kind in {"context", "rule", "workflow", "command"}:
+                collection[key].content = text
+            else:
+                collection[key] = text
+        elif operation == Operation.REMOVE:
+            del collection[key]
+        elif target.kind == "skill_file":
+            if not isinstance(value, str):
+                raise ValueError("skill file changes require text")
+            collection[key] = value
+        else:
+            if not isinstance(value, dict):
+                raise ValueError("resource changes require a field mapping")
+            model = {
+                "skill": Skill, "hook": Hook, "context": ContextDocument, "mcp": MCP,
+                "rule": AgentResource, "workflow": AgentResource, "command": AgentResource,
+            }[target.kind]
+            identities = (
+                {"location": f"{target.kind}s", "path": target.name}
+                if target.kind in {"rule", "workflow", "command"} else
+                {"filename" if target.kind == "context" else "name": key}
+            )
+            data = {**(before or {}), **value}
+            if any(data.get(field, expected) != expected for field, expected in identities.items()):
+                raise ValueError("resource identity must match its target")
+            collection[key] = model.model_validate({**data, **identities})
+        return before, None if operation == Operation.REMOVE else self.read_target(target)
+
+    def rank_for(self, target: ResourceTarget) -> Ranks:
+        """Read the rank of an existing resource or unique Markdown section."""
+        if target.kind == "mcp":
+            raise ValueError("MCP configurations do not carry ranks")
+        value = self.read_target(target)
+        if target.section is None and target.kind in {"skill_file", "context", "rule", "workflow", "command"}:
+            text = value if isinstance(value, str) else value["content"]
+            ranks = MarkdownDocument.parse(text).frontmatter.get("ranks")
+        else:
+            ranks = value.get("ranks")
+        return Ranks.model_validate(ranks) if ranks else Ranks()
+
+    def apply_rank_delta(
+        self, target: ResourceTarget, delta: Ranks,
+    ) -> tuple[Any, Any]:
+        """Increment ranks through the same addressed EDIT path as curations."""
+        ranks = self._add_ranks(self.rank_for(target), delta)
+        value = self.read_target(target)
+        if target.section is None and target.kind in {"skill_file", "context", "rule", "workflow", "command"}:
+            text = value if isinstance(value, str) else value["content"]
+            document = MarkdownDocument.parse(text)
+            document.frontmatter["ranks"] = ranks.model_dump()
+            value = document.to_markdown() if target.kind == "skill_file" else {"content": document.to_markdown()}
+        else:
+            value = {"ranks": ranks.model_dump()}
+        return self.apply_change(target, Operation.EDIT, value)
+
+    def without_ranks(self) -> MetaAgent:
+        """Return a deep-copied view suitable for an unbiased reflector."""
+        view = self.model_copy(deep=True)
+        for skill in view.skills.values():
+            skill.ranks = None
+            skill.metadata.pop("ranks", None)
+            skill.instructions = MarkdownDocument.parse(skill.instructions).to_markdown(include_ranks=False)
+            for relative_path, content in skill.files.items():
+                if relative_path.endswith(".md"):
+                    skill.files[relative_path] = MarkdownDocument.parse(content).to_markdown(include_ranks=False)
+        for hook in view.hooks.values():
+            hook.ranks = None
+        for document in view.context.values():
+            document.content = MarkdownDocument.parse(document.content).to_markdown(include_ranks=False)
+        for resource in view.resources.values():
+            resource.content = MarkdownDocument.parse(resource.content).to_markdown(include_ranks=False)
+        return view
 
     @classmethod
     def from_project(
@@ -453,7 +445,7 @@ class Agent(BaseModel):
         implementation: ImplementationLiteral,
         project_dir: str | Path = Path("."),
         name: str | None = None,
-    ) -> Agent:
+    ) -> MetaAgent:
         """Import an installed local agent configuration into the canonical model.
 
         This imports skills, canonical and Codex-native hooks, MCP servers,
@@ -595,7 +587,7 @@ class Agent(BaseModel):
         }
 
         # 1. Install Skills
-        for skill in self.skills:
+        for skill in self.skills.values():
             files = installer.install_skill_object(
                 skill=skill,
                 target_scope=target_scope,
@@ -625,7 +617,7 @@ class Agent(BaseModel):
             results["mcps"].extend(mcp_files)
 
         # 4. Install Context Documents (AGENTS.md, CLAUDE.md, etc.)
-        for doc in self.context:
+        for doc in self.context.values():
             doc_files = installer.install_context_doc(
                 doc=doc,
                 target_scope=target_scope,
@@ -637,7 +629,7 @@ class Agent(BaseModel):
         # 5. Install portable agent-local files such as rules and workflows.
         if self.resources:
             results["resources"].extend(installer.install_resources(
-                resources=self.resources,
+                resources=self.resources.values(),
                 target_scope=target_scope,
                 project_dir=target_path,
                 force=replace,

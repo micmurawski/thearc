@@ -6,7 +6,7 @@ import pytest
 from click.testing import CliRunner
 
 from thearc.cli import main
-from thearc.history import HistoryService, SearchFilters, SearchQuery, SourceConfig
+from thearc.learning import HistoryService, SearchFilters, SearchQuery, SourceConfig
 
 
 def write(path, records):

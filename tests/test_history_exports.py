@@ -2,8 +2,8 @@
 
 import json
 
-from thearc.history import HistoryService, SearchFilters, SearchQuery, SourceConfig
-from thearc.history.adapters import DataClawAdapter
+from thearc.learning import HistoryService, SearchFilters, SearchQuery, SourceConfig
+from thearc.learning.adapters import DataClawAdapter
 
 
 def test_nested_output_exit_code_and_parser_upgrade(tmp_path, monkeypatch):

@@ -1,0 +1,25 @@
+# Task 02: Add `deprecated_at` Field to Route Registration
+
+- **Category**: Feature Addition — Router & OpenAPI
+- **Target Repo**: `fastapi` (run agent in `/Users/micmur/GITHUB/thearc/tests/fastapi`)
+- **Tool Actions Triggered**: `file.read`, `file.patch`, `shell.exec` (`pytest`)
+- **ACE Objective**: Evaluate schema extension and OpenAPI documentation propagation.
+
+---
+
+## Agent Prompt
+
+```text
+Extend FastAPI's route registration to support a `deprecated_at` field for documenting when an endpoint was deprecated.
+
+1. Inspect fastapi/routing.py — specifically the `APIRoute` class constructor and the `get_openapi` flow in fastapi/openapi/utils.py.
+2. Add an optional `deprecated_at: str | None = None` parameter to `APIRoute.__init__()`.
+3. When `deprecated_at` is set:
+   - Automatically set `deprecated=True` on that route.
+   - Inject `deprecated_at` into the route's OpenAPI operation `info` extension: `x-deprecated-at: <value>`.
+4. Propagate the new parameter through `fastapi/applications.py` route decorator helpers (e.g., `@app.get`, `@app.post`).
+5. Write a test in tests/test_deprecated_at.py that:
+   - Creates an endpoint with `deprecated_at="2025-01-01"`.
+   - Verifies the OpenAPI schema has `deprecated: true` and `x-deprecated-at: "2025-01-01"` for that path.
+6. Run `pytest -W ignore tests/test_deprecated_at.py`.
+```

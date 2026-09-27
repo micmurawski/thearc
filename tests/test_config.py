@@ -32,14 +32,18 @@ def test_invalid_agent():
     with pytest.raises(ValueError):
         get_global_agent_paths("unknown_agent")
 
-def test_thearc_toml_generation_and_loading(tmp_path):
-    claude = get_installer("claude")
-    cfg_file = claude.ensure_config_file(target_scope="project", project_dir=tmp_path, force=True)
+@pytest.mark.parametrize("agent", SUPPORTED_AGENTS)
+def test_thearc_toml_generation_and_loading(tmp_path, agent):
+    installer = get_installer(agent)
+    cfg_file = installer.ensure_config_file(target_scope="project", project_dir=tmp_path, force=True)
     
     assert cfg_file.exists()
     assert cfg_file.name == ".thearc.toml"
-    assert cfg_file.parent.name == ".claude"
+    assert cfg_file.parent == installer.get_local_paths(tmp_path)["base"]
 
-    config_data = load_thearc_config(project_dir=tmp_path, agent="claude")
-    assert config_data.get("agent", {}).get("name") == "claude"
-    assert "uploadcontext" in config_data
+    config_data = load_thearc_config(project_dir=tmp_path, agent=agent)
+    assert config_data == {
+        "version": "0.1.0",
+        "agent": {"name": installer.name},
+        "cli": {"default_scope": "project", "default_agent": installer.name},
+    }

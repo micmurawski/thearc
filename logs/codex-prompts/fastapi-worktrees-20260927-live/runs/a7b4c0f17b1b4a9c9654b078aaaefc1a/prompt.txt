@@ -1,0 +1,13 @@
+In the FastAPI source directory (fastapi/), add a built-in mechanism for automatic request ID tracking.
+
+1. Open fastapi/applications.py and inspect the FastAPI class constructor and the `build_middleware_stack` flow.
+2. Add a new optional parameter `add_request_id_header: bool = False` to the `FastAPI.__init__()` signature.
+3. When `add_request_id_header=True`, inject a middleware that:
+   - Generates a UUID4 for each incoming request.
+   - Attaches it as `X-Request-ID` to the response headers.
+   - Makes it accessible as `request.state.request_id`.
+4. Write a test in tests/test_request_id_middleware.py that:
+   - Creates `FastAPI(add_request_id_header=True)`.
+   - Verifies `X-Request-ID` is present in response headers.
+   - Verifies it is a valid UUID4 string.
+5. Run `pytest -W ignore tests/test_request_id_middleware.py` and ensure all tests pass.

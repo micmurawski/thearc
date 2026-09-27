@@ -1,6 +1,6 @@
 """Integration coverage for installing the FastAPI Graphify agent configuration.
 
-The ``fastapi`` checkout is the reference fixture: it contains Graphify as an
+The ``tests/fastapi`` submodule is the reference fixture: it contains Graphify as an
 Antigravity skill and as a Codex skill, together with a native Codex hook and
 the project context document.  This test deliberately installs that content
 into empty projects, so it exercises the public meta-configuration API rather
@@ -14,10 +14,10 @@ from pathlib import Path
 
 import pytest
 
-from thearc import Agent, Skill
+from thearc import MetaAgent, Skill
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
-GRAPHIFY_ROOT = REPOSITORY_ROOT / "fastapi"
+GRAPHIFY_ROOT = REPOSITORY_ROOT / "tests" / "fastapi"
 GRAPHIFY_SKILL_DIR = GRAPHIFY_ROOT / ".agents" / "skills" / "graphify"
 GRAPHIFY_CONTEXT_FILE = GRAPHIFY_ROOT / "AGENTS.md"
 GRAPHIFY_HOOKS_FILE = GRAPHIFY_ROOT / ".codex" / "hooks.json"
@@ -31,12 +31,12 @@ TARGETS = {
 }
 
 
-def graphify_agent() -> Agent:
+def graphify_agent() -> MetaAgent:
     """Build canonical thearc configuration from the checked-in Graphify files."""
-    antigravity = Agent.from_project("antigravity", GRAPHIFY_ROOT, name="graphify")
-    codex = Agent.from_project("codex", GRAPHIFY_ROOT, name="graphify")
+    antigravity = MetaAgent.from_project("antigravity", GRAPHIFY_ROOT, name="graphify")
+    codex = MetaAgent.from_project("codex", GRAPHIFY_ROOT, name="graphify")
 
-    return Agent(
+    return MetaAgent(
         name="graphify",
         skills=antigravity.skills,
         hooks=codex.hooks,
@@ -100,16 +100,16 @@ def test_graphify_meta_configuration_installs_for_each_agent(
 
 def test_graphify_project_import_reads_native_agent_configurations() -> None:
     """Import the checked-in Graphify layouts without hand-building models."""
-    antigravity = Agent.from_project("antigravity", GRAPHIFY_ROOT)
-    codex = Agent.from_project("codex", GRAPHIFY_ROOT)
+    antigravity = MetaAgent.from_project("antigravity", GRAPHIFY_ROOT)
+    codex = MetaAgent.from_project("codex", GRAPHIFY_ROOT)
 
     assert antigravity.skills["graphify"].files[".graphify_version"]
     assert {
-        f"{resource.location}/{resource.path}" for resource in antigravity.resources
+        f"{resource.location}/{resource.path}" for resource in antigravity.resources.values()
     } == {"rules/graphify.md", "workflows/graphify.md"}
 
     assert len(codex.hooks) == 1
-    hook = next(iter(codex.hooks))
+    hook = next(iter(codex.hooks.values()))
     assert hook.event == "pre_tool_use"
     assert hook.matcher == "Bash"
     assert hook.command == "graphify hook-check"
