@@ -1,0 +1,3 @@
+[submodule "tests/fastapi"]
+	path = tests/fastapi
+	url = https://github.com/micmurawski/fastapi.git

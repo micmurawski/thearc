@@ -1,0 +1,28 @@
+# Task 06: Add Structured JSON Error Responses for Validation Errors
+
+- **Category**: Bug Fix / UX Improvement — Exception Handling
+- **Target Repo**: `fastapi` (run agent in `/Users/micmur/GITHUB/thearc/tests/fastapi`)
+- **Tool Actions Triggered**: `file.read`, `file.patch`, `shell.exec` (`pytest`)
+- **ACE Objective**: Evaluate exception handler modification and structured error schema design.
+
+---
+
+## Agent Prompt
+
+```text
+Improve FastAPI's default 422 Unprocessable Entity response to include a machine-readable error `code` field per validation error location.
+
+1. Inspect fastapi/exception_handlers.py and the default `request_validation_exception_handler`.
+2. Currently the 422 response body looks like:
+   {"detail": [{"loc": [...], "msg": "...", "type": "..."}]}
+   Modify the default exception handler so each error item also includes a `code` field derived from the Pydantic error `type`, normalized to uppercase with dots replaced by underscores:
+   e.g. `"type": "string_too_short"` → `"code": "STRING_TOO_SHORT"`.
+3. The change must be backwards-compatible — existing `loc`, `msg`, `type` fields remain intact; only `code` is added.
+4. Write tests in tests/test_validation_error_code.py that:
+   - Create an endpoint with a `Body` field that has `min_length=5`.
+   - POST a body that's too short.
+   - Assert response status is 422.
+   - Assert each error in `detail` contains a `code` key.
+   - Assert the `code` is uppercase and matches the expected pattern.
+5. Run `pytest -W ignore tests/test_validation_error_code.py`.
+```

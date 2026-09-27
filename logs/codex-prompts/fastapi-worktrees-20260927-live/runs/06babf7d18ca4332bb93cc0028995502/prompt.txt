@@ -1,0 +1,14 @@
+Add a `rate_limit` metadata field to FastAPI route decorators that gets surfaced in the OpenAPI spec.
+
+1. Inspect fastapi/routing.py (APIRoute and APIRouter) and fastapi/openapi/utils.py (get_openapi and operation generation).
+2. Add an optional `rate_limit: str | None = None` parameter to `APIRoute.__init__()`.
+   Example values: `"100/minute"`, `"1000/hour"`.
+3. When `rate_limit` is set, inject it into the route's OpenAPI operation as an extension field:
+   `x-rate-limit: "100/minute"`.
+4. Propagate the parameter through `@app.get`, `@app.post`, etc. in fastapi/applications.py.
+5. Write tests in tests/test_rate_limit_metadata.py that:
+   - Create an endpoint `GET /limited` with `rate_limit="50/minute"`.
+   - Retrieve the app's OpenAPI JSON via `GET /openapi.json`.
+   - Assert that `paths["/limited"]["get"]["x-rate-limit"]` equals `"50/minute"`.
+   - Create a second endpoint without `rate_limit`; assert `x-rate-limit` is absent.
+6. Run `pytest -W ignore tests/test_rate_limit_metadata.py`.

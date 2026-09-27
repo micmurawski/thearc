@@ -1,0 +1,25 @@
+# Task 04: Add `strict_slashes` Option to APIRouter
+
+- **Category**: Bug Fix / Feature — Router
+- **Target Repo**: `fastapi` (run agent in `/Users/micmur/GITHUB/thearc/tests/fastapi`)
+- **Tool Actions Triggered**: `file.read`, `file.patch`, `shell.exec` (`pytest`)
+- **ACE Objective**: Evaluate routing configuration and trailing slash handling.
+
+---
+
+## Agent Prompt
+
+```text
+FastAPI currently does not natively expose a router-level `strict_slashes` option. Add support for it.
+
+1. Inspect fastapi/routing.py — focus on `APIRouter.__init__()` and how routes are included in Starlette's router.
+2. Add a `strict_slashes: bool = True` parameter to `APIRouter.__init__()`.
+3. When `strict_slashes=False`, routes defined on that router must match both `/items` and `/items/` without redirecting.
+4. Propagate the `strict_slashes` default down to individual `APIRoute` instances added through `router.add_api_route()`.
+5. Propagate through `FastAPI.include_router()` in fastapi/applications.py — the router's `strict_slashes` value must carry through.
+6. Write tests in tests/test_strict_slashes.py that:
+   - Register a router with `strict_slashes=False` and endpoint `/users`.
+   - Assert both `/users` and `/users/` return status 200.
+   - Register a second router with `strict_slashes=True` (default); assert `/users2/` returns 307 or 404 but `/users2` returns 200.
+7. Run `pytest -W ignore tests/test_strict_slashes.py`.
+```

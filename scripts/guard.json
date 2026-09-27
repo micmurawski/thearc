@@ -1,0 +1,11 @@
+{
+  "command": "echo guard",
+  "enabled": true,
+  "event": "pre_tool_use",
+  "name": "guard",
+  "ranks": {
+    "harmful": 0,
+    "helpful": 1,
+    "neutral": 0
+  }
+}

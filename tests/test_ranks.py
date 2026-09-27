@@ -4,7 +4,6 @@ from pydantic import ValidationError
 from thearc.models import (
     ContextDocument,
     Hook,
-    HookSet,
     MarkdownDocument,
     MDFile,
     Ranks,
@@ -97,8 +96,6 @@ def test_hook_exports():
     hook = Hook(name='test', command='pytest', ranks=Ranks(helpful=5))
     assert Hook(**hook.to_dict()) == hook
     assert 'ranks' not in hook.to_dict(include_ranks=False)
-    hooks = HookSet().add(hook)
-    assert 'ranks' not in hooks.to_dict(include_ranks=False)['test']
     assert hook.ranks.helpful == 5
     assert 'ranks' not in Hook(name='unranked').to_dict()
 

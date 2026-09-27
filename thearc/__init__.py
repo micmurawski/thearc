@@ -2,16 +2,13 @@
 
 from thearc.models.agent import (
     MCP,
-    Agent,
     AgentResource,
-    AgentResourceSet,
     ContextDocument,
-    ContextSet,
     Hook,
-    HookSet,
-    MCPSet,
+    MetaAgent,
+    Operation,
+    ResourceTarget,
     Skill,
-    SkillSet,
 )
 from thearc.models.session import (
     SessionCluster,
@@ -23,18 +20,15 @@ from thearc.models.session import (
 __version__ = "0.1.0"
 __all__ = [
     "MCP",
-    "Agent",
     "AgentResource",
-    "AgentResourceSet",
     "ContextDocument",
-    "ContextSet",
     "Hook",
-    "HookSet",
-    "MCPSet",
+    "MetaAgent",
+    "Operation",
+    "ResourceTarget",
     "SessionCluster",
     "SessionLog",
     "SessionSearchEngine",
     "SessionSearchResult",
     "Skill",
-    "SkillSet",
 ]

@@ -173,12 +173,7 @@ class BaseAgentInstaller(ABC):
                 f"name = \"{self.name}\"\n\n"
                 f"[cli]\n"
                 f"default_scope = \"{target_scope}\"\n"
-                f"default_agent = \"{self.name}\"\n\n"
-                f"[uploadcontext]\n"
-                f"# Default parameters for uploadcontext CLI execution\n"
-                f"bucket = \"thearc-contexts\"\n"
-                f"prefix = \"\"\n"
-                f"dry_run = false\n"
+                f"default_agent = \"{self.name}\"\n"
             )
             config_file.write_text(content, encoding="utf-8")
 
@@ -269,7 +264,7 @@ class BaseAgentInstaller(ABC):
                 except (OSError, UnicodeError, json.JSONDecodeError):
                     pass
 
-            for hook in hooks:
+            for hook in hooks.values():
                 event = "".join(part.capitalize() for part in hook.event.split("_"))
                 groups = existing_hooks["hooks"].setdefault(event, [])
                 group = next((item for item in groups if item.get("matcher") == hook.matcher), None)
@@ -295,7 +290,7 @@ class BaseAgentInstaller(ABC):
             except (OSError, UnicodeError, json.JSONDecodeError):
                 existing_hooks = {}
 
-        hooks_dict = hooks.to_dict() if hasattr(hooks, "to_dict") else {}
+        hooks_dict = {name: hook.to_dict() for name, hook in hooks.items()}
         if force:
             merged = hooks_dict
         else:
@@ -305,7 +300,7 @@ class BaseAgentInstaller(ABC):
         hooks_json_file.write_text(json.dumps(merged, indent=2), encoding="utf-8")
         installed_files = [hooks_json_file]
 
-        for hook in hooks:
+        for hook in hooks.values():
             if hasattr(hook, "script") and hook.script:
                 script_file = hooks_dir / f"{hook.name}.sh"
                 if not script_file.exists() or force:
@@ -342,7 +337,7 @@ class BaseAgentInstaller(ABC):
             except (OSError, UnicodeError, json.JSONDecodeError):
                 existing_data = {"mcpServers": {}}
 
-        mcp_dict = mcps.to_dict() if hasattr(mcps, "to_dict") else {}
+        mcp_dict = {name: mcp.to_dict() for name, mcp in mcps.items()}
         if force:
             existing_data["mcpServers"] = mcp_dict
         else:

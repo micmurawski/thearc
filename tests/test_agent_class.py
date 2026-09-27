@@ -4,14 +4,10 @@ from pathlib import Path
 
 from thearc import (
     MCP,
-    Agent,
     ContextDocument,
-    ContextSet,
     Hook,
-    HookSet,
-    MCPSet,
+    MetaAgent,
     Skill,
-    SkillSet,
 )
 
 
@@ -22,7 +18,7 @@ def test_agent_initialization():
     ctx_agents = ContextDocument(filename="AGENTS.md", content="# Agents context")
     ctx_claude = ContextDocument(filename="CLAUDE.md", content="# Claude context")
 
-    agent = Agent(
+    agent = MetaAgent(
         name="test-agent",
         skills=[skill],
         hooks=[hook],
@@ -31,10 +27,10 @@ def test_agent_initialization():
     )
 
     assert agent.name == "test-agent"
-    assert isinstance(agent.skills, SkillSet)
-    assert isinstance(agent.hooks, HookSet)
-    assert isinstance(agent.mcps, MCPSet)
-    assert isinstance(agent.context, ContextSet)
+    assert isinstance(agent.skills, dict)
+    assert isinstance(agent.hooks, dict)
+    assert isinstance(agent.mcps, dict)
+    assert isinstance(agent.context, dict)
 
     # Check object representation
     assert len(agent.skills) == 1
@@ -48,19 +44,17 @@ def test_agent_initialization():
 
     assert len(agent.context) == 2
     assert agent.context["AGENTS.md"].content == "# Agents context"
-    assert agent.context.claude_md.content == "# Claude context"
-
-    # Test conetxt alias
-    assert agent.conetxt["CLAUDE.md"].content == "# Claude context"
+    assert agent.context["CLAUDE.md"].content == "# Claude context"
 
 
-def test_agent_initialization_with_dicts_and_conetxt_typo():
-    agent = Agent(
+
+def test_agent_initialization_with_dicts_and_context():
+    agent = MetaAgent(
         name="dict-agent",
         skills=[{"name": "dict-skill", "instructions": "Do something"}],
         hooks=[{"name": "dict-hook", "event": "post_tool_use"}],
         mcps=[{"name": "dict-mcp", "command": "python", "args": ["-m", "mcp"]}],
-        conetxt={"AGENTS.md": "# Quick Agents Note"},
+        context={"AGENTS.md": "# Quick Agents Note"},
     )
 
     assert isinstance(agent.skills["dict-skill"], Skill)
@@ -73,7 +67,7 @@ def test_agent_initialization_with_dicts_and_conetxt_typo():
 def test_agent_install_claudecode():
     with tempfile.TemporaryDirectory() as tmpdir:
         proj_dir = Path(tmpdir)
-        agent = Agent(
+        agent = MetaAgent(
             name="claude-agent",
             skills=[Skill(name="claude-skill", description="Claude Skill", instructions="Use Claude")],
             hooks=[Hook(name="claude-hook", event="pre_tool_use", command="claude-cmd")],
@@ -106,7 +100,7 @@ def test_agent_install_claudecode():
 def test_agent_install_codex():
     with tempfile.TemporaryDirectory() as tmpdir:
         proj_dir = Path(tmpdir)
-        agent = Agent(
+        agent = MetaAgent(
             name="codex-agent",
             skills=[Skill(name="codex-skill", description="Codex Skill", instructions="Codex Instruct")],
             hooks=[Hook(name="codex-hook", event="pre_tool_use", script="echo codex")],
@@ -131,7 +125,7 @@ def test_agent_install_codex():
 def test_agent_install_anitgravity():
     with tempfile.TemporaryDirectory() as tmpdir:
         proj_dir = Path(tmpdir)
-        agent = Agent(
+        agent = MetaAgent(
             name="antigravity-agent",
             skills=[Skill(name="ag-skill", description="AG Skill", instructions="AG Instruct")],
             hooks=[Hook(name="ag-hook", event="pre_tool_use", command="ag-cmd")],
@@ -155,7 +149,7 @@ def test_agent_install_anitgravity():
 def test_agent_install_pi():
     with tempfile.TemporaryDirectory() as tmpdir:
         proj_dir = Path(tmpdir)
-        agent = Agent(
+        agent = MetaAgent(
             name="pi-agent",
             skills=[Skill(name="pi-skill", description="Pi Skill", instructions="Pi Instruct")],
             hooks=[Hook(name="pi-hook", event="pre_tool_use", command="pi-cmd")],
@@ -182,7 +176,7 @@ def test_replace_false_appends_and_merges():
         proj_dir = Path(tmpdir)
 
         # 1. First agent install
-        agent1 = Agent(
+        agent1 = MetaAgent(
             skills=[
                 Skill(name="shared-skill", description="Initial skill", 
                           instructions="# Section One\nFirst skill content.")],
@@ -206,7 +200,7 @@ def test_replace_false_appends_and_merges():
         assert "mcp2" not in mcp_data1["mcpServers"]
 
         # 2. Second agent install with replace=False (should APPEND/MERGE)
-        agent2 = Agent(
+        agent2 = MetaAgent(
             skills=[
                 Skill(name="shared-skill", description="Initial skill", 
                       instructions="# Section Two\nSecond skill section.")
@@ -249,14 +243,14 @@ def test_replace_true_overwrites_completely():
         proj_dir = Path(tmpdir)
 
         # Initial install
-        agent1 = Agent(
+        agent1 = MetaAgent(
             mcps=[MCP(name="mcp1", command="cmd1")],
             context=[ContextDocument(filename="AGENTS.md", content="# Old Content\nOld rules.")],
         )
         agent1.install(implementation="claudecode", replace=True, project_dir=proj_dir)
 
         # Overwrite install with replace=True
-        agent2 = Agent(
+        agent2 = MetaAgent(
             mcps=[MCP(name="mcp2", command="cmd2")],
             context=[ContextDocument(filename="AGENTS.md", content="# Completely New Content\nBrand new.")],
         )
@@ -278,7 +272,7 @@ def test_replace_true_overwrites_completely():
 def test_agent_install_with_explicit_path():
     with tempfile.TemporaryDirectory() as tmpdir:
         custom_path = Path(tmpdir) / "custom_target_dir"
-        agent = Agent(
+        agent = MetaAgent(
             skills=[Skill(name="path-skill", instructions="Path skill instructions")],
             context=[ContextDocument(filename="AGENTS.md", content="# Path Test")],
         )

@@ -1,0 +1,28 @@
+# Task 07: Add `include_in_schema_if` Conditional Route Visibility
+
+- **Category**: Feature Addition — OpenAPI Filtering
+- **Target Repo**: `fastapi` (run agent in `/Users/micmur/GITHUB/thearc/tests/fastapi`)
+- **Tool Actions Triggered**: `file.read`, `file.patch`, `shell.exec` (`pytest`)
+- **ACE Objective**: Evaluate conditional schema generation logic in OpenAPI utils.
+
+---
+
+## Agent Prompt
+
+```text
+Add a callable-based conditional parameter to control whether a route appears in the OpenAPI schema at runtime.
+
+1. Inspect fastapi/routing.py (APIRoute) and fastapi/openapi/utils.py (the get_openapi path iteration).
+2. Add an optional `include_in_schema_if: Callable[[], bool] | None = None` parameter to `APIRoute.__init__()`.
+3. When `include_in_schema_if` is provided, evaluate it at schema generation time:
+   - If it returns `True`, include the route in the schema normally.
+   - If it returns `False`, exclude it — equivalent to `include_in_schema=False`.
+   - If it is `None`, fall back to the existing `include_in_schema` boolean (no behaviour change).
+4. Propagate through decorator helpers in fastapi/applications.py.
+5. Write tests in tests/test_include_in_schema_if.py that:
+   - Register `GET /public` with no condition — always visible.
+   - Register `GET /feature-flag` with `include_in_schema_if=lambda: False`.
+   - GET `/openapi.json` and assert `/public` appears but `/feature-flag` does not.
+   - Patch the callable to return `True` and assert `/feature-flag` now appears.
+6. Run `pytest -W ignore tests/test_include_in_schema_if.py`.
+```
