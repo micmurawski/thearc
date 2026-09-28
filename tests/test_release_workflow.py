@@ -11,7 +11,7 @@ def test_release_workflow_gates_and_permissions():
     assert workflow["on"]["release"]["types"] == ["published"]
     assert workflow["permissions"] == {"contents": "read"}
     jobs = workflow["jobs"]
-    assert jobs["test"]["strategy"]["matrix"]["python"] == ["3.10", "3.13"]
+    assert jobs["test"]["strategy"]["matrix"]["python"] == ["3.11", "3.13"]
     assert jobs["build"]["needs"] == "test"
     publish = jobs["publish"]
     assert publish["needs"] == "build"
