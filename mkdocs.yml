@@ -1,0 +1,51 @@
+site_name: thearc
+site_description: Agent-independent context engineering with sessions, evidence, reflections, and curated configurations.
+repo_url: https://github.com/micmurawski/thearc
+edit_uri: ''
+docs_dir: docs
+site_dir: site
+strict: true
+
+theme:
+  name: mkdocs
+  color_mode: auto
+  navigation_depth: 3
+
+plugins:
+  - search
+
+markdown_extensions:
+  - admonition
+  - toc:
+      permalink: true
+
+exclude_docs: |
+  **/__pycache__/
+  **/*.pyc
+
+validation:
+  nav:
+    omitted_files: warn
+  links:
+    not_found: warn
+    anchors: warn
+    unrecognized_links: warn
+
+nav:
+  - Home: index.md
+  - Getting started:
+      - Install: start/installation.md
+      - Your first ACE run: start/first-ace.md
+  - Guides:
+      - Manage configuration: guides/metaagent.md
+      - Index and select sessions: guides/sessions.md
+      - Freeze and inspect evidence: guides/evidence.md
+      - Generate reflections: guides/reflections.md
+      - Curate changes: guides/curation.md
+      - More examples: examples/index.md
+  - Reference:
+      - Runtime support and setup: reference/runtimes.md
+      - CLI: reference/cli.md
+  - Development:
+      - Contributing and limits: development/index.md
+      - Maintain these docs: development/documentation.md

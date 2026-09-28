@@ -177,6 +177,7 @@ def test_replace_false_appends_and_merges():
 
         # 1. First agent install
         agent1 = MetaAgent(
+            name="agent",
             skills=[
                 Skill(name="shared-skill", description="Initial skill", 
                           instructions="# Section One\nFirst skill content.")],
@@ -201,6 +202,7 @@ def test_replace_false_appends_and_merges():
 
         # 2. Second agent install with replace=False (should APPEND/MERGE)
         agent2 = MetaAgent(
+            name="agent",
             skills=[
                 Skill(name="shared-skill", description="Initial skill", 
                       instructions="# Section Two\nSecond skill section.")
@@ -244,6 +246,7 @@ def test_replace_true_overwrites_completely():
 
         # Initial install
         agent1 = MetaAgent(
+            name="agent",
             mcps=[MCP(name="mcp1", command="cmd1")],
             context=[ContextDocument(filename="AGENTS.md", content="# Old Content\nOld rules.")],
         )
@@ -251,6 +254,7 @@ def test_replace_true_overwrites_completely():
 
         # Overwrite install with replace=True
         agent2 = MetaAgent(
+            name="agent",
             mcps=[MCP(name="mcp2", command="cmd2")],
             context=[ContextDocument(filename="AGENTS.md", content="# Completely New Content\nBrand new.")],
         )
@@ -273,6 +277,7 @@ def test_agent_install_with_explicit_path():
     with tempfile.TemporaryDirectory() as tmpdir:
         custom_path = Path(tmpdir) / "custom_target_dir"
         agent = MetaAgent(
+            name="agent",
             skills=[Skill(name="path-skill", instructions="Path skill instructions")],
             context=[ContextDocument(filename="AGENTS.md", content="# Path Test")],
         )

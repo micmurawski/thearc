@@ -208,13 +208,27 @@ class MetaAgent(BaseModel):
     Provides install(implementation: Literal['claudecode', 'codex', 'anitgravity', 'pi'], replace=True, **kwargs)
     method to install the agent definition into specific agent harness directory targets.
     """
-    model_config = {"extra": "forbid"}
-    name: str = "agent"
+    model_config = {"extra": "forbid", "validate_assignment": True}
+    name: str
+    version: str | None = None
     skills: dict[str, Skill] = Field(default_factory=dict)
     hooks: dict[str, Hook] = Field(default_factory=dict)
     mcps: dict[str, MCP] = Field(default_factory=dict)
     context: dict[str, ContextDocument] = Field(default_factory=dict)
     resources: dict[str, AgentResource] = Field(default_factory=dict)
+
+    @field_validator("name", "version")
+    @classmethod
+    def validate_identity(cls, value: str | None, info: Any) -> str | None:
+        if value is None and info.field_name == "version":
+            return None
+        if value is None or not value.strip() or any(ord(char) < 32 or ord(char) == 127 for char in value):
+            raise ValueError(f"{info.field_name} must be a non-blank, single-line label")
+        if info.field_name == "name":
+            from thearc.models.identity import version_filename
+
+            version_filename(value.strip())
+        return value.strip()
 
     @field_validator("skills", "hooks", "mcps", "context", "resources", mode="before")
     @classmethod
@@ -439,12 +453,43 @@ class MetaAgent(BaseModel):
             resource.content = MarkdownDocument.parse(resource.content).to_markdown(include_ranks=False)
         return view
 
+    def diff(
+        self, other: MetaAgent, *, include_ranks: bool = False,
+        include_version: bool = True, context_lines: int = 3,
+    ) -> str:
+        """Return a unified diff from this agent to ``other``; empty means no changes.
+
+        Uses canonical workspace paths without writing files or mutating either
+        agent. Rank annotations are hidden by default using ``without_ranks``
+        (which normalizes Markdown). Set ``include_ranks=True`` for exact text.
+        Version metadata is included unless explicitly disabled. Output is local
+        configuration, not redacted: review it before sharing.
+        """
+        from thearc.models.diff import diff_agents
+
+        return diff_agents(self, other, include_ranks=include_ranks,
+                           include_version=include_version, context_lines=context_lines)
+
+    @classmethod
+    def from_workspace(cls, path: str | Path, *, max_bytes: int = 10_000_000, max_files: int = 10_000) -> MetaAgent:
+        """Import a canonical editable workspace, without installing or executing it."""
+        from thearc.models.workspace import read_workspace
+
+        return read_workspace(path, max_bytes=max_bytes, max_files=max_files)
+
+    def to_workspace(self, path: str | Path) -> Path:
+        """Export canonical editable files to a new directory, without installation."""
+        from thearc.models.workspace import write_workspace
+
+        return write_workspace(self, path)
+
     @classmethod
     def from_project(
         cls,
         implementation: ImplementationLiteral,
         project_dir: str | Path = Path("."),
         name: str | None = None,
+        version: str | None = None,
     ) -> MetaAgent:
         """Import an installed local agent configuration into the canonical model.
 
@@ -454,10 +499,12 @@ class MetaAgent(BaseModel):
         installed into a different implementation with :meth:`install`.
         """
         from thearc.agents import get_installer
+        from thearc.models.identity import read_identity
 
         project_path = Path(project_dir).resolve()
         installer = get_installer(implementation)
         paths = installer.get_local_paths(project_path)
+        identity = read_identity(paths["base"], name=name)
         skills_dir = paths["skills"]
         skills = (
             [
@@ -474,7 +521,8 @@ class MetaAgent(BaseModel):
             if (project_path / filename).is_file()
         ]
         return cls(
-            name=name or f"{installer.name}-project",
+            name=name if name is not None else identity.get("name", f"{installer.name}-project"),
+            version=version if version is not None else identity.get("version"),
             skills=skills,
             hooks=cls._read_hooks(paths["base"] / "hooks.json"),
             mcps=cls._read_mcps(paths["mcp"]),
@@ -567,6 +615,7 @@ class MetaAgent(BaseModel):
         :return: Dict mapping component names to list of installed file Paths
         """
         from thearc.agents import get_installer
+        from thearc.models.identity import identity_path, read_identity, version_path, write_identity
 
         installer = get_installer(implementation)
         target_scope = kwargs.get("target_scope", "project")
@@ -577,6 +626,14 @@ class MetaAgent(BaseModel):
             target_path = Path(kwargs["project_dir"]).resolve()
         else:
             target_path = Path.cwd().resolve()
+
+        if target_scope not in {"project", "global"}:
+            raise ValueError("target_scope must be 'project' or 'global'")
+        paths = installer.get_local_paths(target_path) if target_scope == "project" else installer.get_global_paths()
+        metadata_path = identity_path(paths["base"])
+        version_path(paths["base"], self.name)
+        if metadata_path.exists():
+            read_identity(paths["base"])
 
         results: dict[str, list[Path]] = {
             "skills": [],
@@ -634,6 +691,10 @@ class MetaAgent(BaseModel):
                 project_dir=target_path,
                 force=replace,
             ))
+
+        # Persist only the release label, not configuration or credentials.
+        # Merge installs do not describe an exact release of this MetaAgent.
+        results["metadata"] = write_identity(metadata_path, self.name, self.version if replace else None)
 
         return results
 

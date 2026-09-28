@@ -1,0 +1,765 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>AI Pipeline Viz</title>
+
+<style>
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    min-height: 100vh;
+    background: radial-gradient(circle at top left, #17213a 0, #0d1117 38rem);
+    color: #e6edf3;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'sans-serif';
+    padding: clamp(16px, 3vw, 36px);
+    font-size: 13px;
+    max-width: 1440px;
+    margin: 0 auto;
+}
+
+.page-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 18px;
+    flex-wrap: wrap;
+    margin-bottom: 18px;
+}
+
+.eyebrow {
+    color: #58a6ff;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: .14em;
+    margin-bottom: 4px;
+    text-transform: uppercase;
+}
+
+h1 {
+    color: #f0f6fc;
+    font-size: clamp(20px, 3vw, 28px);
+    letter-spacing: -.025em;
+}
+
+.run-summary {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    flex-wrap: wrap;
+}
+
+.done {
+    color: #3fb950;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .08em;
+    margin-left: 6px;
+    text-transform: uppercase;
+}
+
+.node {
+    color: #3fb950;
+    font-weight: 600;
+}
+
+.badge {
+    padding: 3px 10px;
+    border-radius: 12px;
+    font-size: 11px;
+    margin-right: 4px;
+    border: 1px solid;
+    font-weight: 500
+}
+
+.badge.pending {
+    background: #2d333b;
+    border-color: #444c56cc;
+    color: #adbac7;
+}
+
+.badge.running {
+    background: #0d2d6b;
+    border-color: #444c56;
+    color: #cae8ff;
+}
+
+.badge.success {
+    background: #0d3320;
+    border-color: #238636;
+    color: #aff5b4;
+}
+
+.badge.failed {
+    background: #4b1113;
+    border-color: #da3633;
+    color: #ffa198;
+}
+
+.badge.skipped {
+    background: #161b22;
+    border-color: #30363d;
+    color: #484f58;
+}
+
+.graph-box {
+    background: rgba(22, 27, 34, .88);
+    border: 1px solid #30363d;
+    border-radius: 12px;
+    box-shadow: 0 18px 50px rgba(0, 0, 0, .2);
+    padding: 14px;
+    margin-bottom: 20px;
+    overflow: hidden;
+    position: relative;
+    height: clamp(300px, 55vh, 560px);
+}
+
+.zoom-bar {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    z-index: 10;
+}
+
+.zoom-btn {
+    width: 30px;
+    height: 30px;
+    background: #21262d;
+    border: 1px solid #30363d;
+    color: #8b949e;
+    border-radius: 7px;
+    cursor: pointer;
+    font-size: 15px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    font-family: sans-serif;
+    line-height: 1;
+}
+
+.zoom-btn:hover {
+    background-color: #30363d;
+    color: #e6edf3;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 8px;
+    overflow: hidden
+}
+
+th {
+    background: #1c2128;
+    color: #8b939e;
+    padding: 10px 14px;
+    text-align: left;
+    font-weight: 600;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: .08em;
+    border-bottom: 1px solid #30363d;
+}
+
+td {
+    padding: 7px 14px;
+    border-bottom: 1px solid #21262d;
+    vertical-align: middle;
+}
+
+tr:last-child td {
+    border-bottom: none;
+}
+
+tr.running td {
+    background: #0a1929;
+}
+
+tr.success td {
+    background: #071d0e;
+}
+
+tr.failed td {
+    background: #1c0a0a;
+}
+
+tr.skipped td {
+    color: #484f58;
+}
+
+.pill {
+    padding: 2px 9px;
+    border-radius: 10px;
+    font-size: 11px;
+    border: 1px solid;
+    font-weight: 500;
+}
+
+.pill.pending {
+    background: #2d333b;
+    border-color: #444c56;
+    color: #adbac7;
+}
+
+.pill.success {
+    background: #0d3320;
+    border-color: #238636;
+    color: #aff5b4;
+}
+
+.pill.failed {
+    background: #4b1113;
+    border-color: #da3633;
+    color: #ffa198;
+}
+
+.pill.skipped {
+    background: #161b22;
+    border-color: #30363d;
+    color: #484f58;
+}
+
+.irow {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 3px;
+}
+
+.ib {
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 10px;
+    border: 1px solid;
+    cursor: default;
+}
+
+.ib.pending {
+    background: #2d333b;
+    border-color: #444c56;
+    color: #8b939e;
+}
+
+.ib.running {
+    background: #0d2d6b;
+    border-color: #1f6feb;
+    color: #cae8ff;
+}
+
+.ib.success {
+    background: #0d3320;
+    border-color: #238636;
+    color: #aff5b4;
+}
+
+.ib.failed {
+    background: #4b1113;
+    border-color: #da3633;
+    color: #ffa198;
+}
+
+.err {
+    color: #ffa198;
+    font-size: 11px;
+    margin-top: 3px;
+    word-break: break-word;
+}
+
+.tabs {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 10px;
+    border-bottom: 1px solid #30363d;
+}
+
+.tab-btn {
+    background: #21262d;
+    border: 1px solid #30363d;
+    color: #8b939e;
+    border-color: transparent;
+    border-radius: 7px 7px 0 0;
+    padding: 8px 16px;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    font-family: inherit;
+}
+
+.tab-btn:hover {
+    color: #e6edf3;
+}
+
+.tab-btn.active {
+    background: #161b22;
+    border-color: #30363d;
+    color: #e6edf3;
+    border-color: #30363d #30363d #161b22;
+    margin-bottom: -1px;
+}
+
+.tab-panel {
+    display: none;
+}
+
+.tab-panel.active {
+    display: block;
+}
+
+.log-box {
+    background: #0d1117;
+    border: 1px solid #30363d;
+    border-radius: 8px;
+    padding: 10px 12px;
+    max-height: 420px;
+    overflow-y: auto;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 12px;
+}
+
+
+.log-empty {
+    color: #484f58;
+    padding: 4px 0;
+}
+
+.log-entry {
+    display: flex;
+    gap: 10px;
+    padding: 5px 0;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+
+.log-ts {
+    color: #6e7681;
+    flex-shrink: 0;
+}
+
+.log-node {
+    flex-shrink: 0;
+    color: #79c0ff;
+    font-weight: 600;
+}
+
+.log-msg {
+    color: inherit;
+}
+
+.log-entry.info {
+    color: #e6edf3;
+}
+
+.log-entry.error {
+    color: #ff7b72;
+}
+
+.log-entry.warning {
+    color: #e3b341;
+}
+
+.log-entry.debug {
+    color: #79c0ff;
+}
+
+.log-line.log-trace {
+    color: #8b939e;
+}
+
+.log-line.log-fatal {
+    color: #ff7b72;
+}
+
+.node {
+    cursor: grab;
+}
+
+.node.dragging {
+    cursor: grabbing;
+}
+
+#flow-svg.panning {
+    cursor: grabbing !important;
+}
+
+
+.viz-tooltip {
+    display: none;
+    position: fixed;
+    z-index: 1000;
+    max-width: 360px;
+    max-height: 360px;
+    overflow: auto;
+    background: #1c2128;
+    border: 1px solid #30363d;
+    border-radius: 6px;
+    padding: 8px 10px;
+    font-family: monospace;
+    font-size: 11px;
+    line-height: 1.4;
+    color: #e6edf3;
+    white-space: pre-wrap;
+    word-break: break-word;
+    pointer-events: none;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
+@media (max-width: 640px) {
+    body {
+        padding: 12px;
+    }
+
+    .page-header {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .graph-box {
+        height: 340px;
+        padding: 8px;
+    }
+
+    th,
+    td {
+        padding: 9px 10px;
+    }
+
+    th:nth-child(4),
+    td:nth-child(4) {
+        display: none;
+    }
+}
+
+</style>
+</head>
+<body>
+<header class="page-header"><div><p class="eyebrow">Orchestration</p><h1>AI Pipeline Visualizer</h1></div><div class="run-summary"><span class="badge success">5 success</span><span class="done">Complete</span></div></header>
+<div class="graph-box"><div class="zoom-bar"><button class="zoom-btn" onclick="window._flowViz&&window._flowViz.zoomIn()" title="Zoom In">+</button><button class="zoom-btn" onclick="window._flowViz&&window._flowViz.zoomOut()" title="Zoom Out">−</button><button class="zoom-btn" onclick="window._flowViz&&window._flowViz.reset()" title="Reset zoom" style="font-size:10px">⊞</button></div><svg id="flow-svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1438 218" data-storage-key="e4eb6ab797fa0460" style="width:100%;height:100%;background:#161b22;border-radius:8px;display:block;cursor:grab;">
+<defs>
+<marker id="arr" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+<polygon points="0 0,10 3.5,0 7" fill="#8b939e"/></marker>
+<marker id="arr-triple" markerWidth="8" markerHeight="6" refX="7" refY="2.5" orient="auto">
+<polygon points="0 0,8 3,0 6" fill="#8b939e"/></marker>
+<marker id="arr-bk" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0,10 3.5,0 7" fill="#6e7681"/></marker>
+</defs>
+<g id="vp">
+<path d="M 194,76 C 254.0,76 254.0,76 314,76" fill="none" stroke="#8b949e" stroke-width="1.5" marker-end="url(#arr)" data-edge="1" data-curve="1" data-src="node-0-select_sessions" data-src-anchor="r" data-tgt="node-1-load_session" data-tgt-anchor="l"/>
+<path d="M 464,76 C 524.0,76 524.0,76 584,76" fill="none" stroke="#8b949e" stroke-width="1.5" marker-end="url(#arr)" data-edge="1" data-curve="1" data-src="node-1-load_session" data-src-anchor="r" data-tgt="node-2-group_batches" data-tgt-anchor="l"/>
+<path d="M 734,76 C 794.0,76 794.0,76 854,76" fill="none" stroke="#8b949e" stroke-width="1.5" marker-end="url(#arr)" data-edge="1" data-curve="1" data-src="node-2-group_batches" data-src-anchor="r" data-tgt="node-3-inspect_batch" data-tgt-anchor="l"/>
+<path d="M 1004,76 C 1064.0,76 1064.0,76 1124,76" fill="none" stroke="#8b949e" stroke-width="1.5" marker-end="url(#arr)" data-edge="1" data-curve="1" data-src="node-3-inspect_batch" data-src-anchor="r" data-tgt="node-4-curate_epoch" data-tgt-anchor="l"/>
+<g class="node" data-node-id="node-0-select_sessions" data-x="44" data-y="44" data-metadata="{
+  &quot;description&quot;: &quot;Freeze the selected sessions before batching&quot;
+}" transform="translate(44,44)">
+<rect x="0" y="0" width="150" height="64" rx="8" fill="#0d3320" stroke="#238636" stroke-width="1.5"/>
+<text x="75" y="32" text-anchor="middle" dominant-baseline="middle" font-family="-apple-system,BlinkMacSystemFont,monospace" font-size="13" font-weight="bold" fill="#aff5b4">select_sessions</text>
+</g>
+<g class="node" data-node-id="node-1-load_session" data-x="314" data-y="44" data-metadata="{
+  &quot;description&quot;: &quot;One bounded evidence bundle per captured session&quot;
+}" transform="translate(314,44)">
+<rect x="12" y="12" width="150" height="64" rx="8" fill="#001f0c" stroke="#0f7222" stroke-width="1.5"/>
+<rect x="6" y="6" width="150" height="64" rx="8" fill="#001f0c" stroke="#0f7222" stroke-width="1.5"/>
+<rect x="0" y="0" width="150" height="64" rx="8" fill="#0d3320" stroke="#238636" stroke-width="1.5"/>
+<text x="75" y="23" text-anchor="middle" dominant-baseline="middle" font-family="-apple-system,BlinkMacSystemFont,monospace" font-size="13" font-weight="bold" fill="#aff5b4">load_session</text>
+<text x="75" y="44" text-anchor="middle" font-family="monospace" font-size="10" fill="#aff5b4" opacity="0.8">10/10</text>
+</g>
+<g class="node" data-node-id="node-2-group_batches" data-x="584" data-y="44" data-metadata="{
+  &quot;description&quot;: &quot;At most N sessions per reflection; retain the final partial batch&quot;
+}" transform="translate(584,44)">
+<rect x="0" y="0" width="150" height="64" rx="8" fill="#0d3320" stroke="#238636" stroke-width="1.5"/>
+<text x="75" y="32" text-anchor="middle" dominant-baseline="middle" font-family="-apple-system,BlinkMacSystemFont,monospace" font-size="13" font-weight="bold" fill="#aff5b4">group_batches</text>
+</g>
+<g class="node" data-node-id="node-3-inspect_batch" data-x="854" data-y="44" data-metadata="{
+  &quot;description&quot;: &quot;Reflect on each batch against the same rank-free baseline&quot;
+}" transform="translate(854,44)">
+<rect x="12" y="12" width="150" height="64" rx="8" fill="#001f0c" stroke="#0f7222" stroke-width="1.5"/>
+<rect x="6" y="6" width="150" height="64" rx="8" fill="#001f0c" stroke="#0f7222" stroke-width="1.5"/>
+<rect x="0" y="0" width="150" height="64" rx="8" fill="#0d3320" stroke="#238636" stroke-width="1.5"/>
+<text x="75" y="23" text-anchor="middle" dominant-baseline="middle" font-family="-apple-system,BlinkMacSystemFont,monospace" font-size="13" font-weight="bold" fill="#aff5b4">inspect_batch</text>
+<text x="75" y="44" text-anchor="middle" font-family="monospace" font-size="10" fill="#aff5b4" opacity="0.8">5/5</text>
+</g>
+<g class="node" data-node-id="node-4-curate_epoch" data-x="1124" data-y="44" data-metadata="{
+  &quot;description&quot;: &quot;Aggregate all findings; edit, validate and commit one MetaAgent epoch&quot;
+}" transform="translate(1124,44)">
+<rect x="0" y="0" width="150" height="64" rx="8" fill="#0d3320" stroke="#238636" stroke-width="1.5"/>
+<text x="75" y="32" text-anchor="middle" dominant-baseline="middle" font-family="-apple-system,BlinkMacSystemFont,monospace" font-size="13" font-weight="bold" fill="#aff5b4">curate_epoch</text>
+</g>
+</g>
+</svg></div>
+<div class="tabs"><button class="tab-btn" data-tab="status" onclick="window._flowViz&&window._flowViz.showTab('status')">Status</button><button  class="tab-btn" data-tab="logs" onclick="window._flowViz&&window._flowViz.showTab('logs')">Logs (7)</button></div>
+<div id="tab-status" class="tab-panel"><table>
+ <thead><tr><th>Node</th><th>Status</th><th>Elapsed</th><th>Details</th></tr></thead>
+ <tbody><tr class="success"><td>select_sessions</td><td><span class="pill success">success</span></td><td>0.0s</td><td></td></tr><tr class="success"><td>load_session</td><td><span class="pill success">success</span></td><td>0.0s</td><td><div class="irow"><span class="ib success" title="">#0</span><span class="ib success" title="">#1</span><span class="ib success" title="">#2</span><span class="ib success" title="">#3</span><span class="ib success" title="">#4</span><span class="ib success" title="">#5</span><span class="ib success" title="">#6</span><span class="ib success" title="">#7</span><span class="ib success" title="">#8</span><span class="ib success" title="">#9</span></div></td></tr><tr class="success"><td>group_batches</td><td><span class="pill success">success</span></td><td>0.0s</td><td></td></tr><tr class="success"><td>inspect_batch</td><td><span class="pill success">success</span></td><td>93.7s</td><td><div class="irow"><span class="ib success" title="">#0</span><span class="ib success" title="">#1</span><span class="ib success" title="">#2</span><span class="ib success" title="">#3</span><span class="ib success" title="">#4</span></div></td></tr><tr class="success"><td>curate_epoch</td><td><span class="pill success">success</span></td><td>28.3s</td><td></td></tr></tbody>
+</table>
+</div>
+<div id="tab-logs" class="tab-panel"><div class="log-box"><div class="log-entry info"><span class="log-ts">15:56:00</span><span class="log-node">[group_batches]</span><span class="log-msg">10 sessions → 5 sequential reflection batches</span></div><div class="log-entry info"><span class="log-ts">15:56:20</span><span class="log-node">[inspect_batch]</span><span class="log-msg">Reflected batch 1: 2 sessions</span></div><div class="log-entry info"><span class="log-ts">15:56:41</span><span class="log-node">[inspect_batch]</span><span class="log-msg">Reflected batch 2: 2 sessions</span></div><div class="log-entry info"><span class="log-ts">15:57:00</span><span class="log-node">[inspect_batch]</span><span class="log-msg">Reflected batch 3: 2 sessions</span></div><div class="log-entry info"><span class="log-ts">15:57:17</span><span class="log-node">[inspect_batch]</span><span class="log-msg">Reflected batch 4: 2 sessions</span></div><div class="log-entry info"><span class="log-ts">15:57:34</span><span class="log-node">[inspect_batch]</span><span class="log-msg">Reflected batch 5: 2 sessions</span></div><div class="log-entry info"><span class="log-ts">15:58:02</span><span class="log-node">[curate_epoch]</span><span class="log-msg">Committed 1 changes in graphify-epoch-001</span></div></div></div>
+<script>(function () {
+    "use strict";
+
+    var svg = document.getElementById("flow-svg");
+    var viewport = document.getElementById("vp");
+    if (!svg || !viewport) return;
+
+    var transform = { x: 0, y: 0, scale: 1 };
+    var pan = null;
+    var nodeDrag = null;
+    var lastTouches = [];
+    var nodeWidth = 150;
+    var nodeHeight = 64;
+    var positionsKey = "thearc-flow-viz-node-positions:" + (svg.dataset.storageKey || "default");
+    var tabKey = "thearc-flow-viz-active-tab";
+    var nodeGroups = Array.from(svg.querySelectorAll(".node"));
+    var edgeElements = Array.from(svg.querySelectorAll("[data-edge]"));
+    var nodesById = {};
+
+    nodeGroups.forEach(function (group) {
+        nodesById[group.dataset.nodeId] = group;
+    });
+
+    function clamp(value, minimum, maximum) {
+        return Math.min(Math.max(value, minimum), maximum);
+    }
+
+    function readJSON(key, fallback) {
+        try {
+            return JSON.parse(localStorage.getItem(key)) || fallback;
+        } catch (_error) {
+            return fallback;
+        }
+    }
+
+    function applyViewport() {
+        viewport.setAttribute(
+            "transform",
+            "translate(" + transform.x + " " + transform.y + ") scale(" + transform.scale + ")"
+        );
+    }
+
+    function nodePosition(group) {
+        return {
+            x: Number(group.dataset.x) || 0,
+            y: Number(group.dataset.y) || 0
+        };
+    }
+
+    function setNodePosition(group, x, y) {
+        group.dataset.x = x;
+        group.dataset.y = y;
+        group.setAttribute("transform", "translate(" + x + " " + y + ")");
+    }
+
+    function anchorPoint(nodeId, anchor) {
+        var group = nodesById[nodeId];
+        if (!group) return null;
+        var position = nodePosition(group);
+        if (anchor === "r") return { x: position.x + nodeWidth, y: position.y + nodeHeight / 2 };
+        if (anchor === "l") return { x: position.x, y: position.y + nodeHeight / 2 };
+        return { x: position.x + nodeWidth / 2, y: position.y + nodeHeight };
+    }
+
+    function updateEdge(element) {
+        var source = anchorPoint(element.dataset.src, element.dataset.srcAnchor);
+        var target = anchorPoint(element.dataset.tgt, element.dataset.tgtAnchor);
+        if (!source || !target) return;
+
+        if (element.dataset.back === "1") {
+            var drop = Number(element.dataset.drop);
+            if (element.tagName === "path") {
+                element.setAttribute(
+                    "d",
+                    "M " + source.x + "," + source.y + " C " + source.x + "," + drop +
+                    " " + target.x + "," + drop + " " + target.x + "," + target.y
+                );
+            } else {
+                element.setAttribute("x", (source.x + target.x) / 2);
+                element.setAttribute("y", drop + Number(element.dataset.labelDy || 0));
+            }
+            return;
+        }
+
+        var sourceY = source.y + Number(element.dataset.srcDy || 0);
+        var targetY = target.y + Number(element.dataset.tgtDy || 0);
+        if (element.tagName === "path") {
+            var offset = Math.max(30, Math.abs(target.x - source.x) * 0.5);
+            element.setAttribute(
+                "d",
+                "M " + source.x + "," + sourceY + " C " + (source.x + offset) + "," + sourceY +
+                " " + (target.x - offset) + "," + targetY + " " + target.x + "," + targetY
+            );
+        } else if (element.tagName === "text") {
+            element.setAttribute("x", (source.x + target.x) / 2);
+            element.setAttribute("y", Math.min(sourceY, targetY) - Number(element.dataset.labelDy || 6));
+        }
+    }
+
+    function updateEdgesFor(nodeId) {
+        edgeElements.forEach(function (element) {
+            if (element.dataset.src === nodeId || element.dataset.tgt === nodeId) updateEdge(element);
+        });
+    }
+
+    var savedPositions = readJSON(positionsKey, {});
+    nodeGroups.forEach(function (group) {
+        var saved = savedPositions[group.dataset.nodeId];
+        if (saved) setNodePosition(group, saved.x, saved.y);
+    });
+    edgeElements.forEach(updateEdge);
+
+    var tooltip = document.createElement("div");
+    tooltip.className = "viz-tooltip";
+    document.body.appendChild(tooltip);
+
+    function moveTooltip(event) {
+        tooltip.style.left = event.clientX + 14 + "px";
+        tooltip.style.top = event.clientY + 14 + "px";
+    }
+
+    nodeGroups.forEach(function (group) {
+        group.addEventListener("mouseenter", function (event) {
+            if (!group.dataset.metadata) return;
+            try {
+                tooltip.textContent = JSON.stringify(JSON.parse(group.dataset.metadata), null, 2);
+            } catch (_error) {
+                tooltip.textContent = group.dataset.metadata;
+            }
+            tooltip.style.display = "block";
+            moveTooltip(event);
+        });
+        group.addEventListener("mousemove", moveTooltip);
+        group.addEventListener("mouseleave", function () {
+            tooltip.style.display = "none";
+        });
+        group.addEventListener("mousedown", function (event) {
+            if (event.button !== 0) return;
+            event.preventDefault();
+            event.stopPropagation();
+            var position = nodePosition(group);
+            nodeDrag = {
+                group: group,
+                clientX: event.clientX,
+                clientY: event.clientY,
+                x: position.x,
+                y: position.y
+            };
+            group.classList.add("dragging");
+        });
+    });
+
+    function clientDeltaToSvg(dx, dy) {
+        var bounds = svg.getBoundingClientRect();
+        var viewBox = svg.viewBox.baseVal;
+        return {
+            x: dx * viewBox.width / bounds.width / transform.scale,
+            y: dy * viewBox.height / bounds.height / transform.scale
+        };
+    }
+
+    svg.addEventListener("mousedown", function (event) {
+        if (event.button !== 0 || event.target.closest(".node")) return;
+        pan = { clientX: event.clientX, clientY: event.clientY, x: transform.x, y: transform.y };
+        svg.classList.add("panning");
+    });
+
+    window.addEventListener("mousemove", function (event) {
+        if (nodeDrag) {
+            var nodeDelta = clientDeltaToSvg(event.clientX - nodeDrag.clientX, event.clientY - nodeDrag.clientY);
+            setNodePosition(nodeDrag.group, nodeDrag.x + nodeDelta.x, nodeDrag.y + nodeDelta.y);
+            updateEdgesFor(nodeDrag.group.dataset.nodeId);
+        } else if (pan) {
+            var panDelta = clientDeltaToSvg(event.clientX - pan.clientX, event.clientY - pan.clientY);
+            transform.x = pan.x + panDelta.x * transform.scale;
+            transform.y = pan.y + panDelta.y * transform.scale;
+            applyViewport();
+        }
+    });
+
+    window.addEventListener("mouseup", function () {
+        if (nodeDrag) {
+            nodeDrag.group.classList.remove("dragging");
+            savedPositions[nodeDrag.group.dataset.nodeId] = nodePosition(nodeDrag.group);
+            try { localStorage.setItem(positionsKey, JSON.stringify(savedPositions)); } catch (_error) {}
+            nodeDrag = null;
+        }
+        pan = null;
+        svg.classList.remove("panning");
+    });
+
+    function toViewBox(clientX, clientY) {
+        var bounds = svg.getBoundingClientRect();
+        var viewBox = svg.viewBox.baseVal;
+        return {
+            x: (clientX - bounds.left) * viewBox.width / bounds.width,
+            y: (clientY - bounds.top) * viewBox.height / bounds.height
+        };
+    }
+
+    function zoomAt(point, factor) {
+        var oldScale = transform.scale;
+        transform.scale = clamp(oldScale * factor, 0.35, 4);
+        var ratio = transform.scale / oldScale;
+        transform.x = point.x - (point.x - transform.x) * ratio;
+        transform.y = point.y - (point.y - transform.y) * ratio;
+        applyViewport();
+    }
+
+    svg.addEventListener("wheel", function (event) {
+        event.preventDefault();
+        zoomAt(toViewBox(event.clientX, event.clientY), event.deltaY < 0 ? 1.12 : 1 / 1.12);
+    }, { passive: false });
+
+    svg.addEventListener("touchstart", function (event) {
+        lastTouches = Array.from(event.touches).map(function (touch) {
+            return { x: touch.clientX, y: touch.clientY };
+        });
+    }, { passive: true });
+
+    svg.addEventListener("touchmove", function (event) {
+        if (event.touches.length !== 1 || lastTouches.length !== 1) return;
+        event.preventDefault();
+        var touch = event.touches[0];
+        var delta = clientDeltaToSvg(touch.clientX - lastTouches[0].x, touch.clientY - lastTouches[0].y);
+        transform.x += delta.x * transform.scale;
+        transform.y += delta.y * transform.scale;
+        applyViewport();
+        lastTouches = [{ x: touch.clientX, y: touch.clientY }];
+    }, { passive: false });
+
+    function showTab(name) {
+        document.querySelectorAll(".tab-panel").forEach(function (panel) {
+            panel.classList.toggle("active", panel.id === "tab-" + name);
+        });
+        document.querySelectorAll(".tab-btn").forEach(function (button) {
+            button.classList.toggle("active", button.dataset.tab === name);
+        });
+        try { localStorage.setItem(tabKey, name); } catch (_error) {}
+    }
+
+    var savedTab = "status";
+    try { savedTab = localStorage.getItem(tabKey) || savedTab; } catch (_error) {}
+    showTab(savedTab);
+
+    window._flowViz = {
+        zoomIn: function () {
+            zoomAt({ x: svg.viewBox.baseVal.width / 2, y: svg.viewBox.baseVal.height / 2 }, 1.25);
+        },
+        zoomOut: function () {
+            zoomAt({ x: svg.viewBox.baseVal.width / 2, y: svg.viewBox.baseVal.height / 2 }, 0.8);
+        },
+        reset: function () {
+            transform = { x: 0, y: 0, scale: 1 };
+            applyViewport();
+        },
+        showTab: showTab
+    };
+}());
+</script>
+</body>
+</html>

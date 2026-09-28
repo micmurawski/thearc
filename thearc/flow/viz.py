@@ -556,6 +556,30 @@ class FlowTracker:
         elif is_batch:
 
             class TrackerNode(original_cls):
+                def _exec(self, items):
+                    items = list(items or [])
+                    self._tracked_item_index = 0
+                    tracker._state[node_id]["items"] = [
+                        {"idx": idx, "status": "pending", "error": None} for idx in range(len(items))
+                    ]
+                    tracker._write_html()
+                    return super()._exec(items)
+
+                def _exec_item(self, item):
+                    idx = self._tracked_item_index
+                    self._tracked_item_index += 1
+                    tracker._set_item(node_id, idx, "running")
+                    tracker._write_html()
+                    try:
+                        result = super()._exec_item(item)
+                        tracker._set_item(node_id, idx, "success")
+                        return result
+                    except Exception as exc:
+                        tracker._set_item(node_id, idx, "failed", str(exc))
+                        raise
+                    finally:
+                        tracker._write_html()
+
                 def _run(self, shared):
                     tracker._set_status(node_id, "running")
                     tracker._current_node_label = tracker._state[node_id]["label"]

@@ -2,8 +2,8 @@
 
 import json
 
-from thearc.learning import HistoryService, SearchFilters, SearchQuery, SourceConfig
-from thearc.learning.adapters import DataClawAdapter
+from thearc.learning import SearchFilters, SearchQuery, SessionStore, SourceConfig
+from thearc.learning.sessions.adapters import DataClawAdapter
 
 
 def test_nested_output_exit_code_and_parser_upgrade(tmp_path, monkeypatch):
@@ -26,7 +26,7 @@ def test_nested_output_exit_code_and_parser_upgrade(tmp_path, monkeypatch):
         ],
     }
     (root / "conversations.jsonl").write_text(json.dumps(record) + "\n")
-    with HistoryService(tmp_path / "index.sqlite") as history:
+    with SessionStore(tmp_path / "index.sqlite") as history:
         history.register_source(SourceConfig(id="codex", harness="codex", format="dataclaw", root=root))
         history.sync()
         hit = history.search(

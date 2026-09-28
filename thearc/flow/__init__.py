@@ -41,7 +41,8 @@ class Node(BaseNode):
                 if self.wait>0: time.sleep(self.wait)
 
 class BatchNode(Node):
-    def _exec(self,items): return [super(BatchNode,self)._exec(i) for i in (items or [])]
+    def _exec_item(self, item): return super()._exec(item)
+    def _exec(self,items): return [self._exec_item(i) for i in (items or [])]
 
 class Flow(BaseNode):
     def __init__(self,start=None,metadata: dict[str, Any] | None = None): super().__init__(metadata); self.start_node=start # noqa: E501

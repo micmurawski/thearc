@@ -9,8 +9,8 @@ from thearc import MetaAgent, Skill
 from thearc.learning import (
     CodexReflector,
     CodexReflectorConfig,
-    HistoryService,
     ReflectionError,
+    SessionStore,
     SourceConfig,
     run_reflections,
 )
@@ -33,7 +33,7 @@ def corpus(tmp_path):
             records.append({"type": "event_msg", "payload": {"type": "task_complete",
                             "error": {"codex_error_info": "usage_limit_exceeded"}}})
         (root / f"rollout-{number}.jsonl").write_text("\n".join(map(json.dumps, records)) + "\n")
-    with HistoryService(tmp_path / "history.sqlite") as history:
+    with SessionStore(tmp_path / "history.sqlite") as history:
         history.register_source(SourceConfig(id="experiment", harness="codex", root=root))
         history.sync()
         yield history
@@ -50,7 +50,7 @@ def response(*args):
 
 
 def agent():
-    return MetaAgent(skills=[Skill(name="graphify", instructions="Inspect the graph.")])
+    return MetaAgent(name="agent", skills=[Skill(name="graphify", instructions="Inspect the graph.")])
 
 
 def test_preview_covers_entire_corpus_without_inference(corpus, tmp_path):

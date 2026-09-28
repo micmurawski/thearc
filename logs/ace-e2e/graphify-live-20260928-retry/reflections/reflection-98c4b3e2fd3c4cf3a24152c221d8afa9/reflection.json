@@ -1,0 +1,140 @@
+{
+  "id": "reflection-98c4b3e2fd3c4cf3a24152c221d8afa9",
+  "session_ids": [
+    "cf85514675452d94a4390024bb8d74e0",
+    "85fed10e0ba17f827ca8d0913288d784"
+  ],
+  "summary": "Graphify guidance supported startup-code navigation and post-edit graph maintenance. Evidence does not establish benefits for every query or verify all reported validation results.",
+  "items": [
+    {
+      "target": {
+        "kind": "context",
+        "name": "AGENTS.md",
+        "section": "graphify"
+      },
+      "rating": "helpful",
+      "reason": "The post-edit update instruction led to an observed AST-only graph refresh, keeping project navigation artifacts aligned with the startup-handler changes.",
+      "evidence": [
+        {
+          "session_id": "85fed10e0ba17f827ca8d0913288d784",
+          "event_id": "b86917a3fa89ea29dc31fcad0c909972"
+        },
+        {
+          "session_id": "85fed10e0ba17f827ca8d0913288d784",
+          "event_id": "c0f187fb3b2aa9c7364382122fb10343"
+        },
+        {
+          "session_id": "85fed10e0ba17f827ca8d0913288d784",
+          "event_id": "81a93ef737ad576f89e91a5c1d195fe5"
+        }
+      ],
+      "limitations": [
+        "The rebuild reported changed community labels; graph accuracy was not independently verified."
+      ]
+    },
+    {
+      "target": {
+        "kind": "skill",
+        "name": "graphify",
+        "section": "What You Must Do When Invoked"
+      },
+      "rating": "helpful",
+      "reason": "After loading the skill, the assistant queried the existing graph rather than rebuilding it. The startup query surfaced APIRouter._startup at routing.py:L6364, which the next source-inspection command targeted.",
+      "evidence": [
+        {
+          "session_id": "85fed10e0ba17f827ca8d0913288d784",
+          "event_id": "a8be12580834a042f0d329dc5b1c494b"
+        },
+        {
+          "session_id": "85fed10e0ba17f827ca8d0913288d784",
+          "event_id": "6b5b001987734e4bc3d8f5899a96a2eb"
+        },
+        {
+          "session_id": "85fed10e0ba17f827ca8d0913288d784",
+          "event_id": "25ac3d263088feea00bc70c8454fc753"
+        }
+      ],
+      "limitations": [
+        "AGENTS.md also directed query-first behavior, so attribution is shared.",
+        "Both queries returned truncated results; no overall token or time savings are established."
+      ]
+    }
+  ],
+  "limitations": [
+    "The catalog is a current snapshot; historical configuration equivalence is unknown.",
+    "Numerous events and tool outputs are omitted or truncated. Final test and lint claims are not all independently supported by visible results.",
+    "No hook execution is visible. Most reference resources have no assessable use; update.md was read, but its distinct contribution beyond the context-directed CLI update is unclear.",
+    "Observed test-environment failures are not attributable to the supplied graphify guidance."
+  ],
+  "observations": [
+    "The post-edit update instruction led to an observed AST-only graph refresh, keeping project navigation artifacts aligned with the startup-handler changes.",
+    "After loading the skill, the assistant queried the existing graph rather than rebuilding it. The startup query surfaced APIRouter._startup at routing.py:L6364, which the next source-inspection command targeted."
+  ],
+  "successful_patterns": [
+    "The post-edit update instruction led to an observed AST-only graph refresh, keeping project navigation artifacts aligned with the startup-handler changes.",
+    "After loading the skill, the assistant queried the existing graph rather than rebuilding it. The startup query surfaced APIRouter._startup at routing.py:L6364, which the next source-inspection command targeted."
+  ],
+  "failure_patterns": [],
+  "evidence_event_ids": [
+    "b86917a3fa89ea29dc31fcad0c909972",
+    "c0f187fb3b2aa9c7364382122fb10343",
+    "81a93ef737ad576f89e91a5c1d195fe5",
+    "a8be12580834a042f0d329dc5b1c494b",
+    "6b5b001987734e4bc3d8f5899a96a2eb",
+    "25ac3d263088feea00bc70c8454fc753"
+  ],
+  "rank_proposals": [],
+  "raw": {
+    "manifest": {
+      "prompt_version": "ace-reflection-v3",
+      "schema_version": "2",
+      "backend": {
+        "agent": "codex",
+        "name": "openai-codex",
+        "version": "0.157.1"
+      },
+      "config_sha256": "2e905662ed4245876e7a6a1150762336ed9cdd46e8230907d1b1f38193c89759",
+      "input_sha256": "e653c18482e4308a07df16266274c4349feb6595791b3d00d6395f21a71a07b5",
+      "session_ids": [
+        "cf85514675452d94a4390024bb8d74e0",
+        "85fed10e0ba17f827ca8d0913288d784"
+      ],
+      "settings": {
+        "model": "gpt-6-astra",
+        "reasoning_effort": "medium",
+        "max_events_per_session": 80,
+        "max_event_chars": 3000,
+        "max_input_chars": 300000,
+        "timeout_seconds": 300.0,
+        "max_retries": 0
+      },
+      "configuration_provenance": "current snapshot; historical installation/loading is unknown",
+      "sdk_version": "0.157.1"
+    },
+    "execution": {
+      "thread_id": "01a0e84d-fec4-7183-adf8-45726b5e174b",
+      "turn_id": "01a0e84d-fee9-7371-90bb-c98fb5da9ebe",
+      "usage": {
+        "last": {
+          "cache_write_input_tokens": 0,
+          "cached_input_tokens": 2304,
+          "input_tokens": 61132,
+          "output_tokens": 789,
+          "reasoning_output_tokens": 68,
+          "total_tokens": 61921
+        },
+        "model_context_window": 258400,
+        "total": {
+          "cache_write_input_tokens": 0,
+          "cached_input_tokens": 2304,
+          "input_tokens": 61132,
+          "output_tokens": 789,
+          "reasoning_output_tokens": 68,
+          "total_tokens": 61921
+        }
+      },
+      "sdk_version": "0.157.1",
+      "runtime_version": null
+    }
+  }
+}

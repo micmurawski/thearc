@@ -33,9 +33,12 @@ def test_invalid_or_overlapping_evaluation_is_rejected_before_execution():
         pytest.fail("evaluation must not execute")
 
     with pytest.raises(ValueError, match="overlap"):
-        compare_agents(MetaAgent(), MetaAgent(), {"same": "task"}, must_not_run, training_task_ids=["same"])
+        compare_agents(
+            MetaAgent(name="agent"), MetaAgent(name="agent"), {"same": "task"},
+            must_not_run, training_task_ids=["same"],
+        )
     with pytest.raises(ValueError, match="at least one"):
-        compare_agents(MetaAgent(), MetaAgent(), {}, must_not_run)
+        compare_agents(MetaAgent(name="agent"), MetaAgent(name="agent"), {}, must_not_run)
     with pytest.raises(ValidationError):
         TaskScore(success=True, cost=float("nan"), latency_seconds=1)
     with pytest.raises(ValidationError):

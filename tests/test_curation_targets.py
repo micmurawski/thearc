@@ -12,6 +12,7 @@ from thearc.models import Ranks
 
 def agent():
     return MetaAgent(
+        name="agent",
         skills=[Skill(name="graphify", files={"references/query.md": "# Query\n\nOriginal."})],
         context=[ContextDocument(filename="AGENTS.md", content="# Rules\n\nOriginal.")],
         hooks=[Hook(name="guard", command="echo guard")],
@@ -94,12 +95,12 @@ def test_metaagent_json_roundtrip_and_rank_free_sections():
 
 def test_dictionary_inputs_are_validated_without_mutating_caller():
     source = {"graphify": {"description": "Example"}}
-    meta = MetaAgent(skills=source)
+    meta = MetaAgent(name="agent", skills=source)
     assert source == {"graphify": {"description": "Example"}}
     assert meta.skills["graphify"].name == "graphify"
     assert list(meta.skills) == ["graphify"]
     assert MetaAgent.model_validate_json(meta.model_dump_json()) == meta
     with pytest.raises(ValidationError):
-        MetaAgent(skills={"graphify": Skill(name="other")})
+        MetaAgent(name="agent", skills={"graphify": Skill(name="other")})
     with pytest.raises(ValidationError):
-        MetaAgent(skills=[Skill(name="same"), Skill(name="same")])
+        MetaAgent(name="agent", skills=[Skill(name="same"), Skill(name="same")])

@@ -61,7 +61,7 @@ def test_pipeline_batches_sessions_and_updates_once():
         reflector,
         curator,
         AceConfig(sessions_per_reflection=2, reflections_per_curation=2),
-    ).run(agent=MetaAgent(skills=[Skill(name="demo")]))
+    ).run(agent=MetaAgent(name="agent", skills=[Skill(name="demo")]))
 
     assert len(result.sessions) == 5
     assert [len(batch) for batch in reflector.batches] == [2, 2, 1]
@@ -78,7 +78,7 @@ def test_flow_exposes_the_same_stages():
         "reflector": reflector,
         "curator": curator,
         "config": AceConfig(sessions_per_reflection=2, reflections_per_curation=2),
-        "agent": MetaAgent(skills=[Skill(name="demo")]),
+        "agent": MetaAgent(name="agent", skills=[Skill(name="demo")]),
     }
     build_ace_flow().run(shared)
     assert len(reflector.batches) == 3
@@ -116,7 +116,7 @@ def test_only_accepted_changes_reach_next_batch_and_are_applied_once(monkeypatch
                 reflection_ids=[batch[0].id], rationale="Session evidence",
             )]
 
-    source = MetaAgent(skills=[Skill(name="demo")])
+    source = MetaAgent(name="agent", skills=[Skill(name="demo")])
     result = AcePipeline(
         Selector(), Materializer(), Reflector(), CheckingCurator(),
         AceConfig(sessions_per_reflection=1, reflections_per_curation=1),
@@ -130,7 +130,7 @@ def test_only_accepted_changes_reach_next_batch_and_are_applied_once(monkeypatch
 
 
 def test_pipeline_evaluates_original_and_result_on_held_out_tasks():
-    source = MetaAgent(skills=[Skill(name="demo")])
+    source = MetaAgent(name="agent", skills=[Skill(name="demo")])
     evaluated = []
 
     def evaluate(agent, task):

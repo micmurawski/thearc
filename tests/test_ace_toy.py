@@ -16,7 +16,7 @@ from thearc.learning import (
     apply_curations,
     run_toy_flow,
 )
-from thearc.learning.models import Event, SourceReference
+from thearc.learning.sessions.models import Event, SourceReference
 from thearc.models import Ranks
 
 
@@ -149,7 +149,7 @@ def test_toy_runner_uses_flow_graph(tmp_path):
 @pytest.mark.parametrize("runner", ["pipeline", "flow"])
 @pytest.mark.parametrize("session_count", [0, 3])
 def test_metaagent_result_accumulates_batches_without_modifying_input(tmp_path, runner, session_count):
-    original = MetaAgent(skills=[Skill(
+    original = MetaAgent(name="agent", skills=[Skill(
         name="demo", ranks=Ranks(helpful=4), files={"references/query.md": "# Query\n\nSearch first."},
     )])
     before = original.model_dump()

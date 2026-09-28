@@ -6,7 +6,7 @@ import pytest
 from click.testing import CliRunner
 
 from thearc.cli import main
-from thearc.learning import HistoryService, SearchFilters, SearchQuery, SourceConfig
+from thearc.learning import SearchFilters, SearchQuery, SessionStore, SourceConfig
 
 
 def write(path, records):
@@ -144,7 +144,7 @@ def archive(tmp_path):
             {"type": "event_msg", "payload": {"type": "user_message", "message": "Fix EACCES"}},
         ],
     )
-    service = HistoryService(tmp_path / "index.sqlite")
+    service = SessionStore(tmp_path / "index.sqlite")
     for name, root in [("pi", pi), ("claude", claude), ("codex", codex)]:
         service.register_source(SourceConfig(id=name, harness=name, root=root))
     service.sync()
@@ -214,7 +214,7 @@ def test_incremental_reopen_partial_and_malformed(tmp_path):
     root = tmp_path / "pi"
     path = write(root / "s.jsonl", [{"type": "session", "id": "s"}])
     index = tmp_path / "index.sqlite"
-    with HistoryService(index) as service:
+    with SessionStore(index) as service:
         service.register_source(SourceConfig(id="pi", harness="pi", root=root))
         assert service.sync().events_added == 1
         assert service.sync().events_added == 0
@@ -222,7 +222,7 @@ def test_incremental_reopen_partial_and_malformed(tmp_path):
             stream.write(b'{"type":"message","message":{"role":"user","content":"new phrase"}}')
         assert service.sync().partial_files == 1
         assert not service.search(SearchQuery(text="new phrase")).hits
-    with HistoryService(index) as service:
+    with SessionStore(index) as service:
         with path.open("ab") as stream:
             stream.write(b"\nnot-json\n")
         report = service.sync()
@@ -237,7 +237,7 @@ def test_incremental_reopen_partial_and_malformed(tmp_path):
 def test_rewrite_and_unavailable_source(tmp_path):
     root = tmp_path / "pi"
     path = write(root / "s.jsonl", [{"type": "message", "message": {"role": "user", "content": "old"}}])
-    with HistoryService(tmp_path / "i.sqlite") as service:
+    with SessionStore(tmp_path / "i.sqlite") as service:
         service.register_source(SourceConfig(id="pi", harness="pi", root=root))
         service.sync()
         old_id = service.search(SearchQuery(text="old")).hits[0].event.id
@@ -266,7 +266,7 @@ def test_pi_context_excludes_sibling_branch(tmp_path):
             ],
         ],
     )
-    with HistoryService(tmp_path / "i.sqlite") as service:
+    with SessionStore(tmp_path / "i.sqlite") as service:
         service.register_source(SourceConfig(id="pi", harness="pi", root=root))
         service.sync()
         event = service.search(SearchQuery(text="selected")).hits[0].event
@@ -280,7 +280,7 @@ def test_unicode_casefold_ranges(archive):
 def test_failed_artifact_transaction_does_not_advance_checkpoint(tmp_path, monkeypatch):
     root = tmp_path / "pi"
     path = write(root / "s.jsonl", [{"type": "session", "id": "s"}])
-    with HistoryService(tmp_path / "i.sqlite") as service:
+    with SessionStore(tmp_path / "i.sqlite") as service:
         service.register_source(SourceConfig(id="pi", harness="pi", root=root))
         service.sync()
         with path.open("a") as stream:
@@ -328,7 +328,7 @@ def test_codex_child_lineage_and_stale_evidence(tmp_path):
             },
         ],
     )
-    with HistoryService(tmp_path / "i.sqlite") as service:
+    with SessionStore(tmp_path / "i.sqlite") as service:
         service.register_source(SourceConfig(id="codex", harness="codex", root=root))
         service.sync()
         parent_event = service.search(SearchQuery(text="parent phrase")).hits[0].event
@@ -400,7 +400,7 @@ def test_dataclaw_import_preserves_evidence_and_missing_results(tmp_path):
             {"session_id": "second", "messages": [{"role": "user", "content": "another task"}]},
         ],
     )
-    with HistoryService(tmp_path / "i.sqlite") as service:
+    with SessionStore(tmp_path / "i.sqlite") as service:
         service.register_source(SourceConfig(id="export", harness="claude", root=root, format="dataclaw"))
         report = service.sync()
         assert report.records_skipped == 0
@@ -464,7 +464,7 @@ def test_antigravity_adapter(tmp_path):
             },
         ],
     )
-    with HistoryService(tmp_path / "test.sqlite") as service:
+    with SessionStore(tmp_path / "test.sqlite") as service:
         service.register_source(SourceConfig(id="test-agy", harness="antigravity", root=tmp_path / "antigravity"))
         report = service.sync()
         assert report.records_skipped == 0

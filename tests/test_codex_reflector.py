@@ -15,16 +15,16 @@ from thearc.learning import (
     CodexReflector,
     CodexReflectorConfig,
     Event,
-    HistoryService,
     HistorySessionMaterializer,
     ReflectionError,
     ReflectionRating,
     Session,
     SessionBundle,
+    SessionStore,
     SourceConfig,
     SourceReference,
 )
-from thearc.learning.codex_reflector import (
+from thearc.learning.reflection.providers.codex import (
     _DISABLED_FEATURES,
     SDK_VERSION,
     ReflectionOutput,
@@ -37,6 +37,7 @@ from thearc.learning.codex_reflector import (
 @pytest.fixture
 def agent():
     return MetaAgent(
+        name="agent",
         skills=[Skill(name="graphify", instructions="# Query\nInspect the graph before searching.",
                       files={"references/query.md": "# Query\nRun a targeted query."})],
         hooks=[Hook(name="before-bash", command="graphify hook-check")],
@@ -303,7 +304,8 @@ def test_real_sdk_boundary_uses_prompt_schema_and_closes(monkeypatch, mode):
     closed = ThreadEvent()
 
     class Client:
-        def __init__(self, config):
+        def __init__(self, config, approval_handler=None):
+            assert callable(approval_handler)
             assert config.cwd.startswith("/")
             assert "features.hooks=false" in config.config_overrides
             assert "project_doc_max_bytes=0" in config.config_overrides
@@ -485,7 +487,7 @@ def test_native_adapter_sessions_reach_reflector(tmp_path, agent):
             {"type": "USER_INPUT", "conversation_id": "same-id", "content": "Inspect graphify"},
         ]),
     }
-    with HistoryService(tmp_path / "index.sqlite") as history:
+    with SessionStore(tmp_path / "index.sqlite") as history:
         for harness, (filename, lines) in records.items():
             root = tmp_path / harness
             root.mkdir()
@@ -494,6 +496,12 @@ def test_native_adapter_sessions_reach_reflector(tmp_path, agent):
         history.sync()
         sessions = history.list_sessions()
         assert {s.harness for s in sessions} == set(records)
+        evidence = history.snapshot(session_ids=[s.id for s in sessions])
+        assert len(evidence.sessions) == 4
+        assert len({s["id"] for s in evidence.sessions}) == 4
+        assert {s["id"]: s["native_id"] for s in evidence.sessions} == {s.id: s.native_id for s in sessions}
+        assert sum(s["native_id"] == "same-id" for s in evidence.sessions) >= 3
+        assert {e["harness"] for e in evidence.events} == set(records)
         materializer = HistorySessionMaterializer(history)
         bundles = [materializer.materialize(s, AceConfig()) for s in sessions]
         assert all(b.events for b in bundles)
