@@ -7,7 +7,7 @@ name = "thearc"
 version = "0.1.0"
 description = "Agent-agnostic plugin & skill installer system for Codex, Claude, and Antigravity"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 dependencies = [
     "click>=8.0.0",
     "pyyaml>=6.0",
