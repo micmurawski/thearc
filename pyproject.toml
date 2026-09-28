@@ -18,6 +18,11 @@ dependencies = [
 [project.scripts]
 thearc = "thearc.cli:main"
 
+[project.urls]
+Repository = "https://github.com/micmurawski/thearc"
+Documentation = "https://micmurawski.github.io/thearc/"
+Issues = "https://github.com/micmurawski/thearc/issues"
+
 [tool.setuptools.packages.find]
 include = ["thearc*"]
 

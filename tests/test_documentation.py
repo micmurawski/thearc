@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 
 import pytest
+import yaml
 
 pytest.importorskip("mkdocs", reason="Install the docs extra to validate the documentation site")
 
@@ -47,3 +48,20 @@ def test_repository_documentation_links_resolve():
             if "docs/" in link and "://" not in link:
                 target = link.split("#", 1)[0]
                 assert (source.parent / target).is_file(), f"{source}: broken documentation link {link}"
+
+
+def test_pages_workflow_only_deploys_built_site_from_main():
+    root = Path(__file__).resolve().parents[1]
+    workflow = yaml.safe_load((root / ".github/workflows/docs.yml").read_text())
+    build = workflow["jobs"]["build"]
+    deploy = workflow["jobs"]["deploy"]
+    upload = next(step for step in build["steps"] if "upload-pages-artifact" in step.get("uses", ""))
+    assert upload["with"]["path"] == "site"
+    assert upload["if"] == deploy["if"] == "github.event_name != 'pull_request' && github.ref == 'refs/heads/main'"
+    assert deploy["needs"] == "build"
+    assert deploy["environment"]["name"] == "github-pages"
+    assert deploy["permissions"] == {"pages": "write", "id-token": "write"}
+    assert workflow["permissions"] == {"contents": "read"}
+    assert any(step.get("run") == "python -m mkdocs build --strict" for step in build["steps"])
+    assert not any("jekyll" in step.get("uses", "") for step in build["steps"])
+    assert yaml.safe_load((root / "mkdocs.yml").read_text())["site_url"] == "https://micmurawski.github.io/thearc/"

@@ -49,4 +49,5 @@ nav:
       - CLI: reference/cli.md
   - Development:
       - Contributing and limits: development/index.md
+      - Package releases: development/releases.md
       - Maintain these docs: development/documentation.md
