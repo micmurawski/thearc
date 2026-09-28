@@ -1,4 +1,5 @@
 site_name: thearc
+site_url: https://micmurawski.github.io/thearc/
 site_description: Agent-independent context engineering with sessions, evidence, reflections, and curated configurations.
 repo_url: https://github.com/micmurawski/thearc
 edit_uri: ''
