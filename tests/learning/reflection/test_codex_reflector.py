@@ -68,7 +68,7 @@ def response(finding=True):
     items = [{
         "rating": "helpful", "reason": "The query instructions enabled a targeted graph lookup.",
         "target": {"kind": "skill_file", "name": "graphify/references/query.md", "section": "Query"},
-        "evidence": [{"session_id": "codex:session", "event_id": "codex:e2"}],
+        "evidence": [{"event_id": "codex:e2"}],
         "limitations": ["This does not establish task success."],
     }] if finding else []
     return {"status": "completed", "thread_id": "reflection-thread", "turn_id": "reflection-turn",
@@ -131,7 +131,8 @@ def test_schema_is_closed_and_all_properties_required():
 
     check(schema)
     assert schema["$defs"]["ReflectionRating"]["enum"] == ["helpful", "neutral", "harmful"]
-    assert schema["$defs"]["ReflectionItem"]["properties"]["target"] == {"$ref": "#/$defs/ResourceTarget"}
+    assert schema["$defs"]["ReflectionOutputItem"]["properties"]["target"] == {"$ref": "#/$defs/ResourceTarget"}
+    assert set(schema["$defs"]["EventCitation"]["properties"]) == {"event_id"}
     ReflectionOutput.model_validate_json(response()["final_response"])
 
 
@@ -164,7 +165,8 @@ def test_neutral_is_not_a_substitute_for_missing_evidence(agent):
 
 
 @pytest.mark.parametrize("change,code", [
-    ({"evidence": [{"session_id": "claude:session", "event_id": "codex:e2"}]}, "invalid_evidence"),
+    ({"evidence": [{"event_id": "not-delivered"}]}, "invalid_evidence"),
+    ({"evidence": [{"session_id": "claude:session", "event_id": "codex:e2"}]}, "invalid_output"),
     ({"evidence": []}, "invalid_evidence"),
     ({"reason": " "}, "invalid_evidence"),
     ({"target": None}, "invalid_output"),
@@ -202,7 +204,91 @@ def test_preparation_keeps_task_outcome_and_whole_pairs(agent):
     ids = [e["id"] for e in session["events"]]
     assert "codex:e0" in ids and "codex:e7" in ids
     assert "codex:e1" not in ids and "codex:e2" not in ids
-    assert "codex:e2" in session["omitted_event_ids"]
+    assert "codex:e2" in prepared["evidence_audit"]["sessions"][0]["omitted_event_ids"]
+    assert session["coverage"]["omitted_events"] == 5
+
+
+@pytest.mark.parametrize("view", ["compact", "detailed"])
+def test_evidence_views_preserve_content_without_harness_metadata(agent, view):
+    b = bundle()
+    b.events[2].timestamp = "2026-10-03T10:00:00Z"
+    b.omitted_event_ids = ["previously-filtered"]
+    b.truncated_event_ids = [b.events[2].id]
+    before = b.model_dump_json()
+    r = CodexReflector(CodexReflectorConfig(model="test", evidence_view=view))
+    prepared = r.prepare([b], agent)
+    supplied = json.loads(prepared["prompt"].split("UNTRUSTED EVIDENCE (JSON):\n")[1])
+    assert supplied == prepared["evidence"]
+    assert '"harness"' not in json.dumps(supplied)
+    events = supplied["sessions"][0]["events"]
+    assert [e["id"] for e in events] == [e.id for e in b.events]
+    assert events[2]["text"] == "query completed" and events[2]["truncated"] is True
+    assert events[1]["arguments_json"] == '{"command":"graphify query"}'
+    if view == "compact":
+        for key in ("session_id", "source_id", "run_id", "call_id", "sha256", "omitted_event_ids", "timestamp"):
+            assert f'"{key}"' not in json.dumps(supplied)
+        assert events[2]["call_event_ids"] == [b.events[1].id]
+        assert supplied["sessions"][0]["coverage"] == {
+            "included_events": 4, "omitted_events": 1, "truncated_events": 1,
+        }
+    else:
+        assert events[2]["timestamp"] == b.events[2].timestamp
+        assert supplied["sessions"][0]["omitted_event_ids"] == ["previously-filtered"]
+    assert prepared["evidence_audit"]["sessions"][0]["harness"] == "codex"
+    assert b.model_dump_json() == before
+
+
+def test_compact_call_links_are_scoped_to_runs(agent):
+    b = bundle()
+    other = [event.model_copy(update={"id": event.id + "-other", "run_id": "other-run"})
+             for event in b.events[1:3]]
+    b.events[3:3] = other
+    events = reflector().prepare([b], agent)["evidence"]["sessions"][0]["events"]
+    assert events[2]["call_event_ids"] == ["codex:e1"]
+    assert events[4]["call_event_ids"] == ["codex:e1-other"]
+    assert events[2]["actor"] != events[4]["actor"]
+
+
+def test_event_only_citations_resolve_across_sessions_and_cache(agent, tmp_path):
+    envelope = response()
+    output = json.loads(envelope["final_response"])
+    output["items"][0]["evidence"].append({"event_id": "claude:e2"})
+    envelope["final_response"] = json.dumps(output)
+    calls = []
+
+    def sdk(*args):
+        calls.append(1)
+        return envelope
+
+    r = reflector(sdk_runner=sdk, artifact_dir=tmp_path, resume=True)
+    batches = [bundle(), bundle("claude")]
+    result = r.reflect(batches, agent)
+    assert [e.model_dump() for e in result.items[0].evidence] == [
+        {"event_id": "codex:e2", "session_id": "codex:session"},
+        {"event_id": "claude:e2", "session_id": "claude:session"},
+    ]
+    assert r.reflect(batches, agent).id == result.id
+    r.config.evidence_view = "detailed"
+    assert r.reflect(batches, agent).id != result.id
+    assert len(calls) == 2
+
+
+def test_duplicate_event_ids_across_sessions_fail_before_execution(agent):
+    second = bundle("claude")
+    second.events[0].id = "codex:e0"
+    with pytest.raises(ValueError, match="across sessions"):
+        reflector().prepare([bundle(), second], agent)
+
+
+def test_cached_citations_cannot_change_session_ownership(agent, tmp_path):
+    r = reflector(sdk_runner=lambda *args: response(), artifact_dir=tmp_path, resume=True)
+    result = r.reflect([bundle()], agent)
+    path = tmp_path / result.id / "reflection.json"
+    saved = json.loads(path.read_text())
+    saved["items"][0]["evidence"][0]["session_id"] = "wrong-session"
+    path.write_text(json.dumps(saved))
+    with pytest.raises(ReflectionError, match="supplied session evidence"):
+        r.reflect([bundle()], agent)
 
 
 def test_materializer_does_not_discard_final_outcome():
@@ -440,13 +526,14 @@ def test_resume_ignores_partial_uncommitted_artifacts(agent, tmp_path):
     assert result.id != folder.name
 
 
-def test_resume_does_not_reuse_old_category_based_contract(agent, tmp_path):
+@pytest.mark.parametrize("old_version", ["1", "2"])
+def test_resume_does_not_reuse_old_response_contract(agent, tmp_path, old_version):
     r = reflector(sdk_runner=lambda *a: response(), artifact_dir=tmp_path, resume=True)
     old = r.reflect([bundle()], agent)
     folder = tmp_path / old.id
     journal = folder / "run.jsonl"
     records = [json.loads(line) for line in journal.read_text().splitlines()]
-    records[0]["payload"]["schema_version"] = "1"
+    records[0]["payload"]["schema_version"] = old_version
     journal.write_text("\n".join(json.dumps(record) for record in records) + "\n")
     (folder / "reflection.json").write_text('{"findings": [{"category": "success"}]}')
     assert r.reflect([bundle()], agent).id != old.id

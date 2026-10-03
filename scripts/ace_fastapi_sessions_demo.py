@@ -17,18 +17,18 @@ from thearc.learning import (
     ChangeJournal,
     CodexReflector,
     CodexReflectorConfig,
-    HistoryService,
     HistorySessionMaterializer,
     HistorySessionSelector,
     ReflectionError,
     RunJournal,
     SearchFilters,
+    SessionStore,
     SourceConfig,
     build_ace_flow,
     run_toy_flow,
 )
-from thearc.learning.ace import chunks
-from thearc.learning.codex_reflector import redact
+from thearc.learning.ace.pipeline import chunks
+from thearc.learning.reflection.providers.codex import redact
 
 
 def run_toy() -> None:
@@ -39,7 +39,7 @@ def run_toy() -> None:
     output.mkdir(parents=True)
     (output / "before.json").write_text(agent.model_dump_json(indent=2), encoding="utf-8")
     index = root / "history.sqlite"
-    with HistoryService(index) as history:
+    with SessionStore(index) as history:
         history.register_source(SourceConfig(id="fastapi-prompt-batch", harness="codex", root=root))
         history.sync()
         result = run_toy_flow(
@@ -87,7 +87,7 @@ def main() -> None:
         parser.error("--batch-size must be positive")
     if args.resume and (args.mode != "reflect" or args.output is None):
         parser.error("--resume requires --mode reflect and an explicit --output")
-    with HistoryService(args.index) as history:
+    with SessionStore(args.index) as history:
         if args.mode == "list":
             offset = 0
             while sessions := history.list_sessions(limit=100, offset=offset):

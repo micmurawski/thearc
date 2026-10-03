@@ -1,6 +1,6 @@
 # Install
 
-The core package requires Python 3.10 or newer. Optional runtime SDKs may require
+The core package requires Python 3.11 or newer. Optional runtime SDKs may require
 a newer Python version. Start from a source checkout:
 
 ```sh

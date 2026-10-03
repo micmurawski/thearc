@@ -1,13 +1,13 @@
 """Session-level time selection, indexed normalization, and atomic evidence."""
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
 from thearc.learning import EvidenceSnapshot, SearchFilters, SearchQuery, SessionStore, SourceConfig
 
-CUTOFF = datetime(2026, 9, 1, tzinfo=timezone.utc)
+CUTOFF = datetime(2026, 9, 1, tzinfo=UTC)
 
 
 def write_session(root, name, timestamps):

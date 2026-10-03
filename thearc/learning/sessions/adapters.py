@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Iterator
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -30,7 +30,7 @@ def text_content(content: Any) -> str:
 
 def timestamp(value: Any) -> str | None:
     if isinstance(value, (float, int)):
-        return datetime.fromtimestamp(value / 1000, timezone.utc).isoformat()
+        return datetime.fromtimestamp(value / 1000, UTC).isoformat()
     return value if isinstance(value, str) else None
 
 

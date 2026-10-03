@@ -51,6 +51,12 @@ Codex authentication. It creates isolated ephemeral inspections rather than
 resuming the source conversation. Runtime controls and supported model settings
 are version-specific; arbitrary newer SDKs are not assumed compatible.
 
+Native handoff reflection uses a separate persistent `thread/fork` path. It appends
+only the reflection prompt to the fork and keeps the source unchanged. Select it
+with `thearc reflection handoff`; see [native handoff reflection](../guides/reflections.md#native-handoff-reflection).
+The bundled native fork adapter currently supports Codex. Other backends continue
+to support reflection from supplied evidence.
+
 ## Implement the runner contract
 
 Reflection and curation factories accept `backend="custom"` plus a trusted
@@ -68,6 +74,11 @@ A runner receives `(prompt, schema, config)` and returns an envelope containing
 It must invoke the chosen runtime after prompting, honor model/timeout controls,
 and report honest completion and provenance. Optional metadata includes thread,
 turn, usage, and SDK version. Preview does not import the custom callable.
+
+Reflection citations use `{"event_id": "<supplied event ID>"}`. The host resolves
+session IDs for saved findings. Evidence defaults to the compact view; select
+`--evidence-view detailed` for more context. Both views exclude source harness
+metadata. See [evidence views](../guides/reflections.md#evidence-views).
 
 Reflection expects findings. Custom curation uses a structured host-tool loop:
 each response requests a scoped tool or finishes. It is not the reflection schema.

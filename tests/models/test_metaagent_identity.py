@@ -1,9 +1,9 @@
 import json
-from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
 
+from tests.paths import FASTAPI_PROJECT
 from thearc import MetaAgent, Skill
 from thearc.agents import get_installer
 
@@ -185,7 +185,7 @@ def test_symlink_sidecar_rejected_before_installing_resources(tmp_path):
 
 
 def test_graphify_marker_is_preserved_without_inventing_metaagent_version():
-    project = Path(__file__).parent / "fastapi"
+    project = FASTAPI_PROJECT
     marker = project / ".codex/skills/graphify/.graphify_version"
     if not marker.is_file():
         pytest.skip("Graphify fixture is not initialized")

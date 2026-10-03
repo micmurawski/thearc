@@ -1,15 +1,15 @@
 """Packaging declarations and compatibility contracts independent of optional SDKs."""
 
 import json
+import tomllib
 from importlib.resources import files
-from pathlib import Path
 
-from thearc.config import tomllib
+from tests.paths import REPOSITORY_ROOT
 from thearc.learning.runtime.handoff import HandoffMode
 
 
 def test_visualization_assets_declared_and_present():
-    project = Path(__file__).resolve().parents[1] / "pyproject.toml"
+    project = REPOSITORY_ROOT / "pyproject.toml"
     config = tomllib.loads(project.read_text())
     assert set(config["tool"]["setuptools"]["package-data"]["thearc.flow"]) == {"viz.css", "viz.js"}
     for asset in ("viz.css", "viz.js"):
@@ -17,7 +17,7 @@ def test_visualization_assets_declared_and_present():
 
 
 def test_handoff_mode_preserves_string_contract():
-    # Use str + Enum so core imports also work on Python 3.10 (no StrEnum).
+    # Preserve the serialized values and public string representation.
     for mode in HandoffMode:
         assert isinstance(mode, str)
         assert str(mode) == mode.value

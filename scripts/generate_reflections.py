@@ -8,8 +8,17 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from thearc import MetaAgent
-from thearc.learning import CodexReflector, CodexReflectorConfig, HistoryService, ReflectionError
-from thearc.learning.reflections import run_reflections
+from thearc.learning import (
+    AntigravityReflector,
+    AntigravityReflectorConfig,
+    ClaudeReflector,
+    ClaudeReflectorConfig,
+    CodexReflector,
+    CodexReflectorConfig,
+    ReflectionError,
+    SessionStore,
+)
+from thearc.learning.reflection.flow import run_reflections
 
 
 def main() -> None:
@@ -19,9 +28,10 @@ def main() -> None:
     parser.add_argument("--project", type=Path, default=Path("tests/fastapi"))
     parser.add_argument("--implementation", default="codex", choices=["codex", "claude", "antigravity", "pi"])
     parser.add_argument("--model", required=True)
+    parser.add_argument("--backend", choices=["codex", "claude", "antigravity"], default="codex")
     parser.add_argument("--batch-size", type=int, default=3)
     parser.add_argument("--timeout", type=float, default=300)
-    parser.add_argument("--execute", action="store_true", help="Invoke the SDK; otherwise only prepare/review inputs")
+    parser.add_argument("--execute", action="store_true", help="Invoke the selected runtime; otherwise preview inputs")
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
@@ -40,9 +50,14 @@ def main() -> None:
                        if "graphify" in resource.content.lower()}
     agent.mcps = {}
     output = args.output or Path("logs/session-reflections") / datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ")
-    reflector = CodexReflector(CodexReflectorConfig(model=args.model, timeout_seconds=args.timeout))
+    reflector_type, config_type = {
+        "codex": (CodexReflector, CodexReflectorConfig),
+        "claude": (ClaudeReflector, ClaudeReflectorConfig),
+        "antigravity": (AntigravityReflector, AntigravityReflectorConfig),
+    }[args.backend]
+    reflector = reflector_type(config_type(model=args.model, timeout_seconds=args.timeout))
     try:
-        with HistoryService(args.index) as history:
+        with SessionStore(args.index) as history:
             result = run_reflections(
                 history, agent, reflector, output, source_ids=args.source_id or ["fastapi-prompt-batch"],
                 batch_size=args.batch_size, execute=args.execute, resume=args.resume,

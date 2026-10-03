@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
 
@@ -108,7 +108,7 @@ class SearchFilters(BaseModel):
             return None
         if value.utcoffset() is None:
             raise ValueError("Session date filters require timezone-aware datetimes")
-        return value.astimezone(timezone.utc)
+        return value.astimezone(UTC)
 
     @model_validator(mode="after")
     def validate_date_range(self) -> SearchFilters:

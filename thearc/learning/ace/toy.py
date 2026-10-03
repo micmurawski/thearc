@@ -11,7 +11,7 @@ import hashlib
 import json
 import logging
 from collections.abc import Sequence
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from functools import partial
 from pathlib import Path
 from typing import Any
@@ -90,7 +90,7 @@ class ChangeJournal:
                 summary=curation.rationale, reflection_ids=curation.reflection_ids,
                 evidence_event_ids=curation.evidence_event_ids, actor="ace-curator",
             ),
-            created_at=datetime.now(timezone.utc).isoformat(),
+            created_at=datetime.now(UTC).isoformat(),
         ))
 
     def entries(self) -> list[JournalEntry]:

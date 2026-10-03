@@ -8,9 +8,10 @@ from pathlib import Path
 
 import pytest
 
+from tests.paths import REPOSITORY_ROOT
 from thearc.cli import main as cli
 
-SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "run_codex_prompts.py"
+SCRIPT = REPOSITORY_ROOT / "scripts" / "run_codex_prompts.py"
 spec = importlib.util.spec_from_file_location("collector", SCRIPT)
 collector = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(collector)

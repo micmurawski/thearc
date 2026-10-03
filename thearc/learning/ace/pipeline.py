@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable, Iterator, Mapping, Sequence
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
 from typing import Any, Protocol
 
@@ -293,7 +293,7 @@ class AcePipeline:
             raise ValueError("committed curation requires the standard full ACE flow")
         if result_version is not None and curation_output is None:
             raise ValueError("result_version requires curation_output")
-        run_id = run_id or datetime.now(timezone.utc).strftime("ace-%Y%m%dT%H%M%S.%fZ")
+        run_id = run_id or datetime.now(UTC).strftime("ace-%Y%m%dT%H%M%S.%fZ")
         shared = {
             "selector": self.selector, "materializer": self.materializer,
             "reflector": self.reflector, "curator": self.curator,

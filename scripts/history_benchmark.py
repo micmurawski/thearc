@@ -15,7 +15,7 @@ import time
 from collections import Counter
 from pathlib import Path
 
-from thearc.learning import HistoryService, SearchFilters, SearchQuery, SourceConfig
+from thearc.learning import SearchFilters, SearchQuery, SessionStore, SourceConfig
 
 CORPORA = {
     "commons": ("claude", "native", "commons/sessions/claude_code"),
@@ -37,7 +37,7 @@ def benchmark(root, label):
     if not source.is_dir() or not list(source.rglob("*.jsonl")):
         return {"label": label, "status": "no downloaded data"}
     index_path = root / "indexes" / f"{label}.sqlite"
-    with HistoryService(index_path) as history:
+    with SessionStore(index_path) as history:
         history.register_source(SourceConfig(id=label, harness=harness, root=source, format=source_format))
         report, sync_seconds = timed(history.sync)
         counts = dict(history.connection.execute("SELECT kind,count(*) FROM events GROUP BY kind").fetchall())

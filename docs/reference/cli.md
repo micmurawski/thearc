@@ -7,9 +7,13 @@ Commands are grouped by the object they work with:
 | --- | --- | --- |
 | `sessions` | `index`, `sync`, `list`, `search`, `show`, `trace` | No |
 | `evidence` | `snapshot`, `export`, `inspect` | No |
-| `reflection` | `run`, `show` | `run --execute` only |
+| `reflection` | `run`, `handoff`, `show` | `run --execute` or `handoff --execute` |
 | `curation` | `run`, `show`, `history`, `diff` | `run` does |
-| `handoff` | `prepare`, `show` | No; preparation is offline |
+| `handoff` | `prepare`, `reflect`, `show` | `reflect --execute` only |
+
+`handoff reflect` aliases `reflection handoff`. Both continue a native fork.
+`handoff prepare/show` save and read offline plans; `reflection show` reads
+reflection artifacts, including native handoff results.
 
 ## Index placement
 

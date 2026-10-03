@@ -5,9 +5,9 @@ from __future__ import annotations
 import json
 import os
 import tempfile
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Self
 from uuid import uuid4
 
 from pydantic import BaseModel, Field
@@ -21,7 +21,7 @@ class RunJournalRecord(BaseModel):
     event: str
     node: str | None = None
     payload: dict[str, Any] = Field(default_factory=dict)
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
 class RunJournal:
@@ -94,7 +94,7 @@ class AdaptationRun:
         self.checkpoint = checkpoint
         self._completed = False
 
-    def __enter__(self) -> AdaptationRun:  # noqa: PYI034 -- Python 3.10 has no typing.Self
+    def __enter__(self) -> Self:
         if self.journal:
             self.journal.record(self.run_id, "adaptation_started", node="query")
         self.save("running", "query", {"status": "started"})
@@ -118,7 +118,7 @@ class AdaptationRun:
                     node=node,
                     completed_nodes=completed_nodes or [],
                     state=state,
-                    updated_at=datetime.now(timezone.utc),
+                    updated_at=datetime.now(UTC),
                 )
             )
 

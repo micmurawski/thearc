@@ -11,6 +11,7 @@ the repository contains runnable modules under `cookbook/`:
 | `cookbook.prepare_handoff` | Save an offline task/evidence handoff | None |
 | `cookbook.reflect_from_handoff` | Reflect on evidence referenced by a handoff | With `--execute` |
 | `cookbook.reflect_with_backend` | Use a trusted custom runtime adapter | With `--execute` |
+| `cookbook.async_flow` | Synthetic concurrent tasks with a browser visualization | None |
 | `cookbook.graphify_ace` | Batched, visualized Graphify adaptation | With `--mode live` |
 
 Run from the repository root and inspect the recipe's options first:

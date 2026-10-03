@@ -5,7 +5,7 @@ import json
 import os
 from collections.abc import Callable
 from contextlib import suppress
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
 from typing import Any
 
@@ -45,7 +45,7 @@ def _write_materialize_error_log(
 ) -> None:
     log_path = os.environ.get("FRAMEWORK_MATERIALIZE_ERROR_LOG", "logs/materialize_errors.jsonl")
     payload = {
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
         "path": _path_to_str(path),
         "type": type(obj).__name__,
         "preserve_custom_objects": preserve_custom_objects,

@@ -49,6 +49,17 @@ def test_no_default_backend(inputs, tmp_path):
     assert not (tmp_path / "output").exists()
 
 
+@pytest.mark.parametrize("view", ["compact", "detailed"])
+def test_evidence_view_option_controls_actual_prompt(inputs, tmp_path, view):
+    result = CliRunner().invoke(main, [*inputs, "--backend", "claude", "--evidence-view", view])
+    assert result.exit_code == 0, result.output
+    prepared = json.loads(next((tmp_path / "output").rglob("batch-001.json")).read_text())
+    assert prepared["manifest"]["settings"]["evidence_view"] == view
+    session = prepared["evidence"]["sessions"][0]
+    assert ("session_id" in session) == (view == "detailed")
+    assert '"harness"' not in prepared["prompt"]
+
+
 def test_custom_preview_does_not_import_adapter(inputs):
     result = CliRunner().invoke(main, [*inputs, "--backend", "custom", "--runtime", "pi",
                                       "--runner", "not_installed:run", "--adapter-version", "1"])
