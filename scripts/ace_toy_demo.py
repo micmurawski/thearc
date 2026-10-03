@@ -20,7 +20,7 @@ from thearc.learning import (
     build_ace_flow,
     run_toy_flow,
 )
-from thearc.learning.models import Event, SourceReference
+from thearc.learning.sessions.models import Event, SourceReference
 
 
 class DemoSelector:

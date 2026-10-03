@@ -41,6 +41,7 @@ class ReflectionRunner(Protocol):
     hooks, skills, and unrelated integrations; a prompt alone is not isolation.
     Honor timeout/model settings, never resume evaluated sessions, and never
     replay evidence. Return schema-conforming JSON text, not Markdown fences.
+    Finding citations contain only event_id; the host resolves session provenance.
     Optional envelope keys: thread_id, turn_id, usage, sdk_version.
     Raise ReflectionError for classified failures; only 'transient' is retried.
     The host validates findings/citations but cannot sandbox an arbitrary callback.

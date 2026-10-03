@@ -6,8 +6,9 @@ import hashlib
 import json
 import sqlite3
 from collections.abc import Iterator
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
+from typing import TYPE_CHECKING, Self
 
 from thearc.learning.sessions.adapters import get_adapter
 from thearc.learning.sessions.models import (
@@ -23,6 +24,10 @@ from thearc.learning.sessions.models import (
     SourceReference,
     SyncReport,
 )
+
+if TYPE_CHECKING:
+    from .trajectories import TrajectorySplit
+
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value INTEGER NOT NULL);
@@ -41,6 +46,7 @@ CREATE TABLE IF NOT EXISTS events(
  call_id TEXT, native_id TEXT, parent_native_id TEXT, parent_run_id TEXT,
  byte_offset INTEGER NOT NULL, subrecord INTEGER NOT NULL, text TEXT NOT NULL, data TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS events_scope ON events(source_id,session_id,run_id);
+CREATE INDEX IF NOT EXISTS events_session_order ON events(session_id,source_id,path,byte_offset,subrecord,id);
 CREATE INDEX IF NOT EXISTS events_calls ON events(run_id,call_id,kind);
 CREATE INDEX IF NOT EXISTS events_native ON events(run_id,native_id);
 CREATE INDEX IF NOT EXISTS events_parent ON events(parent_run_id);
@@ -86,10 +92,10 @@ def _utc_timestamp(value: str | None) -> str | None:
     if not isinstance(value, str):
         return None
     try:
-        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        parsed = datetime.fromisoformat(value)
         if parsed.utcoffset() is None:
             return None
-        return parsed.astimezone(timezone.utc).isoformat(timespec="microseconds")
+        return parsed.astimezone(UTC).isoformat(timespec="microseconds")
     except (ValueError, OverflowError):
         return None
 
@@ -136,7 +142,7 @@ class SessionStore:
     def close(self) -> None:
         self.connection.close()
 
-    def __enter__(self) -> SessionStore:  # noqa: PYI034 -- Python 3.10 has no typing.Self
+    def __enter__(self) -> Self:
         return self
 
     def __exit__(self, *args) -> None:
@@ -420,7 +426,7 @@ class SessionStore:
         for cutoff, operator in ((filters.started_before, "<"), (filters.started_after, ">")):
             if cutoff is not None:
                 conditions.append(f"started_at {operator} ?")
-                params.append(cutoff.astimezone(timezone.utc).isoformat(timespec="microseconds"))
+                params.append(cutoff.astimezone(UTC).isoformat(timespec="microseconds"))
         return conditions, params
 
     @staticmethod
@@ -448,6 +454,26 @@ class SessionStore:
         where, params = self._session_conditions(filters)
         cursor = self.connection.execute(
             f"SELECT * FROM sessions WHERE {where} ORDER BY COALESCE(ended_at,''),id", params,
+        )
+        try:
+            for row in cursor:
+                yield self._session_from_row(row)
+        finally:
+            cursor.close()
+
+    def iter_candidate_sessions(self, filters: SearchFilters | None = None) -> Iterator[Session]:
+        """Select sessions containing an event satisfying all supplied filters.
+
+        Unlike iter_sessions, this also applies event-level filters (tools,
+        statuses, runs, etc.). Filters select candidates, not the events later
+        loaded for sequence matching. There is no pagination cap.
+        """
+        conditions, params = self._filters(filters or SearchFilters())
+        where = " AND ".join(conditions) or "1"
+        cursor = self.connection.execute(
+            "SELECT * FROM sessions WHERE id IN ("
+            f"SELECT e.session_id FROM events e WHERE {where}) "
+            "ORDER BY COALESCE(ended_at,''),id", params,
         )
         try:
             for row in cursor:
@@ -711,6 +737,13 @@ class SessionStore:
         from thearc.learning.sessions.columnar import export_dataset
 
         return export_dataset(self, destination, filters)
+
+    def split_session(self, session_id: str) -> TrajectorySplit:
+        """Split all indexed events of a session into prompt-triggered trajectories."""
+        from .trajectories import split_trajectories
+
+        self.get_session(session_id)  # Distinguish a missing session from an empty split.
+        return split_trajectories(list(self.iter_events(SearchFilters(session_ids=[session_id]))))
 
     def iter_events(self, filters: SearchFilters | None = None) -> Iterator[Event]:
         """Yield native stream order, never hash-ID order.

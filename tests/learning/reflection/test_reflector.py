@@ -33,12 +33,12 @@ def sample(harness="claude"):
     )
 
 
-def response(session_id="session", event_id="event"):
+def response(event_id="event"):
     return {"status": "completed", "final_response": json.dumps({
         "summary": "Test-only finding", "items": [{
             "target": {"kind": "skill", "name": "graphify", "section": "Query"},
             "rating": "helpful", "reason": "Guidance contributed to finding the dependency.",
-            "evidence": [{"session_id": session_id, "event_id": event_id}], "limitations": [],
+            "evidence": [{"event_id": event_id}], "limitations": [],
         }], "limitations": [],
     }), "thread_id": "test-thread", "usage": {"input_tokens": 10}}
 
@@ -133,7 +133,7 @@ def test_generic_backend_works_with_snapshot_and_batch_flow(tmp_path):
         session = store.list_sessions()[0]
         evidence = store.snapshot(session_ids=[session.id])
         event = evidence.events[0]
-        r = reflector("antigravity", lambda *args: response(session.id, event["id"]))
+        r = reflector("antigravity", lambda *args: response(event["id"]))
         assert r.prepare_snapshot(evidence, agent())["manifest"]["snapshot_sha256"] == evidence.sha256
         result = r.reflect_snapshot(evidence, agent())
         assert result.raw["manifest"]["snapshot_sha256"] == evidence.sha256

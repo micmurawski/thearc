@@ -69,7 +69,7 @@ def offline_reflection(prompt, schema, config):
         "items": [{
             "target": {"kind": "skill_file", "name": "graphify/references/query.md", "section": None},
             "rating": "neutral", "reason": "Synthetic test assessment with an existing session citation.",
-            "evidence": [{"session_id": session["session_id"], "event_id": event["id"]}],
+            "evidence": [{"event_id": event["id"]}],
             "limitations": ["This is not model-generated reflection."],
         }],
         "limitations": ["Offline test only."],

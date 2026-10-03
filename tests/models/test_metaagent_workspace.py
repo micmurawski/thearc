@@ -1,8 +1,8 @@
 import json
-from pathlib import Path
 
 import pytest
 
+from tests.paths import FASTAPI_PROJECT
 from thearc import MCP, AgentResource, ContextDocument, Hook, MetaAgent, Skill
 from thearc.models import Ranks
 
@@ -99,7 +99,7 @@ def test_noop_empty_configuration(tmp_path):
 
 
 def test_graphify_fixture_roundtrip_without_modifying_source(tmp_path):
-    project = Path(__file__).parent / "fastapi"
+    project = FASTAPI_PROJECT
     skill_path = project / ".codex/skills/graphify"
     if not (skill_path / "SKILL.md").is_file():
         pytest.skip("Graphify submodule fixture is not initialized")

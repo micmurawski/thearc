@@ -75,7 +75,51 @@ def _run_sdk(prompt: str, schema: dict[str, Any], config: CodexReflectorConfig) 
     return _run_isolated_sdk(prompt, schema, config, instructions=REFLECTOR_PROMPT)
 
 
-def _run_isolated_sdk(prompt, schema, config, *, instructions, scoped_tools=None):
+def _run_handoff(source, prompt, config, on_fork):
+    """Continue a durable native fork with RP as the sole new message."""
+    if source.runtime != "codex":
+        raise ReflectionError("capability", "The Codex adapter requires a native Codex session")
+    CodexReflectorConfig(model=config.model, reasoning_effort=config.reasoning_effort)
+    return _run_isolated_sdk(prompt, None, config, instructions=None, fork_from=source, on_fork=on_fork)
+
+
+def _latest_turn(client, thread_id):
+    from openai_codex.generated.v2_all import ThreadTurnsListResponse
+
+    page = client.request("thread/turns/list", {
+        "threadId": thread_id, "sortDirection": "desc", "limit": 1, "itemsView": "notLoaded",
+    }, response_model=ThreadTurnsListResponse)
+    if not page.data:
+        raise ReflectionError("missing_history", "Native handoff requires a source with recorded turns")
+    last = page.data[0]
+    if last.status.value == "inProgress":
+        raise ReflectionError("source_active", "Wait for the source turn to finish before forking")
+    return last.id
+
+
+def _source_turn(client, thread_id, through_turn_id):
+    latest = _latest_turn(client, thread_id)
+    if through_turn_id is None or through_turn_id == latest:
+        return latest
+    from openai_codex.generated.v2_all import ThreadTurnsListResponse
+
+    cursor = None
+    while True:
+        page = client.request("thread/turns/list", {
+            "threadId": thread_id, "sortDirection": "desc", "limit": 100,
+            "itemsView": "notLoaded", "cursor": cursor,
+        }, response_model=ThreadTurnsListResponse)
+        for turn in page.data:
+            if turn.id == through_turn_id:
+                if turn.status.value == "inProgress":
+                    raise ReflectionError("source_active", "Selected trajectory is still running")
+                return turn.id
+        cursor = page.next_cursor
+        if cursor is None:
+            raise ReflectionError("missing_history", "Selected native turn does not belong to the source session")
+
+
+def _run_isolated_sdk(prompt, schema, config, *, instructions, scoped_tools=None, fork_from=None, on_fork=None):
     """Shared isolated runtime; only explicitly supplied host capabilities may act."""
     try:
         from openai_codex import CodexConfig, Thread, is_retryable_error
@@ -127,8 +171,21 @@ def _run_isolated_sdk(prompt, schema, config, *, instructions, scoped_tools=None
             client.start()
             timer.start()
             client.initialize()
+            runtime_cwd = workspace
+            source_turn_id = None
+            if fork_from is not None:
+                source = client.thread_read(fork_from.session_id).thread
+                if source.id != fork_from.session_id or source.ephemeral or not source.path:
+                    raise ReflectionError("missing_history", "Source must be a persisted native session")
+                if source.status.root.type == "active":
+                    raise ReflectionError("source_active", "Wait for the source session to become idle before forking")
+                source_turn_id = _source_turn(client, source.id, fork_from.through_turn_id)
+                # S1R retains a durable working directory, not the temporary inspection directory.
+                runtime_cwd = source.model_dump(mode="json")["cwd"]
+                if not Path(runtime_cwd).is_dir():
+                    raise ReflectionError("missing_workspace", "The source session working directory no longer exists")
             effective = client.request(
-                "config/read", {"cwd": workspace, "includeLayers": False}, response_model=ConfigReadResponse,
+                "config/read", {"cwd": runtime_cwd, "includeLayers": False}, response_model=ConfigReadResponse,
             ).config.model_dump(mode="json")
             if (any(effective.get("features", {}).get(name) is not False for name in disabled)
                     or any(effective.get("features", {}).get(name) is not True for name in enabled)):
@@ -141,12 +198,33 @@ def _run_isolated_sdk(prompt, schema, config, *, instructions, scoped_tools=None
             thread_config = {"mcp_servers": {
                 name: {"enabled": False} for name in effective.get("mcp_servers", {})
             }}
-            started = client.thread_start({
-                "cwd": workspace, "model": config.model, "sandbox": "read-only",
-                "approvalPolicy": "never", "ephemeral": True, "config": thread_config,
-                "baseInstructions": instructions, "developerInstructions": "",
-                **({"dynamicTools": scoped_tools.definitions} if scoped_tools is not None else {}),
-            })
+            if fork_from is None:
+                started = client.thread_start({
+                    "cwd": workspace, "model": config.model, "sandbox": "read-only",
+                    "approvalPolicy": "never", "ephemeral": True, "config": thread_config,
+                    "baseInstructions": instructions, "developerInstructions": "",
+                    **({"dynamicTools": scoped_tools.definitions} if scoped_tools is not None else {}),
+                })
+            else:
+                from thearc.learning.reflection.handoff import ForkReceipt
+
+                # Preserve native history. Do not serialize evidence, replace base instructions,
+                # resume the source, or create an empty thread if forking fails.
+                started = client.thread_fork(fork_from.session_id, {
+                    "cwd": runtime_cwd, "model": config.model, "sandbox": "read-only",
+                    "approvalPolicy": "never", "ephemeral": False, "config": thread_config,
+                    "lastTurnId": source_turn_id, "excludeTurns": True,
+                })
+                if (started.thread.id == fork_from.session_id
+                        or started.thread.forked_from_id != fork_from.session_id
+                        or started.thread.ephemeral or not started.thread.path):
+                    raise ReflectionError("invalid_fork", "Runtime did not create a persisted child session")
+                on_fork(ForkReceipt(
+                    source_session_id=fork_from.session_id, session_id=started.thread.id,
+                    source_turn_id=source_turn_id, session_path=started.thread.path,
+                ))
+                if _latest_turn(client, started.thread.id) != source_turn_id:
+                    raise ReflectionError("invalid_fork", "Fork did not preserve the selected source turn boundary")
             if started.instruction_sources or started.sandbox.root.type != "readOnly":
                 raise ReflectionError("isolation", "Thread loaded instructions or weakened the read-only sandbox")
             cursor = None
@@ -172,6 +250,10 @@ def _run_isolated_sdk(prompt, schema, config, *, instructions, scoped_tools=None
                 allowed.add("dynamicToolCall")
             if any(getattr(getattr(item, "root", item), "type", None) not in allowed for item in result.items):
                 raise ReflectionError("isolation", "Unexpected tool activity in the reflection turn")
+            if fork_from is not None and result.status.value == "completed":
+                saved = client.thread_read(thread.id).thread
+                if saved.ephemeral or not saved.path or _latest_turn(client, thread.id) != result.id:
+                    raise ReflectionError("incomplete", "Runtime did not persist the reflection continuation")
             return {
                 "status": result.status.value, "final_response": result.final_response,
                 "thread_id": thread.id, "turn_id": result.id, "sdk_version": SDK_VERSION,

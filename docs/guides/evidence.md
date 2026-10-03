@@ -50,7 +50,8 @@ Context rendering is a bounded view; omissions do not modify the snapshot.
 The local retrieval tools support listing sessions, searching events, reading
 events/context, and optional configuration-resource reads. Budgets and an audit
 record what was delivered. These tools are not automatically connected to a
-reflector runtime: bundled reflection currently uses bounded inline evidence.
+reflector runtime. Evidence-based reflection uses bounded inline evidence; native
+handoff reflection uses the inherited conversation.
 
 ## Prepare an offline handoff
 
@@ -66,10 +67,12 @@ print(plan.preview())
 save_handoff(plan, "artifacts/handoff")
 ```
 
-Current handoff support is **offline Codex context-plan preparation only**.
-It records the task, evidence, and observed workspace identity. It does not start
-an agent, restore a worktree, resume/fork a conversation, or import native history
-into another harness. There is no handoff execution entry point yet.
+`prepare_handoff()` creates an **offline Codex context plan** containing the task,
+evidence, and observed workspace identity. Saving a plan does not execute it.
+
+[Native handoff reflection](reflections.md#native-handoff-reflection) is a separate
+API: it forks an existing conversation and appends a reflection prompt. The forked
+session supplies the evidence; it does not consume this offline plan.
 
 ## Privacy and coverage
 

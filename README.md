@@ -139,6 +139,8 @@ and overwrites matching files by default. Review the diff before installing.
 
 ## Further reading
 
+See the [glossary](GLOSSARY.md) for shared definitions of the main entities.
+
 Browse the [documentation](docs/index.md), or preview the MkDocs site locally:
 
 ```sh

@@ -5,14 +5,13 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "thearc"
 version = "0.1.0"
-description = "Agent-agnostic plugin & skill installer system for Codex, Claude, and Antigravity"
+description = "Agent-independent session indexing, reflection, and configuration adaptation"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "click>=8.0.0",
     "pyyaml>=6.0",
     "pydantic>=2.0.0",
-    "tomli>=1.1.0; python_version < '3.11'",
 ]
 
 [project.scripts]
@@ -35,6 +34,7 @@ codex = ["openai-codex==0.157.1"]
 antigravity = ["google-antigravity==0.1.19"]
 arrow = ["pyarrow>=14.0.0"]
 dev = [
+    "pytest>=8.0.0",
     "ruff>=0.8.0",
 ]
 
@@ -44,7 +44,7 @@ norecursedirs = [".*", "build", "dist", "*.egg", "node_modules", "venv", "fastap
 
 [tool.ruff]
 line-length = 120
-target-version = "py310"
+target-version = "py311"
 extend-exclude = ["tests/fastapi"]
 
 [tool.ruff.lint]

@@ -14,9 +14,9 @@ from pathlib import Path
 
 import pytest
 
+from tests.paths import REPOSITORY_ROOT
 from thearc import MetaAgent, Skill
 
-REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 GRAPHIFY_ROOT = REPOSITORY_ROOT / "tests" / "fastapi"
 GRAPHIFY_SKILL_DIR = GRAPHIFY_ROOT / ".agents" / "skills" / "graphify"
 GRAPHIFY_CONTEXT_FILE = GRAPHIFY_ROOT / "AGENTS.md"

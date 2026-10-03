@@ -1,5 +1,8 @@
 """Native session ingestion, normalized records, indexing and queries."""
 
+from thearc.learning.sessions.trajectories import Trajectory, TrajectorySplit, split_trajectories
+
+from . import translation
 from .models import (
     Event,
     Harness,
@@ -14,9 +17,14 @@ from .models import (
     SourceReference,
     SyncReport,
 )
+from .scanner import BehavioralPattern, FrustrationSpike, PatternMatch, PatternScanner, StubbornToolLoop
 from .store import HistoryService, SessionStore
 
 __all__ = [
-    "Event", "Harness", "HistoryService", "Run", "RunTrace", "SearchFilters", "SearchHit",
-    "SearchPage", "SearchQuery", "Session", "SessionStore", "SourceConfig", "SourceReference", "SyncReport",
+    "BehavioralPattern", "Event", "FrustrationSpike", "Harness", "HistoryService", "PatternMatch", "PatternScanner",
+    "Run", "RunTrace", "SearchFilters", "SearchHit", "SearchPage", "SearchQuery", "Session", "SessionStore",
+    "SourceConfig", "SourceReference", "StubbornToolLoop", "SyncReport",
+    # Session translation subpackage
+    "Trajectory", "TrajectorySplit", "split_trajectories",
+    "translation",
 ]

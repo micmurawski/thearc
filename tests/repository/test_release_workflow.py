@@ -1,12 +1,13 @@
 """Release publishing is isolated from builds and only happens for explicit releases."""
 
-from pathlib import Path
 
 import yaml
 
+from tests.paths import REPOSITORY_ROOT
+
 
 def test_release_workflow_gates_and_permissions():
-    root = Path(__file__).resolve().parents[1]
+    root = REPOSITORY_ROOT
     workflow = yaml.load((root / ".github/workflows/release.yml").read_text(), Loader=yaml.BaseLoader)
     assert workflow["on"]["release"]["types"] == ["published"]
     assert workflow["permissions"] == {"contents": "read"}

@@ -9,6 +9,7 @@ from `tests/fastapi`, but sessions may originate from Codex, Claude, Pi, or Anti
 
 | Recipe | Result | Calls a model? |
 | --- | --- | --- |
+| [Async flow visualization](async_flow.py) | Synthetic concurrent tasks and a browser visualization | No |
 | [Simple ACE](simple_ace.md) | Saved evidence → reflection → adapted MetaAgent | Yes, when `adapt()` is called |
 | [Snapshot sessions](snapshot_sessions.py) | Portable evidence, Markdown, bounded context | No |
 | [Inspect evidence](inspect_evidence.py) | Search/read results and retrieval audit | No |
@@ -22,9 +23,11 @@ These are examples using today's public APIs, not a separate pipeline framework.
 See [curation usage](../docs/guides/curation.md) for committing changes and using
 saved reflections. Offline ACE output is synthetic test data,
 not an assertion about Graphify quality.
-Tool-driven Codex reflection, handoff execution, native fork/resume, and native
-cross-agent history import are not implemented. All reflection recipes below use
-the existing **inline** reflector; local retrieval is demonstrated separately.
+The reflection recipes below use the **inline** reflector; local retrieval is
+demonstrated separately. For reflection inside a forked conversation, see
+[native handoff reflection](../docs/guides/reflections.md#native-handoff-reflection).
+Session translation converts text messages between formats; it does not provide
+the full conversation continuity of a native fork.
 
 ## Visualized, batched ACE
 
@@ -91,7 +94,7 @@ separate preview branch.
 
 ## Setup and session selection
 
-The core package supports Python 3.10+; optional runtime SDKs may require a newer
+The core package supports Python 3.11+; optional runtime SDKs may require a newer
 Python version. Install the
 project in your environment; provider dependencies are needed only for live reflection:
 
@@ -181,8 +184,9 @@ This runs one fresh reflection per selected session (Codex by default). It can c
 The SDK agent receives the task, inspects the supplied evidence/configuration after
 prompting, and returns findings; the recipe does not precompute ratings. Each item
 names a configuration target/section, rates it `helpful`, `neutral`, or `harmful`,
-explains why, and cites canonical session/event IDs. Empty items are valid if there
-is insufficient evidence. It neither changes historical ranks nor applies curation.
+explains why, and cites canonical event IDs. The host resolves their session IDs
+when saving findings. Empty items are valid if there is insufficient evidence.
+It neither changes historical ranks nor applies curation.
 
 Artifacts:
 
@@ -246,8 +250,8 @@ no files, branches, worktrees, or native session histories are changed. A worksp
 HEAD/clean flag is not a historical filesystem checkpoint. Task text and the local
 workspace path are stored in the artifact; do not put credentials in the task.
 
-There is no handoff execution command yet. Saving/reviewing a plan is not approval
-to execute its task or install configuration, and creates no destination session.
+This offline plan has no execution command. Native handoff reflection uses an
+existing runtime session ID and a reflection prompt through a separate API.
 
 ## 5. Generate reflections using a saved handoff's evidence
 
@@ -339,3 +343,8 @@ batch; explicitly select fewer sessions if its inline input is too large.
 
 See [Reflection backends](../docs/reference/runtimes.md) for current support,
 module responsibilities, required safety controls, and caching behavior.
+
+## Async flow visualization
+
+Run `python -m cookbook.async_flow` for a synthetic concurrent flow. It writes
+`flow_status.html` in the current directory and opens it in your browser.

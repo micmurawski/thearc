@@ -119,7 +119,7 @@ def _run_antigravity(prompt: str, schema: dict, config: AntigravityReflectorConf
             return asyncio.run(run())
         except ReflectionError:
             raise
-        except asyncio.TimeoutError as exc:
+        except TimeoutError as exc:
             raise ReflectionError("timeout", "Antigravity inspection exceeded its deadline") from exc
         except ImportError as exc:
             raise ReflectionError("missing_sdk", "Install thearc[antigravity] with its required dependencies") from exc

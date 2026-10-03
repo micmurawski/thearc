@@ -15,12 +15,12 @@ def test_cli_version():
     ("path", "visible", "hidden"),
     [
         ([], ["sessions", "evidence", "handoff", "curation", "reflection"], ["history"]),
-        (["reflection"], ["run", "show"], []),
+        (["reflection"], ["run", "handoff", "show"], []),
         (["curation"], ["run", "show", "history", "diff"], ["approve", "accept"]),
         (["sessions"], ["index", "sync", "search", "show", "trace", "list"],
          ["snapshot", "export", "inspect", "handoff"]),
         (["evidence"], ["snapshot", "export", "inspect"], ["handoff", "search"]),
-        (["handoff"], ["prepare", "show"], ["index", "sync"]),
+        (["handoff"], ["prepare", "reflect", "show"], ["index", "sync"]),
     ],
 )
 def test_help_groups(path, visible, hidden):

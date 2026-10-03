@@ -74,8 +74,7 @@ def test_simple_ace_adapts_without_flow_or_live_runtime(recipe_inputs, tmp_path,
         return {"status": "completed", "final_response": json.dumps({
             "summary": "Synthetic fixture", "limitations": ["Not a real quality assessment"],
             "items": [{"target": target.model_dump(), "rating": "neutral", "reason": "Synthetic fixture",
-                       "limitations": [], "evidence": [{"session_id": session["session_id"],
-                                                         "event_id": session["events"][0]["id"]}]}],
+                       "limitations": [], "evidence": [{"event_id": session["events"][0]["id"]}]}],
         })}
 
     def curate(prompt, schema, tools):

@@ -5,16 +5,17 @@ import json
 import re
 import subprocess
 import sys
-from pathlib import Path
 
 import pytest
 import yaml
+
+from tests.paths import REPOSITORY_ROOT
 
 pytest.importorskip("mkdocs", reason="Install the docs extra to validate the documentation site")
 
 
 def test_documentation_builds_strictly_without_private_artifacts(tmp_path):
-    root = Path(__file__).resolve().parents[1]
+    root = REPOSITORY_ROOT
     site = tmp_path / "site"
     result = subprocess.run(
         [sys.executable, "-m", "mkdocs", "build", "--strict", "--site-dir", str(site)],
@@ -35,14 +36,14 @@ def test_documentation_builds_strictly_without_private_artifacts(tmp_path):
 
 
 def test_documentation_python_examples_parse():
-    docs = Path(__file__).resolve().parents[1] / "docs"
+    docs = REPOSITORY_ROOT / "docs"
     for path in docs.rglob("*.md"):
         for snippet in re.findall(r"```python\n(.*?)```", path.read_text(), re.DOTALL):
             ast.parse(snippet, filename=str(path))
 
 
 def test_repository_documentation_links_resolve():
-    root = Path(__file__).resolve().parents[1]
+    root = REPOSITORY_ROOT
     for source in (root / "README.md", root / "GOALS.md", *sorted((root / "cookbook").glob("*.md"))):
         for link in re.findall(r"\]\(([^)]+)\)", source.read_text()):
             if "docs/" in link and "://" not in link:
@@ -51,7 +52,7 @@ def test_repository_documentation_links_resolve():
 
 
 def test_pages_workflow_only_deploys_built_site_from_main():
-    root = Path(__file__).resolve().parents[1]
+    root = REPOSITORY_ROOT
     workflow = yaml.safe_load((root / ".github/workflows/docs.yml").read_text())
     build = workflow["jobs"]["build"]
     deploy = workflow["jobs"]["deploy"]

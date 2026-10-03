@@ -33,6 +33,13 @@ from thearc.learning.evidence.tools import EvidenceToolError, EvidenceTools, Ret
 from thearc.learning.reflection.backend import ReflectionBackend, ReflectionResponse, ReflectionRunner
 from thearc.learning.reflection.engine import AgentReflector, ReflectionError, ReflectorConfig
 from thearc.learning.reflection.flow import build_reflection_flow, run_reflections
+from thearc.learning.reflection.handoff import (
+    HandoffReflection,
+    HandoffReflector,
+    HandoffReflectorConfig,
+    NativeSessionRef,
+    create_handoff_reflector,
+)
 from thearc.learning.reflection.providers.antigravity import AntigravityReflector, AntigravityReflectorConfig
 from thearc.learning.reflection.providers.claude import ClaudeReflector, ClaudeReflectorConfig
 from thearc.learning.reflection.providers.codex import CodexReflector, CodexReflectorConfig
@@ -58,11 +65,20 @@ from thearc.learning.sessions.models import (
     SourceReference,
     SyncReport,
 )
+from thearc.learning.sessions.scanner import (
+    BehavioralPattern,
+    FrustrationSpike,
+    PatternMatch,
+    PatternScanner,
+    StubbornToolLoop,
+)
 from thearc.learning.sessions.store import SessionStore
 
 from ._compat import install_legacy_imports as _install_legacy_imports
 
 HistoryService = SessionStore  # Compatibility alias, not a second implementation.
+
+from thearc.learning.sessions.trajectories import Trajectory, TrajectorySplit, split_trajectories
 
 __all__ = [
     "AceConfig",
@@ -73,6 +89,7 @@ __all__ = [
     "AgentReflector",
     "AntigravityReflector",
     "AntigravityReflectorConfig",
+    "BehavioralPattern",
     "ChangeJournal",
     "ChangeReason",
     "CheckpointStore",
@@ -91,12 +108,19 @@ __all__ = [
     "EvidenceSnapshot",
     "EvidenceToolError",
     "EvidenceTools",
+    "FrustrationSpike",
     "HandoffMode",
     "HandoffPlan",
+    "HandoffReflection",
+    "HandoffReflector",
+    "HandoffReflectorConfig",
     "HistoryService",
     "HistorySessionMaterializer",
     "HistorySessionSelector",
     "JournalEntry",
+    "NativeSessionRef",
+    "PatternMatch",
+    "PatternScanner",
     "RankProposal",
     "Reflection",
     "ReflectionBackend",
@@ -122,15 +146,19 @@ __all__ = [
     "SessionStore",
     "SourceConfig",
     "SourceReference",
+    "StubbornToolLoop",
     "SyncReport",
     "TaskScore",
     "ToyCurator",
     "ToyReflector",
+    "Trajectory",
+    "TrajectorySplit",
     "UpdateResult",
     "apply_curations",
     "build_ace_flow",
     "build_reflection_flow",
     "compare_agents",
+    "create_handoff_reflector",
     "load_handoff",
     "prepare_handoff",
     "render_context",
@@ -138,6 +166,7 @@ __all__ = [
     "run_toy_flow",
     "save_handoff",
     "session_tools",
+    "split_trajectories",
     "write_files",
 ]
 

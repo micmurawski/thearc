@@ -25,15 +25,15 @@ ends with an adapted configuration—using ordinary Python calls, without a trac
 | Task | Guide |
 | --- | --- |
 | Import, save, or install configuration | [MetaAgent](guides/metaagent.md) |
-| Index logs and select sessions by date | [Sessions](guides/sessions.md) |
+| Index logs, select sessions, and match behavioral sequences | [Sessions](guides/sessions.md) |
 | Save portable evidence or prepare an offline handoff | [Evidence](guides/evidence.md) |
-| Inspect configuration without changing it | [Reflections](guides/reflections.md) |
+| Reflect on supplied evidence or a forked conversation | [Reflections](guides/reflections.md) |
 | Apply findings and inspect reasons behind edits | [Curation](guides/curation.md) |
 | Choose and configure a runtime | [Runtime support](reference/runtimes.md) |
 
 The **source harness**, **reflection/curation runtime**, and **installation target**
-are separate choices. You do not need to convert or resume a native conversation
-to reflect on it using another runtime.
+are separate choices for evidence-based reflection. Native handoff reflection
+continues a session within its original runtime.
 
 These pages describe current behavior. Design proposals and experiment reports
 are kept outside the user documentation; see [development](development/index.md).

@@ -7,7 +7,7 @@ import os
 import re
 import tempfile
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from thearc.learning.evidence.snapshot import content_hash, write_json_exclusive
@@ -96,7 +96,7 @@ def commit_epoch(
             raise ValueError("Baseline differs from the committed MetaAgent")
         data = {
             "schema_version": 1, "epoch_id": epoch_id, "parent": expected_head,
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": datetime.now(UTC).isoformat(),
             "baseline": baseline.model_dump(mode="json"), "agent": agent.model_dump(mode="json"),
             "ledger": ledger, "reflections": reflections, "changes": changes,
             "actor": actor, "summary": summary,

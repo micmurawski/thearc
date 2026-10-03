@@ -21,7 +21,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from thearc import MetaAgent
-from thearc.learning import HistoryService, SearchFilters, SourceConfig
+from thearc.learning import SearchFilters, SessionStore, SourceConfig
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 TOOL_ITEMS = {"command_execution", "file_change", "mcp_tool_call", "web_search", "collab_tool_call"}
@@ -158,7 +158,7 @@ def collect(prompt: str, label: str, args: argparse.Namespace, output: Path) -> 
         with transcript.open("rb") as source, destination.open("xb") as target:
             shutil.copyfileobj(source, target)
         result["transcript"] = str(destination)
-        with HistoryService(output / "index.sqlite") as history:
+        with SessionStore(output / "index.sqlite") as history:
             history.register_source(SourceConfig(id="codex-prompts", harness="codex", root=output / "sessions"))
             history.sync()
             sessions = history.list_sessions(SearchFilters(source_ids=["codex-prompts"]), limit=1000)
