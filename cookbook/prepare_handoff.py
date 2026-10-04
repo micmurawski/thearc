@@ -4,7 +4,8 @@ import argparse
 import json
 from pathlib import Path
 
-from thearc.learning import EvidenceSnapshot, prepare_handoff, save_handoff
+from thearc.learning.evidence.snapshot import EvidenceSnapshot
+from thearc.learning.runtime.handoff import prepare_handoff, save_handoff
 
 from ._common import load_config, project_arguments
 

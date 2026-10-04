@@ -1,5 +1,8 @@
 # Index and select sessions
 
+For immutable `Session` objects, scoped search, Markdown rendering, and
+`session.through(trajectory)`, see [Work with immutable sessions](resources.md).
+
 Native transcripts are the source of evidence. `SessionStore` indexes them in
 SQLite and exposes provider-neutral sessions, runs, messages, and tool activity.
 Source files remain unchanged.
@@ -23,7 +26,8 @@ Python ingestion can target just one source:
 
 ```python
 from pathlib import Path
-from thearc.learning import SessionStore, SourceConfig
+from thearc.learning.sessions.store import SessionStore
+from thearc.learning.sessions.models import SourceConfig
 
 with SessionStore("artifacts/sessions.sqlite") as store:
     report = store.ingest(SourceConfig(
@@ -40,7 +44,8 @@ or incomplete records can leave gaps in the available evidence.
 
 ```python
 from datetime import datetime, timezone
-from thearc.learning import SearchFilters, SessionStore
+from thearc.learning.sessions.models import SearchFilters
+from thearc.learning.sessions.store import SessionStore
 
 with SessionStore("artifacts/sessions.sqlite") as store:
     evidence = store.snapshot(filters=SearchFilters(
@@ -83,22 +88,18 @@ A trajectory is the activity triggered by one user prompt:
 `S = (p0, t0, p1, t1, ...)`. The prompt is separate from its response events.
 
 ```python
-from thearc.learning import SessionStore
-from thearc.learning.reflection import NativeSessionRef
+from thearc.resources import SessionStore
 
 with SessionStore("artifacts/sessions.sqlite") as store:
-    session = store.get_session("CANONICAL_SESSION_ID")
-    split = store.split_session(session.id)
-    for trajectory in split.trajectories:
-        print(trajectory.prompt_text, trajectory.boundary, trajectory.event_ids)
-    print(split.unassigned_events)
+    session = store.get("CANONICAL_SESSION_ID")
+split = session.split_into_trajectories()
+for trajectory in split:
+    print(trajectory.prompt_text, trajectory.boundary)
+print(split.unassigned_events)
 
-    # Requires a recorded, unambiguous native turn ID and a main-run trajectory.
-    source = NativeSessionRef.from_trajectory(session, split.trajectories[0])
-
-# With a configured native HandoffReflector, preview or execute:
-# reflector.prepare(source, prompt="Reflect on the most recent user request and its response.")
-# result = reflector.reflect(source, prompt="Reflect on the most recent user request and its response.")
+# With a configured Reflector:
+# result = reflector.handoff("Reflect on this task.", split[0])
+# result = reflector.handoff("Reflect with earlier context.", session.through(split[0]))
 ```
 
 `split_trajectories(ordered_events)` is also available for already-loaded events.
@@ -116,12 +117,9 @@ records; other formats still split at normalized user messages. Events without a
 preceding prompt, and metadata outside a completed response, remain unassigned.
 Missing logs cannot be reconstructed by the splitter.
 
-Trajectory handoff preserves the conversation **prefix through the selected native
-turn**. Earlier turns supply context; later turns are excluded. Only the reflection
-prompt is appended. Missing or ambiguous native boundaries fail explicitly, with
-no fallback to reflecting on the latest turn. The runtime validates the selected
-turn before creating a fork. Several user prompts within one native turn cannot
-be isolated by a turn-level fork and therefore have no usable native cutoff.
+Trajectory handoff selects that prompt and response. Use `session.through(t)` to
+include the conversation prefix. Handoff uses a native cutoff when possible, or
+imports supported normalized events into the reflector runtime.
 
 ## Match behavioral sequences
 
@@ -130,7 +128,9 @@ session at a time and matches its ordered events in Python. It does not invoke a
 model or modify transcripts.
 
 ```python
-from thearc.learning import PatternScanner, SearchFilters, SessionStore
+from thearc.learning.sessions.scanner import PatternScanner
+from thearc.learning.sessions.models import SearchFilters
+from thearc.learning.sessions.store import SessionStore
 
 with SessionStore("artifacts/sessions.sqlite") as store:
     scanner = PatternScanner(store)
@@ -169,8 +169,7 @@ refer to the supplied list, whose order is preserved.
 These are behavioral signals for inspection, not proof that a retry was mistaken
 or that an agent experienced frustration. Additional patterns (`SelfOverwrite`, `IgnoredUserInstruction`, `EmptyToolResult`,
 `AbandonedFix`, `LongSilence`) are available in
-`thearc.learning.sessions.patterns` for explicit selection. The scanner module
-also re-exports these classes for compatibility.
+`thearc.learning.sessions.patterns` for explicit selection. Import pattern classes directly from that module.
 
 ### Add a pattern
 
@@ -179,7 +178,9 @@ The scanner supplies a contiguous stream from one run and adjusts returned
 indices back to the original session positions.
 
 ```python
-from thearc.learning import BehavioralPattern, PatternMatch, PatternScanner
+from thearc.learning.sessions.patterns import BehavioralPattern
+from thearc.learning.sessions.patterns import PatternMatch
+from thearc.learning.sessions.scanner import PatternScanner
 
 class RepeatedMessage(BehavioralPattern):
     name = "repeated_message"
@@ -209,25 +210,21 @@ session. `scanner.summary(matches)` returns counts by pattern and severity.
 
 ### Use a match for reflection
 
-For evidence-based reflection, `scanner.reflection_bundle(match)` returns a
-`SessionBundle` containing the exact indexed slice and the omitted event IDs for
-coverage. Pass that bundle to the existing reflector:
+Use immutable resource scopes for new integrations:
 
 ```python
-# Inside the open store context, with a configured reflector and MetaAgent:
-# bundle = scanner.reflection_bundle(matches[0])
-# reflection = reflector.reflect([bundle], agent)
+from thearc.resources import SessionStore, evidence_to_markdown
+from thearc.learning.sessions.patterns import StubbornToolLoop
+
+with SessionStore("sessions.sqlite") as store:
+    session = store.get(session_id)
+for match in session.match(StubbornToolLoop()):
+    reflection = reflector.reflect(PROMPT + "\n\n" + evidence_to_markdown(match.events), agent=agent)
 ```
 
-Bundle creation checks that the slice still matches the index. If the source was
-reindexed and the slice changed, scan again. Existing reflector evidence limits
-and compact/detailed rendering still apply.
-
-For [native handoff reflection](reflections.md#native-handoff-reflection), use the
-matched session's native ID and a reflection prompt focusing on the observed
-behavior. The reflector forks the full original session, which already supplies
-the evidence. `PatternScanner` does not launch reflection automatically.
-
+The operator chooses the evidence. For handoff, select a trajectory or
+`session.through(trajectory)` and give the reflector a prompt focusing on the
+matched behavior. Pattern matching does not invoke reflection automatically.
 
 ## Translate message formats
 

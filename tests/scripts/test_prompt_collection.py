@@ -134,10 +134,10 @@ def test_malformed_stream_and_multiple_threads(tmp_path):
     assert result["thread_id"] is None
 
 
-def test_new_and_legacy_cli_names():
+def test_session_cli():
     from click.testing import CliRunner
 
-    for command in ("sessions", "history"):
+    for command in ("sessions",):
         result = CliRunner().invoke(cli, [command, "index", "--help"])
         assert result.exit_code == 0
         assert "antigravity" in result.output

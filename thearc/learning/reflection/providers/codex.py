@@ -3,59 +3,21 @@
 from __future__ import annotations
 
 import tempfile
-from collections.abc import Callable
 from importlib.metadata import version
 from pathlib import Path
 from threading import Event as ThreadEvent
 from threading import Timer
-from typing import Any, Literal
+from typing import Literal
 
-from thearc.learning.privacy import hide_historical_ranks, redact
-from thearc.learning.reflection.backend import ReflectionBackend
-from thearc.learning.reflection.engine import (
-    PROMPT_VERSION,
-    REFLECTOR_PROMPT,
-    SCHEMA_VERSION,
-    AgentReflector,
-    ReflectionError,
-    ReflectionOutput,
-    ReflectorConfig,
-    reflection_schema,
-    resource_catalog,
-)
-
-# Keep historical imports available while shared logic lives in reflector.py.
-__all__ = [
-    "PROMPT_VERSION", "REFLECTOR_PROMPT", "SCHEMA_VERSION", "SDK_VERSION",
-    "CodexReflector", "CodexReflectorConfig", "ReflectionError", "ReflectionOutput",
-    "hide_historical_ranks", "redact", "reflection_schema", "resource_catalog",
-]
+from thearc.learning.reflection.runtime import ExecutionConfig, ReflectionError
 
 SDK_VERSION = "0.157.1"
 
 
-class CodexReflectorConfig(ReflectorConfig):
+class CodexRuntimeConfig(ExecutionConfig):
     reasoning_effort: Literal["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"] = "medium"
 
 
-class CodexReflector(AgentReflector):
-    """Backwards-compatible Codex convenience adapter with the pinned SDK runner."""
-
-    attempt_event_prefix = "sdk"
-
-    def __init__(
-        self, config: CodexReflectorConfig, *, artifact_dir: str | Path | None = None,
-        sdk_runner: Callable[..., dict[str, Any]] | None = None, resume: bool = False,
-    ):
-        super().__init__(
-            config, backend=ReflectionBackend(agent="codex", name="openai-codex", version=SDK_VERSION),
-            runner=sdk_runner or _run_sdk, artifact_dir=artifact_dir, resume=resume,
-        )
-
-    def prepare(self, batch, agent):
-        prepared = super().prepare(batch, agent)
-        prepared["manifest"]["sdk_version"] = SDK_VERSION
-        return prepared
 
 
 # Verified against the pinned runtime's feature list and official configuration
@@ -70,17 +32,8 @@ _DISABLED_FEATURES = (
 )
 
 
-def _run_sdk(prompt: str, schema: dict[str, Any], config: CodexReflectorConfig) -> dict[str, Any]:
-    """Run a real SDK inspection turn, with no CLI-output parsing or API substitute."""
-    return _run_isolated_sdk(prompt, schema, config, instructions=REFLECTOR_PROMPT)
 
 
-def _run_handoff(source, prompt, config, on_fork):
-    """Continue a durable native fork with RP as the sole new message."""
-    if source.runtime != "codex":
-        raise ReflectionError("capability", "The Codex adapter requires a native Codex session")
-    CodexReflectorConfig(model=config.model, reasoning_effort=config.reasoning_effort)
-    return _run_isolated_sdk(prompt, None, config, instructions=None, fork_from=source, on_fork=on_fork)
 
 
 def _latest_turn(client, thread_id):
@@ -119,7 +72,8 @@ def _source_turn(client, thread_id, through_turn_id):
             raise ReflectionError("missing_history", "Selected native turn does not belong to the source session")
 
 
-def _run_isolated_sdk(prompt, schema, config, *, instructions, scoped_tools=None, fork_from=None, on_fork=None):
+def _run_isolated_sdk(prompt, schema, config, *, instructions, scoped_tools=None, fork_from=None, on_fork=None,
+                      history_items=None, on_import=None, active_instructions=""):
     """Shared isolated runtime; only explicitly supplied host capabilities may act."""
     try:
         from openai_codex import CodexConfig, Thread, is_retryable_error
@@ -201,12 +155,12 @@ def _run_isolated_sdk(prompt, schema, config, *, instructions, scoped_tools=None
             if fork_from is None:
                 started = client.thread_start({
                     "cwd": workspace, "model": config.model, "sandbox": "read-only",
-                    "approvalPolicy": "never", "ephemeral": True, "config": thread_config,
-                    "baseInstructions": instructions, "developerInstructions": "",
+                    "approvalPolicy": "never", "ephemeral": history_items is None, "config": thread_config,
+                    "baseInstructions": instructions, "developerInstructions": active_instructions,
                     **({"dynamicTools": scoped_tools.definitions} if scoped_tools is not None else {}),
                 })
             else:
-                from thearc.learning.reflection.handoff import ForkReceipt
+                from thearc.learning.reflection.runtime import ForkReceipt
 
                 # Preserve native history. Do not serialize evidence, replace base instructions,
                 # resume the source, or create an empty thread if forking fails.
@@ -214,6 +168,7 @@ def _run_isolated_sdk(prompt, schema, config, *, instructions, scoped_tools=None
                     "cwd": runtime_cwd, "model": config.model, "sandbox": "read-only",
                     "approvalPolicy": "never", "ephemeral": False, "config": thread_config,
                     "lastTurnId": source_turn_id, "excludeTurns": True,
+                    **({"developerInstructions": active_instructions} if active_instructions else {}),
                 })
                 if (started.thread.id == fork_from.session_id
                         or started.thread.forked_from_id != fork_from.session_id
@@ -227,6 +182,39 @@ def _run_isolated_sdk(prompt, schema, config, *, instructions, scoped_tools=None
                     raise ReflectionError("invalid_fork", "Fork did not preserve the selected source turn boundary")
             if started.instruction_sources or started.sandbox.root.type != "readOnly":
                 raise ReflectionError("isolation", "Thread loaded instructions or weakened the read-only sandbox")
+            if history_items is not None:
+                from openai_codex.generated.v2_all import ThreadInjectItemsResponse
+
+                if fork_from is not None or started.thread.ephemeral or not started.thread.path:
+                    raise ReflectionError("invalid_import", "History import requires a new persisted conversation")
+                # Notify before mutation/inference so even an interrupted import has a locator.
+                if on_import is not None:
+                    on_import({"session_id": started.thread.id, "session_path": str(started.thread.path),
+                               "event_count": len(history_items)})
+                client.request("thread/inject_items", {"threadId": started.thread.id, "items": history_items},
+                               response_model=ThreadInjectItemsResponse)
+                # Injection has no UI turns until inference. Verify persisted Responses
+                # records directly; the runtime adds IDs and passthrough metadata.
+                import json
+
+                path = Path(client.thread_read(started.thread.id).thread.path)
+                persisted = [record["payload"] for line in path.read_text(encoding="utf-8").splitlines()
+                             if (record := json.loads(line)).get("type") == "response_item"]
+                def contains(actual, expected):
+                    if isinstance(expected, dict):
+                        return isinstance(actual, dict) and all(
+                            key in actual and contains(actual[key], value) for key, value in expected.items()
+                        )
+                    if isinstance(expected, list):
+                        return isinstance(actual, list) and len(actual) == len(expected) and all(
+                            contains(a, b) for a, b in zip(actual, expected, strict=True)
+                        )
+                    return actual == expected
+
+                if len(persisted) < len(history_items) or not all(
+                    contains(a, b) for a, b in zip(persisted[-len(history_items):], history_items, strict=True)
+                ):
+                    raise ReflectionError("invalid_import", "Persisted history differs from the selected import")
             cursor = None
             while True:
                 servers = client.request(
@@ -250,7 +238,7 @@ def _run_isolated_sdk(prompt, schema, config, *, instructions, scoped_tools=None
                 allowed.add("dynamicToolCall")
             if any(getattr(getattr(item, "root", item), "type", None) not in allowed for item in result.items):
                 raise ReflectionError("isolation", "Unexpected tool activity in the reflection turn")
-            if fork_from is not None and result.status.value == "completed":
+            if (fork_from is not None or history_items is not None) and result.status.value == "completed":
                 saved = client.thread_read(thread.id).thread
                 if saved.ephemeral or not saved.path or _latest_turn(client, thread.id) != result.id:
                     raise ReflectionError("incomplete", "Runtime did not persist the reflection continuation")

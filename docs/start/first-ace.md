@@ -1,73 +1,45 @@
 # Your first ACE run
 
-This example indexes existing logs, selects evidence, then reflects and curates.
-It does not replay session commands or install changes into your project.
-
 ## 1. Index sessions
 
-From the repository root, after [installation](installation.md):
+After [installation](installation.md), index existing logs:
 
 ```sh
 thearc sessions --index artifacts/sessions.sqlite index \
-  --source YOUR_SOURCE --source-id experiment \
-  --root /absolute/path/to/session/logs
+  --source codex --source-id experiment --root /absolute/path/to/logs
 thearc sessions --index artifacts/sessions.sqlite list
 ```
 
-Replace `YOUR_SOURCE` with `antigravity`, `claude`, `codex`, or `pi`, matching the
-log format. Choose a directory containing the sessions you intend to analyze.
-Indexing reads logs and writes SQLite; no inference occurs.
+Choose the source format matching your logs: `codex`, `claude`, `antigravity`, or
+`pi`. Indexing writes SQLite and leaves source logs unchanged.
 
-## 2. Adapt configuration
+## 2. Reflect and curate
 
-Replace `YOUR_IMPLEMENTATION` with the harness whose configuration is installed
-in your project, and set the project path. `YOUR_BACKEND` independently chooses
-the runtime that performs reflection and curation; see [runtime support](../reference/runtimes.md).
-Choose a model available to that runtime and adjust the cutoff to your experiment.
+The recipe in `cookbook/resource_ace.py` formats selected history, requests resource
+assessments, validates event citations, and curates a configuration.
 
 ```python
-from datetime import datetime, timezone
-
-from cookbook.simple_ace import adapt
+from cookbook.resource_ace import adapt
 from thearc import MetaAgent
-from thearc.learning import SearchFilters, SessionStore
+from thearc.resources import SessionStore
 
-agent = MetaAgent.from_project(
-    "YOUR_IMPLEMENTATION", "/absolute/path/to/project", name="my-agent",
-)
-
+agent = MetaAgent.from_workspace("my-agent")
 with SessionStore("artifacts/sessions.sqlite") as store:
-    evidence = store.snapshot(filters=SearchFilters(
-        source_ids=["experiment"],
-        started_before=datetime(2026, 9, 1, tzinfo=timezone.utc),
-    ))
-
-adapted = adapt(
-    agent, evidence,
-    backend="YOUR_BACKEND",
-    model="YOUR_MODEL_ID",
-    output="artifacts/first-ace-run",
-)
-print(agent.diff(adapted))
+    session = store.get("CANONICAL_SESSION_ID")
+trajectory = session.split_into_trajectories()[0]
+result = adapt(agent, trajectory, implementation="codex", model="YOUR_MODEL_ID",
+                output="artifacts/first-ace-run")
+print(agent.diff(result.agent))
 ```
 
-`adapt()` is a small [cookbook helper](https://github.com/micmurawski/thearc/blob/HEAD/cookbook/simple_ace.py),
-not a new framework abstraction. It prepares the evidence, saves inputs, calls
-the reflector, and passes its findings to `run_curation()`. The
-[reflection](../guides/reflections.md) and [curation](../guides/curation.md) guides
-show those library calls separately.
-
-Calling `adapt()` invokes real agents and can consume quota. Use a **new output
-directory**, including after failed attempts. The original MetaAgent is unchanged.
-
-The cutoff selects sessions that started strictly before that time; it does not
-remove later events within them. `SearchFilters()` selects all indexed sessions.
-No matching sessions raises an error. Keep this first snapshot small: reflector
-input limits still apply, and the helper does not batch large collections.
+Use a new output directory. Calling `adapt` invokes the chosen runtime and saves
+baseline configuration, `evidence.jsonl`, reflections, and committed curation.
+The recipe returns a `CurationResult`; `.agent` is the adapted configuration.
+Keep the full result when [merging multiple adaptations](../guides/merging.md).
+The source session and input MetaAgent stay unchanged. Select a relevant trajectory
+that fits the reflector's input limit. See [runtime setup](../reference/runtimes.md).
 
 ## 3. Inspect the result
-
-The output contains `baseline/`, `evidence/`, `reflections/`, and `curation/`.
 
 ```sh
 thearc reflection show artifacts/first-ace-run/reflections
@@ -75,10 +47,5 @@ thearc curation show artifacts/first-ace-run/curation
 thearc curation diff artifacts/first-ace-run/curation
 ```
 
-Findings name configuration targets and cite session evidence. Curation records
-edits and their reasons; a no-change result is valid. This example does not
-evaluate performance or bump the version automatically.
-
-When you are ready to deploy configuration, follow
-[installation into agent harnesses](../guides/metaagent.md#install-configuration).
-Review artifacts for sensitive information before sharing them.
+A no-change result is valid. Evaluate the candidate before deciding to
+[install it](../guides/metaagent.md#install-configuration).

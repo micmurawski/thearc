@@ -11,8 +11,7 @@ from typing import Any
 import pytest
 
 from thearc.learning.sessions.models import Event, SourceReference
-from thearc.learning.sessions.scanner import (
-    DEFAULT_PATTERNS,
+from thearc.learning.sessions.patterns import (
     AbandonedFix,
     BehavioralPattern,
     EmptyToolResult,
@@ -20,10 +19,10 @@ from thearc.learning.sessions.scanner import (
     IgnoredUserInstruction,
     LongSilence,
     PatternMatch,
-    PatternScanner,
     SelfOverwrite,
     StubbornToolLoop,
 )
+from thearc.learning.sessions.scanner import DEFAULT_PATTERNS, PatternScanner
 
 # ---------------------------------------------------------------------------
 # Event factory
@@ -434,7 +433,8 @@ class TestPatternScanner:
 def indexed_store(tmp_path):
     import json
 
-    from thearc.learning import SessionStore, SourceConfig
+    from thearc.learning.sessions.models import SourceConfig
+    from thearc.learning.sessions.store import SessionStore
 
     root = tmp_path / "logs"
     root.mkdir()
@@ -458,7 +458,7 @@ def indexed_store(tmp_path):
 
 
 def test_sql_filters_select_sessions_and_load_complete_sequences(indexed_store, monkeypatch):
-    from thearc.learning import SearchFilters
+    from thearc.learning.sessions.models import SearchFilters
 
     store = indexed_store
     filters = SearchFilters(statuses=["failure"], tool_names=["bash"], roles=["tool"],
@@ -505,7 +505,7 @@ def test_sql_filters_select_sessions_and_load_complete_sequences(indexed_store, 
 
 
 def test_filters_must_match_the_same_event(indexed_store):
-    from thearc.learning import SearchFilters
+    from thearc.learning.sessions.models import SearchFilters
 
     # These sessions contain both calls and failures, but no failed call event.
     assert list(indexed_store.iter_candidate_sessions(SearchFilters(
@@ -513,24 +513,19 @@ def test_filters_must_match_the_same_event(indexed_store):
     ))) == []
 
 
-def test_reflection_bundle_preserves_slice_and_reports_omissions(indexed_store):
-    from dataclasses import replace
-
+def test_pattern_match_formats_as_explicit_evidence(indexed_store):
+    from thearc.resources import evidence_to_markdown
     scanner = PatternScanner(indexed_store)
     match = scanner.scan()[0]
-    bundle = scanner.reflection_bundle(match)
-    assert bundle.events == list(match.events)
-    assert bundle.session.id == match.session_id
-    assert len(bundle.omitted_event_ids) == 2
-    assert not set(bundle.omitted_event_ids).intersection(match.event_ids)
-    with pytest.raises(ValueError, match="scan again"):
-        scanner.reflection_bundle(replace(match, start_index=0))
+    rendered = evidence_to_markdown(match.events)
+    assert all(identity in rendered for identity in match.event_ids)
 
 
 def test_candidate_selection_has_no_page_cap(tmp_path):
     import json
 
-    from thearc.learning import SearchFilters, SessionStore, SourceConfig
+    from thearc.learning.sessions.models import SearchFilters, SourceConfig
+    from thearc.learning.sessions.store import SessionStore
 
     root = tmp_path / "logs"
     root.mkdir()
@@ -633,8 +628,9 @@ def test_abandoned_fix_requires_evidence_of_editing_another_file():
     assert match.end_index == 3
 
 
-def test_pattern_implementations_remain_available_from_scanner():
-    from thearc.learning.sessions import patterns, scanner
-
-    for name in ("PatternMatch", "BehavioralPattern", "StubbornToolLoop", "FrustrationSpike", "AbandonedFix"):
-        assert getattr(scanner, name) is getattr(patterns, name)
+def test_pattern_definitions_have_one_canonical_module():
+    from thearc.learning.sessions import patterns
+    assert all(getattr(patterns, name).__module__ == patterns.__name__ for name in (
+        "AbandonedFix", "EmptyToolResult", "FrustrationSpike", "IgnoredUserInstruction",
+        "LongSilence", "SelfOverwrite", "StubbornToolLoop",
+    ))

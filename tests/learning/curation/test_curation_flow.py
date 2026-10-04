@@ -3,9 +3,9 @@ import json
 import pytest
 
 from thearc import MetaAgent, ResourceTarget, Skill
-from thearc.learning import Reflection, ReflectionItem
-from thearc.learning.curation import AgentCurator, epoch_history, load_epoch, run_curation
-from thearc.learning.curation.epochs import commit_epoch
+from thearc.learning.curation.engine import AgentCurator, run_curation
+from thearc.learning.curation.epochs import commit_epoch, epoch_history, load_epoch
+from thearc.learning.curation.models import AssessmentReport, ReflectionItem
 from thearc.learning.evidence.snapshot import content_hash
 from thearc.models import Ranks
 
@@ -20,7 +20,7 @@ def agent():
 
 
 def reflection(agent, identity="reflection", event="event"):
-    return Reflection(id=identity, session_ids=["session"], items=[
+    return AssessmentReport(id=identity, session_ids=["session"], items=[
         ReflectionItem(target=ResourceTarget(kind="skill_file", name="graphify/references/query.md"),
                        rating="harmful", reason="Broad queries wasted time", limitations=[],
                        evidence=[{"session_id": "session", "event_id": event}]),
@@ -171,7 +171,7 @@ def test_cli_inspection_is_offline(agent, tmp_path):
 
 
 def test_scoped_tools_require_known_arguments_and_obey_budget(agent, tmp_path):
-    from thearc.learning.curation import AssessmentLedger
+    from thearc.learning.curation.assessments import AssessmentLedger
     from thearc.learning.curation.tools import CurationTools
 
     tools = CurationTools(agent, [], AssessmentLedger(), [], tmp_path, max_calls=1)
@@ -180,16 +180,3 @@ def test_scoped_tools_require_known_arguments_and_obey_budget(agent, tmp_path):
     tools.call("arc_list", {})
     with pytest.raises(ValueError, match="budget"):
         tools.call("arc_list", {})
-
-
-def test_codex_curator_uses_scoped_callback_contract(agent, tmp_path):
-    from thearc.learning.curation import CodexCurator, CodexCuratorConfig
-
-    def sdk(prompt, schema, config, *, instructions, scoped_tools):
-        assert config.model == "test-model" and "curator" in instructions
-        return runner(prompt, schema, scoped_tools)
-    result = run_curation(agent, [reflection(agent)],
-                          CodexCurator(CodexCuratorConfig(model="test-model"), sdk_runner=sdk),
-                          output=tmp_path, epoch_id="sdk")
-    assert result["actor"]["backend"] == "codex"
-    assert len(result["changes"]) == 1

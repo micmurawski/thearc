@@ -7,28 +7,18 @@ import tempfile
 from pathlib import Path
 from typing import Literal
 
-from thearc.learning.reflection.backend import ReflectionBackend, ReflectionRunner
-from thearc.learning.reflection.engine import REFLECTOR_PROMPT, AgentReflector, ReflectionError, ReflectorConfig
 from thearc.learning.reflection.providers.cli import run_cli
+from thearc.learning.reflection.runtime import INSTRUCTIONS, ExecutionConfig, ReflectionError
 
 CLI_VERSION = "2.1.178"
-ADAPTER_VERSION = "claude-cli-1"
 REQUIRED_FLAGS = ("--safe-mode", "--tools", "--strict-mcp-config", "--mcp-config", "--settings",
                   "--setting-sources", "--disable-slash-commands", "--system-prompt", "--no-session-persistence",
                   "--json-schema", "--output-format", "--effort", "--no-chrome", "--permission-mode")
 
 
-class ClaudeReflectorConfig(ReflectorConfig):
+class ClaudeRuntimeConfig(ExecutionConfig):
     reasoning_effort: Literal["low", "medium", "high", "xhigh", "max"] = "medium"
     executable: str = "claude"
-
-
-class ClaudeReflector(AgentReflector):
-    def __init__(self, config: ClaudeReflectorConfig, *, artifact_dir: str | Path | None = None,
-                 runner: ReflectionRunner | None = None, resume: bool = False):
-        super().__init__(config, backend=ReflectionBackend(agent="claude", name="claude-code-cli",
-                                                         version=f"{CLI_VERSION}/{ADAPTER_VERSION}"),
-                         runner=runner or _run_claude, artifact_dir=artifact_dir, resume=resume)
 
 
 def _environment() -> dict[str, str]:
@@ -39,7 +29,7 @@ def _environment() -> dict[str, str]:
     return env
 
 
-def probe_claude(config: ClaudeReflectorConfig) -> dict:
+def probe_claude(config: ClaudeRuntimeConfig) -> dict:
     """Version/flag check only. Does not authenticate, start a turn, or prove live isolation."""
     executable = shutil.which(config.executable)
     if executable is None:
@@ -109,7 +99,7 @@ def _parse_stream(text: str) -> dict:
         raise ReflectionError("invalid_output", "Malformed Claude stream") from exc
 
 
-def _run_claude(prompt: str, schema: dict, config: ClaudeReflectorConfig, *, instructions=REFLECTOR_PROMPT) -> dict:
+def _run_claude(prompt: str, schema: dict, config: ClaudeRuntimeConfig, *, instructions=INSTRUCTIONS) -> dict:
     runtime = probe_claude(config)
     with tempfile.TemporaryDirectory(prefix="thearc-claude-reflector-") as temporary:
         command = [runtime["executable"], "--print", "--safe-mode", "--tools", "",

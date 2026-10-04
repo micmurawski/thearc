@@ -6,7 +6,8 @@ import pytest
 from click.testing import CliRunner
 
 from thearc.cli import main
-from thearc.learning import SearchFilters, SearchQuery, SessionStore, SourceConfig
+from thearc.learning.sessions.models import SearchFilters, SearchQuery, SourceConfig
+from thearc.learning.sessions.store import SessionStore
 
 
 def write(path, records):
@@ -341,31 +342,11 @@ def test_codex_child_lineage_and_stale_evidence(tmp_path):
             service.read_evidence(child_event.id)
 
 
-def test_arrow_scan_and_snapshot(archive, tmp_path):
-    pytest.importorskip("pyarrow")
-    import pyarrow.dataset as ds
-
-    batches = list(
-        archive.scan_events(
-            SearchFilters(kinds=["tool_result"]), columns=["id", "action_kind", "byte_offset"], batch_size=2
-        )
-    )
-    assert [batch.num_rows for batch in batches] == [2, 1]
-    assert batches[0].schema.names == ["id", "action_kind", "byte_offset"]
-    destination = archive.export_dataset(tmp_path / "snapshot")
-    manifest = json.loads((destination / "manifest.json").read_text())
-    assert manifest["index_revision"] == archive.revision
-    paths = [destination / name for name in manifest["files"]]
-    assert ds.dataset(paths, format="parquet").count_rows() == len(list(archive.iter_events()))
-    with pytest.raises(FileExistsError):
-        archive.export_dataset(destination)
-
-
 def test_cli_round_trip(tmp_path):
     root = tmp_path / "pi"
     write(root / "s.jsonl", [{"type": "message", "message": {"role": "user", "content": "find me"}}])
     runner = CliRunner()
-    prefix = ["history", "--index", str(tmp_path / "cli.sqlite")]
+    prefix = ["sessions", "--index", str(tmp_path / "cli.sqlite")]
     result = runner.invoke(main, [*prefix, "index", "--source", "pi", "--root", str(root)])
     assert result.exit_code == 0, result.output
     result = runner.invoke(main, [*prefix, "search", "find me"])
@@ -476,4 +457,3 @@ def test_antigravity_adapter(tmp_path):
         tool_result = next(e for e in events if e.kind == "tool_result")
         assert tool_result.status == "success"
         assert "Benchmark passed" in tool_result.text
-

@@ -1,12 +1,9 @@
-import hashlib
-import json
-from functools import partial
 
 import pytest
 from pydantic import ValidationError
 
 from thearc import AgentResource, ContextDocument, Hook, MetaAgent, Operation, ResourceTarget, Skill
-from thearc.learning import ChangeJournal, Curation, apply_curations
+from thearc.learning.curation.models import Curation
 from thearc.models import Ranks
 
 
@@ -35,9 +32,8 @@ def agent():
     (ResourceTarget(kind="skill_file", name="graphify/references/query.md", section="New"),
      {"content": "Initial"}, {"content": "Changed"}),
 ])
-def test_curation_crud_targets_and_journal(tmp_path, target, initial, edit):
+def test_curation_crud_targets(tmp_path, target, initial, edit):
     meta = agent()
-    journal = ChangeJournal(tmp_path / "changes.jsonl")
     for operation, value in [(Operation.ADD, initial), (Operation.EDIT, edit), (Operation.REMOVE, None)]:
         curation = Curation(
             id=operation.value, target=target, operation=operation, value=value,
@@ -45,23 +41,13 @@ def test_curation_crud_targets_and_journal(tmp_path, target, initial, edit):
         )
         # The same payload must survive JSON transport between flow stages.
         curation = Curation.model_validate_json(curation.model_dump_json())
-        result = apply_curations(meta, [curation], partial(journal.record, "test"))
-        meta = result.agent
-        assert result.applied_curation_ids == [operation.value]
-        assert result.rejected_curation_ids == []
+        meta.apply_change(curation.target, curation.operation, curation.value)
         if operation != Operation.REMOVE:
             actual = meta.read_target(target)
             assert actual == value if isinstance(value, str) else all(actual[k] == v for k, v in value.items())
         else:
             with pytest.raises(KeyError):
                 meta.read_target(target)
-    entries = journal.entries()
-    assert [entry.operation for entry in entries] == list(Operation)
-    assert all(entry.target == target for entry in entries)
-    assert all(entry.reason.evidence_event_ids == ["event"] for entry in entries)
-    assert entries[0].after_sha256 == entries[1].before_sha256
-    assert entries[1].after_sha256 == entries[2].before_sha256
-    assert entries[0].before_sha256 == hashlib.sha256(json.dumps(None).encode()).hexdigest()
     # An unrelated bundled reference remains present.
     assert "Original." in meta.skills["graphify"].files["references/query.md"]
 

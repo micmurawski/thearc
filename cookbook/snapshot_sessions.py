@@ -4,8 +4,9 @@ import argparse
 import json
 from pathlib import Path
 
-from thearc.learning import SessionStore, render_context, write_files
+from thearc.learning.evidence.exports import render_context, write_files
 from thearc.learning.evidence.snapshot import write_json_exclusive
+from thearc.learning.sessions.store import SessionStore
 
 
 def main(argv=None):

@@ -7,7 +7,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from thearc.learning.ace.pipeline import Reflection, ReflectionEvidence, ReflectionRating
+from thearc.learning.curation.models import AssessmentReport, ReflectionEvidence, ReflectionRating
 from thearc.learning.evidence.snapshot import content_hash
 from thearc.models.agent import MetaAgent, ResourceTarget
 from thearc.models.markdown import MarkdownDocument
@@ -83,7 +83,7 @@ def _inline_ranks(target: ResourceTarget) -> bool:
 
 def propagate_ranks(
     agent: MetaAgent,
-    reflections: Sequence[Reflection],
+    reflections: Sequence[AssessmentReport],
     *,
     epoch_id: str,
     ledger: AssessmentLedger | None = None,
@@ -107,12 +107,6 @@ def propagate_ranks(
     history = ledger.model_copy(deep=True) if ledger is not None else AssessmentLedger()
     rank_free = agent.without_ranks()
     config_revision = content_hash(rank_free.model_dump(mode="json"))
-    accepted_revisions = {config_revision}
-    if agent.version is None:
-        # Reflections written before optional MetaAgent version metadata existed.
-        legacy = rank_free.model_dump(mode="json")
-        legacy.pop("version", None)
-        accepted_revisions.add(content_hash(legacy))
     known = {entry.target for entry in history.baselines}
     known.update(entry.target for entry in history.assessments)
     for reflection in reflections:
@@ -120,14 +114,14 @@ def propagate_ranks(
         previous = history.reflection_hashes.get(reflection.id)
         if previous is not None:
             if previous != digest:
-                raise ValueError(f"Reflection identity reused with different content: {reflection.id}")
+                raise ValueError(f"AssessmentReport identity reused with different content: {reflection.id}")
             continue
         manifest = reflection.raw.get("manifest", {})
         declared = manifest.get("config_sha256")
-        if declared is not None and declared not in accepted_revisions:
-            raise ValueError(f"Reflection analyzed a different configuration: {reflection.id}")
+        if declared is not None and declared != config_revision:
+            raise ValueError(f"AssessmentReport analyzed a different configuration: {reflection.id}")
         if declared is None and not allow_unverified:
-            raise ValueError(f"Reflection has no configuration revision: {reflection.id}")
+            raise ValueError(f"AssessmentReport has no configuration revision: {reflection.id}")
         provenance = manifest.get("configuration_provenance") if declared is not None else None
         for index, item in enumerate(reflection.items):
             if not item.reason.strip() or not item.evidence:

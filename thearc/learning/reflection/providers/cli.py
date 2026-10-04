@@ -8,7 +8,7 @@ import tempfile
 import time
 from pathlib import Path
 
-from thearc.learning.reflection.engine import ReflectionError
+from thearc.learning.reflection.runtime import ReflectionError
 
 
 def run_cli(argv: list[str], *, cwd: Path, timeout: float, input_text: str = "",

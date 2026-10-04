@@ -25,15 +25,15 @@ separate checks, not proof supplied by the ordinary test suite.
 | `thearc.agents` | Harness-specific configuration installers |
 | `thearc.learning.sessions` | Native adapters, SQLite indexing, sequence patterns, translation, optional Arrow exports |
 | `thearc.learning.evidence` | Snapshots, exports, scoped retrieval |
-| `thearc.learning.reflection` | Evidence-based and native handoff reflection, runtime adapters, validation, artifacts, batch flow |
+| `thearc.resources` | Immutable sessions, prompt/handoff reflection, schemas, and curation |
+| `thearc.learning.reflection` | Isolated runtime adapters and CLI |
 | `thearc.learning.curation` | Assessments, editing tools, candidates, epoch history |
-| `thearc.learning.runtime` | Run records and offline handoffs |
-| `thearc.learning.ace` | Pipeline composition, evaluation contracts, synthetic examples |
+| `thearc.learning.runtime` | Offline task/context plans |
+| `thearc.learning.ace` | Held-out evaluation contracts |
 | `thearc.flow` | Optional flow composition and visualization |
 
-Use `thearc.learning` for common imports or the focused package for a subsystem.
-Compatibility aliases for older history/learning paths are centralized in
-`thearc.learning._compat`; they are not separate implementations.
+Use `thearc.resources` for public resource operations. Internal modules use explicit
+imports. Retired import paths are rejected; see the migration guide.
 
 ## Test layout
 
@@ -41,9 +41,9 @@ Tests mirror the subsystems they exercise:
 
 | Directory | Coverage |
 | --- | --- |
-| `tests/models` | Configuration models, identity, workspaces, ranks, Markdown, legacy session search |
+| `tests/models` | Configuration models, identity, workspaces, ranks, Markdown |
 | `tests/agents` | Installers and the Graphify fixture |
-| `tests/cli` | Top-level commands and aliases |
+| `tests/cli` | Top-level commands and removed-alias rejection |
 | `tests/learning/sessions` | Indexing, ordering, filtering, patterns, translation, exports |
 | `tests/learning/evidence` | Snapshots, retrieval, offline context plans |
 | `tests/learning/reflection` | Evidence reflection, native handoff, runtime adapters, reflection CLI |
@@ -53,7 +53,7 @@ Tests mirror the subsystems they exercise:
 | `tests/cookbook`, `tests/scripts` | Executable recipes and collection workflows |
 | `tests/repository` | Packaging, docs, release workflows |
 
-Import compatibility tests live in `tests/learning/test_learning_layout.py`.
+Import boundary and removed-API tests live in `tests/learning/test_learning_layout.py`.
 Shared repository and fixture locations are defined in `tests/paths.py`.
 Run a subsystem with `python -m pytest tests/learning/sessions -q`.
 The `tests/fastapi` submodule is fixture data and is excluded from collection.

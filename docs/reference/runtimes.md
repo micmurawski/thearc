@@ -9,7 +9,7 @@ claim about every version or capability of the upstream products.
 | --- | --- | --- |
 | Antigravity | Supported | SDK adapter; offline contracts tested, live acceptance pending |
 | Claude | Supported | Claude Code CLI adapter; offline contracts tested, live acceptance pending |
-| Codex | Supported | SDK adapter; a Graphify live ACE run has been recorded |
+| Codex | Supported | SDK adapter; local mock-model persistence and isolation tests |
 | Pi | Supported | Supply a custom runner; no bundled native execution adapter |
 
 Session format, execution backend, and installation target are independent.
@@ -47,8 +47,8 @@ python -m pip install -e '.[codex]'
 ```
 
 The adapter pins `openai-codex==0.157.1` and uses its local runtime with existing
-Codex authentication. It creates isolated ephemeral inspections rather than
-resuming the source conversation. Runtime controls and supported model settings
+Codex authentication. Prompt reflection creates isolated ephemeral inspections. Handoff creates a new
+persisted conversation using a native fork or supported history import. Runtime controls and supported model settings
 are version-specific; arbitrary newer SDKs are not assumed compatible.
 
 Native handoff reflection uses a separate persistent `thread/fork` path. It appends
@@ -59,32 +59,14 @@ to support reflection from supplied evidence.
 
 ## Implement the runner contract
 
-Reflection and curation factories accept `backend="custom"` plus a trusted
-`module:function` runner, `runtime`, and `adapter_version`. For example:
+`Reflector` and `Curator` accept `implementation="custom"`, a model, and a trusted
+`runner(prompt, schema, config)` callable. It returns a dictionary containing
+`status="completed"` and `final_response` text, optionally thread/turn IDs, usage,
+and runtime version metadata. The host validates the result against the supplied
+output schema. With no schema, reflection returns text.
 
-```sh
-thearc reflection run --agent artifacts/my-agent \
-  --index artifacts/sessions.sqlite --source-id experiment \
-  --backend custom --runtime pi --runner my_package.adapter:run \
-  --adapter-version 1 --model YOUR_MODEL_ID --output artifacts/custom-preview
-```
-
-A runner receives `(prompt, schema, config)` and returns an envelope containing
-`status="completed"` and `final_response`, a JSON string matching the schema.
-It must invoke the chosen runtime after prompting, honor model/timeout controls,
-and report honest completion and provenance. Optional metadata includes thread,
-turn, usage, and SDK version. Preview does not import the custom callable.
-
-Reflection citations use `{"event_id": "<supplied event ID>"}`. The host resolves
-session IDs for saved findings. Evidence defaults to the compact view; select
-`--evidence-view detailed` for more context. Both views exclude source harness
-metadata. See [evidence views](../guides/reflections.md#evidence-views).
-
-Reflection expects findings. Custom curation uses a structured host-tool loop:
-each response requests a scoped tool or finishes. It is not the reflection schema.
-Bundled Claude/Antigravity curators also use this loop; Codex uses SDK dynamic tools.
-
-Python callbacks are trusted code. The shared engine validates responses but cannot
-sandbox arbitrary callbacks or force a blocked callback to respect a timeout.
-Enforce isolation in the adapter, disable historical command/configuration
-execution, and capability-test each runtime before production use.
+In the CLI use `--implementation custom --runner package.module:function`.
+Preview validates the address but does not import it. Custom callbacks own runtime
+isolation and deadlines. The host cannot sandbox application Python code.
+Curation requests addressed changes using `CurationReport`; the host validates and
+applies them through its scoped editing engine.

@@ -1,7 +1,6 @@
 """Select candidate sessions in SQLite and match complete sequences in Python.
 
-Pattern classes remain importable here for compatibility; their implementations
-live in :mod:`thearc.learning.sessions.patterns`.
+Pattern implementations live in :mod:`thearc.learning.sessions.patterns`.
 """
 
 from __future__ import annotations
@@ -10,30 +9,19 @@ from collections.abc import Iterator, Sequence
 from copy import deepcopy
 from dataclasses import replace
 from itertools import groupby
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from thearc.learning.sessions.models import Event, SearchFilters
 from thearc.learning.sessions.patterns import (
-    AbandonedFix,
     BehavioralPattern,
-    EmptyToolResult,
     FrustrationSpike,
-    IgnoredUserInstruction,
-    LongSilence,
     PatternMatch,
-    SelfOverwrite,
     StubbornToolLoop,
     _stream_key,
 )
 from thearc.learning.sessions.store import SessionStore
 
-if TYPE_CHECKING:
-    from thearc.learning.ace.pipeline import SessionBundle
-
-__all__ = [
-    "DEFAULT_PATTERNS", "AbandonedFix", "BehavioralPattern", "EmptyToolResult", "FrustrationSpike",
-    "IgnoredUserInstruction", "LongSilence", "PatternMatch", "PatternScanner", "SelfOverwrite", "StubbornToolLoop",
-]
+__all__ = ["DEFAULT_PATTERNS", "PatternScanner"]
 
 
 # ---------------------------------------------------------------------------
@@ -57,7 +45,7 @@ class PatternScanner:
     Parameters
     ----------
     store:
-        An open ``SessionStore`` (or ``HistoryService``).
+        An open ``SessionStore``.
     patterns:
         Optional list of patterns. Defaults to :data:`DEFAULT_PATTERNS`.
 
@@ -212,24 +200,6 @@ class PatternScanner:
             offset += len(segment)
         matches.sort(key=lambda match: match.start_index)
         return matches
-
-    def reflection_bundle(self, match: PatternMatch) -> SessionBundle:
-        """Package the exact indexed slice for evidence-based reflection.
-
-        Records omitted event IDs for coverage. Native fork reflection instead
-        uses the original session and a prompt focusing on the matched behavior.
-        """
-        from thearc.learning.ace.pipeline import SessionBundle
-
-        store = self._require_store()
-        session = store.get_session(match.session_id)
-        events = list(self._session_events(match.session_id))
-        selected = events[match.start_index:match.end_index + 1]
-        if not selected or selected != list(match.events):
-            raise ValueError("Match no longer corresponds to the indexed event slice; scan again")
-        included = set(match.event_ids)
-        return SessionBundle(session=session, events=selected,
-                             omitted_event_ids=[event.id for event in events if event.id not in included])
 
     def _resolve_patterns(
         self,

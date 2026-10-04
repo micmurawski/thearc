@@ -1,4 +1,4 @@
-"""Scoped, audited retrieval over frozen evidence. No filesystem or SQL tools."""
+"""Scoped, bounded retrieval over frozen evidence. No filesystem or SQL tools."""
 
 from __future__ import annotations
 
@@ -15,7 +15,6 @@ from threading import Event as CancellationEvent
 from thearc.learning.evidence.exports import event_groups
 from thearc.learning.evidence.snapshot import EvidenceSnapshot, canonical_json, content_hash
 from thearc.learning.privacy import hide_historical_ranks, redact
-from thearc.learning.runtime.journal import RunJournal
 from thearc.models.agent import MetaAgent, ResourceTarget
 
 
@@ -78,17 +77,16 @@ def _validate(value, schema):
 
 
 class EvidenceTools:
-    """One inspection's scoped tools and audit state; not shared across threads."""
+    """One inspection's scoped tools and retrieval budgets; not shared across threads."""
 
     def __init__(self, evidence: EvidenceSnapshot, *, agent: MetaAgent | None = None,
-                 limits: RetrievalLimits | None = None, journal: RunJournal | None = None,
+                 limits: RetrievalLimits | None = None,
                  cancelled: CancellationEvent | None = None):
         policy = evidence.manifest["policy"]
         if not policy["redact"] or not policy["hide_ranks"]:
             raise ValueError("Inspection tools require redacted, rank-free evidence")
         self.evidence = evidence
         self.limits = limits or RetrievalLimits()
-        self.journal = journal
         self.cancelled = cancelled or CancellationEvent()
         self._events = {e["id"]: canonical_json(e) for e in evidence.iter_events()}
         self._sessions = {s["id"] for s in evidence.sessions}
@@ -97,7 +95,6 @@ class EvidenceTools:
         self._secret = secrets.token_bytes(32)
         self._started = time.monotonic()
         self._calls, self._chars = 0, 0
-        self._audit: list[str] = []
 
     @property
     def schemas(self) -> list[dict]:
@@ -106,23 +103,7 @@ class EvidenceTools:
                                                             "required": required, "additionalProperties": False}))}
                 for name, (properties, required, description) in _SPEC.items()]
 
-    @property
-    def audit(self) -> list[dict]:
-        return [json.loads(record) for record in self._audit]
-
     def call(self, name: str, arguments: dict) -> dict:
-        try:
-            return self._call(name, arguments)
-        except EvidenceToolError as exc:
-            # Rejected requests deliver no evidence. Do not persist arbitrary rejected inputs.
-            record = {"tool": name if name in _SPEC else "unknown", "error": exc.code,
-                      "snapshot_sha256": self.evidence.sha256}
-            if self.journal:
-                self.journal.record(self.evidence.sha256, "evidence_rejected", **record)
-            self._audit.append(canonical_json(record))
-            raise
-
-    def _call(self, name: str, arguments: dict) -> dict:
         if self.cancelled.is_set():
             raise EvidenceToolError("cancelled", "Inspection was cancelled")
         if time.monotonic() - self._started > self.limits.timeout_seconds:
@@ -145,12 +126,7 @@ class EvidenceTools:
             raise EvidenceToolError("response_too_large", "Reduce limit or max_chars and retry")
         if self._chars + size > self.limits.max_total_chars:
             raise EvidenceToolError("budget_exhausted", "Retrieval character budget exhausted")
-        record = {"tool": name, "arguments": redact(arguments), "result": result, "response_chars": size,
-                  "response_sha256": content_hash(result)}
-        if self.journal:
-            self.journal.record(self.evidence.sha256, "evidence_delivered", **record)
         self._chars += size
-        self._audit.append(canonical_json(record))
         return result
 
     def _page(self, rows, query, cursor, limit):
@@ -227,7 +203,7 @@ class EvidenceTools:
         return self._page(rows, ["context", session_id, event_id, before, after], cursor, limit)
 
     def _catalog(self):
-        from thearc.learning.reflection.engine import resource_catalog
+        from thearc.learning.reflection.runtime import resource_catalog
 
         return resource_catalog(MetaAgent.model_validate_json(self._agent)) if self._agent else []
 

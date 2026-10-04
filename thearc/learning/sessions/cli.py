@@ -105,3 +105,30 @@ def list_command(index, source_id, limit, offset):
     with SessionStore(index) as store:
         for session in store.list_sessions(SearchFilters(source_ids=list(source_id)), limit=limit, offset=offset):
             click.echo(session.model_dump_json())
+
+
+@sessions.command("render")
+@click.argument("session_id")
+@click.option("--trajectory", type=click.IntRange(min=0), help="Zero-based trajectory index.")
+@click.option("--through", is_flag=True, help="Include the prefix through the selected trajectory.")
+@click.option("--format", "output_format", type=click.Choice(["markdown", "thearc", "codex", "claude"]),
+              default="markdown", show_default=True)
+@click.pass_obj
+def render_command(index, session_id, trajectory, through, output_format):
+    """Render immutable history for inspection or composition into an evidence prompt."""
+    from thearc.resources import SessionStore as ResourceStore
+
+    try:
+        if through and trajectory is None:
+            raise ValueError("--through requires --trajectory")
+        with ResourceStore(index) as store:
+            session = store.get(session_id)
+        selected = session
+        if trajectory is not None:
+            selected = session.split_into_trajectories()[trajectory]
+            if through:
+                selected = session.through(selected)
+        rendered = selected.to_markdown() if output_format == "markdown" else selected.to_jsonl(output_format)
+        click.echo(rendered, nl=False)
+    except (ValueError, KeyError, IndexError, OSError) as exc:
+        raise click.ClickException(str(exc)) from exc

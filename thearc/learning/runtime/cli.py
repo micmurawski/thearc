@@ -1,4 +1,4 @@
-"""Prepare context plans and run native handoff reflection."""
+"""Prepare portable task/context plans."""
 
 import json
 from pathlib import Path
@@ -6,16 +6,14 @@ from pathlib import Path
 import click
 
 from thearc.learning.evidence.snapshot import EvidenceSnapshot
-from thearc.learning.reflection.cli import handoff_command
 from thearc.learning.runtime.handoff import load_handoff, prepare_handoff, save_handoff
 
 
 @click.group("handoff")
 def handoff_commands():
-    """Prepare context plans or reflect by continuing a native session fork."""
+    """Prepare portable task/context plans. For reflection use reflection handoff."""
 
 
-handoff_commands.add_command(handoff_command, name="reflect")
 
 
 @handoff_commands.command("prepare")

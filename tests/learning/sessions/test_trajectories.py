@@ -4,8 +4,9 @@ import json
 
 import pytest
 
-from thearc.learning import Event, SessionStore, SourceConfig, SourceReference, split_trajectories
-from thearc.learning.reflection import NativeSessionRef
+from thearc.learning.sessions.models import Event, SourceConfig, SourceReference
+from thearc.learning.sessions.store import SessionStore
+from thearc.learning.sessions.trajectories import split_trajectories
 
 
 def event(i, *, kind="message", role="assistant", text="response", raw=None, run="main"):
@@ -99,15 +100,6 @@ def test_sqlite_split_uses_complete_records_and_prepares_native_reference(tmp_pa
         assert [t.native_turn_id for t in result.trajectories] == ["t1", "t2"]
         all_events = result.unassigned_events + [e for t in result.trajectories for e in t.prompt_events + t.events]
         assert len(all_events) == len({e.id for e in all_events}) == session.event_count
-        source = NativeSessionRef.from_trajectory(session, result.trajectories[0])
-        assert source.session_id == "native" and source.through_turn_id == "t1"
-        with pytest.raises(ValueError, match="unambiguous"):
-            missing = result.trajectories[0].model_copy(update={"native_turn_id": None})
-            NativeSessionRef.from_trajectory(session, missing)
-        with pytest.raises(ValueError, match="main run"):
-            NativeSessionRef.from_trajectory(session.model_copy(update={"id": "wrong"}), result.trajectories[0])
-        with pytest.raises(KeyError):
-            store.split_session("missing")
 
 
 def test_native_user_markers_distinguish_environment_setup_from_prompts():

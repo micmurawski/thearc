@@ -4,124 +4,50 @@
 
 Build agentic context-engineering pipelines on top of `thearc`: inspect sessions, extract reusable lessons and failures, curate versioned updates, evaluate their effect, and install the resulting capabilities into agent environments. The framework is designed to let these pipelines evolve as new artifacts and evaluation methods emerge, drawing direction from work on [agentic context engineering](https://arxiv.org/pdf/2510.04618), [meta-skill evolution](https://arxiv.org/pdf/2607.05297), [self-evolving agent skills](https://arxiv.org/pdf/2608.02636), [self-evolving agents](https://arxiv.org/html/2507.21046v4), and [meta context engineering](https://arxiv.org/pdf/2601.21557).
 
-## A simple ACE example
+## Sessions, reflection, and curation
 
-Give it your configuration and a past session. Get back an adapted configuration,
-with evidence explaining the changes. No flow engine or tracker—just reflection
-followed by curation.
-
-First, index your existing native session logs into a local SQLite database:
+Index existing logs first:
 
 ```sh
-thearc sessions --index sessions.sqlite index \
-  --source YOUR_SOURCE --source-id my-experiments \
-  --root /absolute/path/to/session/logs
+thearc sessions --index sessions.sqlite index --source codex --source-id experiment --root /path/to/logs
 thearc sessions --index sessions.sqlite list
 ```
 
-Replace `YOUR_SOURCE` with `antigravity`, `claude`, `codex`, or `pi` to match the
-log format. Indexing reads existing logs; it does not run an agent or modify those
-logs. To refresh registered sources later, run
-`thearc sessions --index sessions.sqlite sync`.
-
-Then select evidence and adapt the configuration:
+Use the immutable resource interface:
 
 ```python
-from datetime import datetime, timezone
-from pathlib import Path
-
 from thearc import MetaAgent
-from thearc.learning import EvidenceSnapshot, SearchFilters, SessionStore
-from thearc.learning.curation import create_curator, run_curation
-from thearc.learning.evidence.snapshot import check_destination
-from thearc.learning.reflection import ReflectorConfig, create_reflector
-
-
-def adapt(
-    agent: MetaAgent, evidence: EvidenceSnapshot, *, backend: str, model: str,
-    output: str | Path,
-) -> MetaAgent:
-    """Adapt one configuration from a small snapshot; preserve inputs and provenance."""
-    config = ReflectorConfig(model=model)
-    reflector = create_reflector(backend, config)
-    curator = create_curator(backend, config)
-    # Preflight before creating artifacts or invoking either runtime.
-    reflector.prepare_snapshot(evidence, agent)
-    output = check_destination(output, tuple(evidence.manifest["blocked_root_hashes"]))
-    output.mkdir(parents=True, mode=0o700)
-    agent.to_workspace(output / "baseline")
-    evidence.save(output / "evidence")
-    reflector.artifact_dir = output / "reflections"
-
-    reflection = reflector.reflect_snapshot(evidence, agent)
-    epoch = run_curation(agent, [reflection], curator, output=output / "curation")
-    return MetaAgent.model_validate(epoch["agent"])
-
+from thearc.resources import Curator, Reflector, SessionStore
 
 agent = MetaAgent.from_workspace("my-agent")
-
-# Sessions must already be ingested into this index.
-cutoff = datetime(2026, 9, 1, tzinfo=timezone.utc)
 with SessionStore("sessions.sqlite") as store:
-    evidence = store.snapshot(filters=SearchFilters(started_before=cutoff))
+    session = store.get(session_id)
+trajectory = session.split_into_trajectories()[0]
 
-    adapted = adapt(
-        agent, evidence,
-        backend="YOUR_BACKEND",
-        model="YOUR_MODEL_ID",
-        output="artifacts/first-ace-run",
-    )
-
-    print(agent.diff(adapted))
+reflector = Reflector(implementation="codex", model="YOUR_MODEL_ID")
+reflection = reflector.handoff("Reflect on the task and suggest improvements.", trajectory, agent=agent)
+curator = Curator(implementation="codex", model="YOUR_MODEL_ID")
+result = curator.curate("Improve the guidance using these findings.", [reflection], agent=agent,
+                        output="artifacts/curation")
+adapted = result.agent
+print(agent.diff(adapted))
 ```
 
-Replace `YOUR_BACKEND` with `antigravity`, `claude`, or `codex`, and choose a model
-supported by that runtime. Install/authenticate the runtime first; see
-[runtime setup](docs/reference/runtimes.md#current-runtime-support). There is no
-default provider, and the source-session format need not match the backend.
+For prompt reflection, compose evidence explicitly:
+`reflector.reflect(PROMPT + "\n\n" + trajectory.to_markdown(), agent=agent)`.
+Use `session.through(trajectory)` to include earlier conversation history in a handoff.
+Reflection is the reflector's response; the continued session is a separate artifact.
 
-`my-agent` is a canonical workspace saved with `MetaAgent.to_workspace()`.
-`sessions.sqlite` must already contain ingested sessions; see
-[session ingestion](docs/guides/sessions.md). The example selects sessions
-whose indexed `started_at` is **strictly before September 1, 2026, at midnight UTC**.
-Change `cutoff` to your desired timezone-aware datetime. Indexed start times use
-the earliest valid, timezone-aware event timestamp; sessions without one do not
-match date filters. Filtering happens in SQLite across registered sources, without
-a pagination limit. No matches produces a clear error. Use `SearchFilters()` to
-snapshot all indexed sessions, or add `source_ids=["my-experiments"]` to limit scope.
+Calls to reflection and curation invoke the selected runtime. The source history and
+input MetaAgent remain unchanged. See the [resource guide](docs/guides/resources.md)
+for schemas, validated resource assessments, activation support, and conversion limits.
+The [ACE recipe](cookbook/resource_ace.py) demonstrates explicit evidence, assessments,
+and a committed curation epoch. See [runtime setup](docs/reference/runtimes.md).
 
-This selects whole sessions by start time, not individual events: a selected
-session may contain activity after the cutoff. It does not imply the session has
-finished. Snapshotting does not ingest or refresh logs.
-Pass the snapshot directly to `adapt()`; it saves the evidence under
-`artifacts/first-ace-run/evidence`, so no intermediate save/load is necessary.
-Later, reload it with `EvidenceSnapshot.load("artifacts/first-ace-run/evidence")`.
+To combine parallel curation results, use [Merger](docs/guides/merging.md).
 
-Use a small index containing sessions relevant to this configuration. Snapshot
-storage and reflector input limits still apply; this example does not batch large
-collections or guarantee that every event reaches the reflector. Use the
-[batched cookbook](cookbook/README.md#visualized-batched-ace) for larger collections.
-Use the configuration associated with those sessions where possible; the library
-cannot prove which instructions were loaded during a historical session.
-
-Calling `adapt()` invokes real agents and can consume quota. It preserves the
-original configuration and saves the baseline, evidence, reflections, and committed
-curation history in a new output directory. Existing output directories are refused.
-Inspect the findings and changes with:
-
-```sh
-thearc reflection show artifacts/first-ace-run/reflections
-thearc curation show artifacts/first-ace-run/curation
-thearc curation diff artifacts/first-ace-run/curation
-```
-
-Reflections rate specific configuration parts with reasons and citations; curation
-uses those findings to make validated edits. A no-change result is valid. This
-small-snapshot example does not replay session commands, install the result, run
-evaluation, or bump the release version. An edit alone is not proof of improved
-performance. Review artifacts for sensitive information before sharing.
-
-The same function is available in [cookbook/simple_ace.py](cookbook/simple_ace.py).
+The old batch APIs and import aliases have been removed. See the
+[migration guide](docs/guides/migration.md) for replacement calls.
 
 ### Install into multiple agents
 

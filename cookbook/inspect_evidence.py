@@ -1,11 +1,11 @@
-"""Search and read frozen evidence with a persisted audit; no model invocation."""
+"""Search and read frozen evidence with bounded retrieval; no model invocation."""
 
 import argparse
 import json
 from pathlib import Path
 
-from thearc.learning import EvidenceSnapshot, RetrievalLimits, RunJournal, session_tools
-from thearc.learning.evidence.snapshot import check_destination, write_json_exclusive
+from thearc.learning.evidence.snapshot import EvidenceSnapshot, check_destination, write_json_exclusive
+from thearc.learning.evidence.tools import RetrievalLimits, session_tools
 
 from ._common import load_config, project_arguments
 
@@ -21,8 +21,7 @@ def main(argv=None):
     agent = load_config(args)
     output = check_destination(args.output, tuple(evidence.manifest["blocked_root_hashes"]))
     output.mkdir(parents=True)
-    tools = session_tools(evidence, agent=agent, limits=RetrievalLimits(max_calls=8),
-                          journal=RunJournal(output / "retrieval.jsonl"))
+    tools = session_tools(evidence, agent=agent, limits=RetrievalLimits(max_calls=8))
     hits = tools.call("search_events", {"query": args.query, "limit": 3})
     result = {"search": hits}
     if hits["items"]:

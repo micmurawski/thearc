@@ -5,13 +5,12 @@ Commands are grouped by the object they work with:
 
 | Group | Commands | Calls a model? |
 | --- | --- | --- |
-| `sessions` | `index`, `sync`, `list`, `search`, `show`, `trace` | No |
+| `sessions` | `index`, `sync`, `list`, `search`, `show`, `trace`, `render` | No |
 | `evidence` | `snapshot`, `export`, `inspect` | No |
 | `reflection` | `run`, `handoff`, `show` | `run --execute` or `handoff --execute` |
 | `curation` | `run`, `show`, `history`, `diff` | `run` does |
-| `handoff` | `prepare`, `reflect`, `show` | `reflect --execute` only |
+| `handoff` | `prepare`, `show` | No |
 
-`handoff reflect` aliases `reflection handoff`. Both continue a native fork.
 `handoff prepare/show` save and read offline plans; `reflection show` reads
 reflection artifacts, including native handoff results.
 
@@ -27,7 +26,7 @@ thearc evidence --index artifacts/sessions.sqlite snapshot \
 
 Repeat `--session-id` to select several sessions. Date-based snapshot selection is
 available through the [Python filter API](../guides/sessions.md#select-by-date-or-source).
-Reflection's `--index` belongs to its `run` command instead.
+Reflection's `--index` belongs to its `handoff` command instead.
 
 ## Read saved artifacts
 
@@ -46,5 +45,4 @@ local retrieval operation, not an agent inspection.
 
 For complete workflows, use the [session](../guides/sessions.md),
 [reflection](../guides/reflections.md), and [curation](../guides/curation.md) guides.
-Older hidden aliases remain for compatibility; new integrations should use these
-object-oriented groups.
+Removed aliases and changed options are listed in the [migration guide](../guides/migration.md).

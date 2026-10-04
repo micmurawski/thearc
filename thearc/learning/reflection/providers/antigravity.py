@@ -9,24 +9,14 @@ from typing import Literal
 
 from pydantic import Field
 
-from thearc.learning.reflection.backend import ReflectionBackend, ReflectionRunner
-from thearc.learning.reflection.engine import REFLECTOR_PROMPT, AgentReflector, ReflectionError, ReflectorConfig
+from thearc.learning.reflection.runtime import INSTRUCTIONS, ExecutionConfig, ReflectionError
 
 SDK_VERSION = "0.1.19"
-ADAPTER_VERSION = "antigravity-sdk-1"
 
 
-class AntigravityReflectorConfig(ReflectorConfig):
+class AntigravityRuntimeConfig(ExecutionConfig):
     reasoning_effort: Literal["minimal", "low", "medium", "high", "extra_high"] = "medium"
     max_model_calls: int = Field(default=4, ge=1, le=100)
-
-
-class AntigravityReflector(AgentReflector):
-    def __init__(self, config: AntigravityReflectorConfig, *, artifact_dir: str | Path | None = None,
-                 runner: ReflectionRunner | None = None, resume: bool = False):
-        super().__init__(config, backend=ReflectionBackend(agent="antigravity", name="google-antigravity",
-                                                         version=f"{SDK_VERSION}/{ADAPTER_VERSION}"),
-                         runner=runner or _run_antigravity, artifact_dir=artifact_dir, resume=resume)
 
 
 def _check_sdk() -> None:
@@ -37,7 +27,7 @@ def _check_sdk() -> None:
         raise ReflectionError("missing_sdk", "Install thearc[antigravity] to use the Antigravity reflector") from exc
 
 
-def _sdk_config(config: AntigravityReflectorConfig, schema: dict, workspace: Path, *, instructions=REFLECTOR_PROMPT):
+def _sdk_config(config: AntigravityRuntimeConfig, schema: dict, workspace: Path, *, instructions=INSTRUCTIONS):
     from google.antigravity import CapabilitiesConfig, LocalAgentConfig
     from google.antigravity.hooks.policy import allow, deny
     from google.antigravity.types import (
@@ -74,8 +64,8 @@ def _sdk_config(config: AntigravityReflectorConfig, schema: dict, workspace: Pat
     )
 
 
-async def _inspect(prompt: str, schema: dict, config: AntigravityReflectorConfig, workspace: Path,
-                   *, instructions=REFLECTOR_PROMPT) -> dict:
+async def _inspect(prompt: str, schema: dict, config: AntigravityRuntimeConfig, workspace: Path,
+                   *, instructions=INSTRUCTIONS) -> dict:
     from google.antigravity import Agent
     from google.antigravity.types import StopReason, ToolCall, ToolResult
 
@@ -100,8 +90,8 @@ async def _inspect(prompt: str, schema: dict, config: AntigravityReflectorConfig
                 "usage": usage.model_dump(mode="json") if usage else None}
 
 
-def _run_antigravity(prompt: str, schema: dict, config: AntigravityReflectorConfig,
-                     *, instructions=REFLECTOR_PROMPT) -> dict:
+def _run_antigravity(prompt: str, schema: dict, config: AntigravityRuntimeConfig,
+                     *, instructions=INSTRUCTIONS) -> dict:
     _check_sdk()
     try:
         asyncio.get_running_loop()

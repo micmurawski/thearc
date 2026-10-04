@@ -7,7 +7,9 @@ recorded commands.
 ## Create and save
 
 ```python
-from thearc.learning import EvidenceSnapshot, SearchFilters, SessionStore
+from thearc.learning.evidence.snapshot import EvidenceSnapshot
+from thearc.learning.sessions.models import SearchFilters
+from thearc.learning.sessions.store import SessionStore
 
 with SessionStore("artifacts/sessions.sqlite") as store:
     evidence = store.snapshot(filters=SearchFilters(source_ids=["experiment"]))
@@ -34,7 +36,9 @@ at a new path. Content hashes detect changes, not authenticity of an untrusted f
 ## Retrieve on demand
 
 ```python
-from thearc.learning import render_context, session_tools, write_files
+from thearc.learning.evidence.exports import render_context
+from thearc.learning.evidence.tools import session_tools
+from thearc.learning.evidence.exports import write_files
 
 context = render_context(evidence, max_chars=20_000)
 print(context.text)
@@ -48,15 +52,16 @@ print(hits)
 
 Context rendering is a bounded view; omissions do not modify the snapshot.
 The local retrieval tools support listing sessions, searching events, reading
-events/context, and optional configuration-resource reads. Budgets and an audit
-record what was delivered. These tools are not automatically connected to a
+events/context, and optional configuration-resource reads. Budgets bound call
+counts, response sizes, and elapsed time. These tools are not automatically connected to a
 reflector runtime. Evidence-based reflection uses bounded inline evidence; native
 handoff reflection uses the inherited conversation.
 
 ## Prepare an offline handoff
 
 ```python
-from thearc.learning import prepare_handoff, save_handoff
+from thearc.learning.runtime.handoff import prepare_handoff
+from thearc.learning.runtime.handoff import save_handoff
 
 plan = prepare_handoff(
     evidence,

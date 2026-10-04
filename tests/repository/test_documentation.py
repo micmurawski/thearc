@@ -44,7 +44,7 @@ def test_documentation_python_examples_parse():
 
 def test_repository_documentation_links_resolve():
     root = REPOSITORY_ROOT
-    for source in (root / "README.md", root / "GOALS.md", *sorted((root / "cookbook").glob("*.md"))):
+    for source in (*sorted(root.glob("*.md")), *sorted((root / "cookbook").glob("*.md"))):
         for link in re.findall(r"\]\(([^)]+)\)", source.read_text()):
             if "docs/" in link and "://" not in link:
                 target = link.split("#", 1)[0]
@@ -66,3 +66,17 @@ def test_pages_workflow_only_deploys_built_site_from_main():
     assert any(step.get("run") == "python -m mkdocs build --strict" for step in build["steps"])
     assert not any("jekyll" in step.get("uses", "") for step in build["steps"])
     assert yaml.safe_load((root / "mkdocs.yml").read_text())["site_url"] == "https://micmurawski.github.io/thearc/"
+
+
+def test_documented_public_imports_resolve():
+    import importlib
+
+    root = REPOSITORY_ROOT
+    paths = [root / 'README.md', root / 'GLOSSARY.md', *sorted((root / 'docs').rglob('*.md'))]
+    for path in paths:
+        for snippet in re.findall(r'```python\n(.*?)```', path.read_text(), re.DOTALL):
+            for node in ast.walk(ast.parse(snippet)):
+                if isinstance(node, ast.ImportFrom) and node.module and node.module.startswith(('thearc', 'cookbook')):
+                    module = importlib.import_module(node.module)
+                    for name in node.names:
+                        assert hasattr(module, name.name), f'{path}: missing {node.module}.{name.name}'

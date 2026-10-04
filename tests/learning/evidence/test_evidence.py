@@ -8,25 +8,15 @@ from threading import Event as CancellationEvent
 
 import pytest
 from click.testing import CliRunner
-from thearc.learning.service import HistoryService as LegacyService
 
 from thearc import MetaAgent, Skill
 from thearc.cli import main
-from thearc.learning import (
-    EvidenceSnapshot,
-    EvidenceToolError,
-    HandoffMode,
-    HistoryService,
-    RetrievalLimits,
-    SessionStore,
-    SourceConfig,
-    load_handoff,
-    prepare_handoff,
-    render_context,
-    save_handoff,
-    session_tools,
-    write_files,
-)
+from thearc.learning.evidence.exports import render_context, write_files
+from thearc.learning.evidence.snapshot import EvidenceSnapshot
+from thearc.learning.evidence.tools import EvidenceToolError, RetrievalLimits, session_tools
+from thearc.learning.runtime.handoff import HandoffMode, load_handoff, prepare_handoff, save_handoff
+from thearc.learning.sessions.models import SourceConfig
+from thearc.learning.sessions.store import SessionStore
 
 
 @pytest.fixture
@@ -56,8 +46,6 @@ def snapshot(store, **kwargs):
     return store.snapshot(session_ids=[s.id for s in store.list_sessions()], **kwargs)
 
 
-def test_compatibility_alias():
-    assert SessionStore is HistoryService is LegacyService
 
 
 def test_offline_handoff_roundtrip_and_no_replay(store, tmp_path):
@@ -70,7 +58,7 @@ def test_offline_handoff_roundtrip_and_no_replay(store, tmp_path):
     evidence = snapshot(store)
     evidence_path = evidence.save(tmp_path / "cli-evidence")
     runner = CliRunner()
-    for number, prefix in enumerate([["handoff"], ["sessions", "handoff"], ["history", "handoff"]]):
+    for number, prefix in enumerate([["handoff"]]):
         output = tmp_path / f"cli-handoff-{number}"
         prepared = runner.invoke(main, [*prefix, "prepare", "--snapshot", str(evidence_path),
                                        "--task", "Review the evidence", "--workspace", str(workspace),
@@ -102,7 +90,7 @@ def test_offline_handoff_roundtrip_and_no_replay(store, tmp_path):
         load_handoff(path)
 
 
-def test_unicode_search_ranges_and_rejection_audit(store):
+def test_unicode_search_ranges_and_unknown_tool_rejection(store):
     # Lowercasing U+0130 expands to two codepoints; ranges must reference original text.
     event = store.list_sessions()[0]
     source = store.list_sources()[0].root / "rollout-native.jsonl"
@@ -118,10 +106,9 @@ def test_unicode_search_ranges_and_rejection_audit(store):
     start, end = result["range"]
     assert result["snippet"] == original[start:end]
     assert "needle" in result["snippet"]
-    with pytest.raises(EvidenceToolError):
+    with pytest.raises(EvidenceToolError) as exc:
         tools.call("shell", {"api_key": "secret"})
-    assert tools.audit[-1]["error"] == "unknown_tool"
-    assert "secret" not in json.dumps(tools.audit)
+    assert exc.value.code == "unknown_tool"
 
 
 def test_snapshot_is_immutable_full_and_rank_free(store):
@@ -233,7 +220,7 @@ def test_rendering_does_not_mutate_or_split_tool_groups(store, tmp_path):
     assert EvidenceSnapshot.load(path).sha256 == evidence.sha256
 
 
-def test_tools_scope_pagination_and_audit(store):
+def test_tools_scope_and_pagination(store):
     evidence = snapshot(store)
     tools = session_tools(evidence)
     session_id = evidence.sessions[0]["id"]
@@ -253,8 +240,6 @@ def test_tools_scope_pagination_and_audit(store):
     assert len(page["content"]) == 300 and page["next_offset"] == 300
     context = tools.call("read_context", {"session_id": session_id, "event_id": event_id, "before": 0, "after": 0})
     assert set(context["items"][0]["event_ids"]) == {e["id"] for e in evidence.events if e.get("call_id")}
-    tools.audit[0]["result"].clear()
-    assert tools.audit[0]["result"]
     assert all(s["inputSchema"]["additionalProperties"] is False for s in tools.schemas)
 
 
@@ -284,7 +269,7 @@ def test_tool_budgets_and_resource_snapshot(store):
         tool.call("list_sessions", {"database": "other.sqlite"})
 
 
-@pytest.mark.parametrize("group", ["evidence", "sessions", "history"])
+@pytest.mark.parametrize("group", ["evidence"])
 def test_offline_cli(store, tmp_path, group):
     runner = CliRunner()
     session_id = store.list_sessions()[0].id

@@ -6,8 +6,8 @@ import json
 from pathlib import Path
 from threading import Event, RLock
 
-from thearc.learning.ace.pipeline import Curation, Reflection
 from thearc.learning.curation.assessments import AssessmentLedger, RankBaseline, _content
+from thearc.learning.curation.models import AssessmentReport, Curation
 from thearc.learning.evidence.snapshot import content_hash
 from thearc.learning.privacy import redact
 from thearc.models import MarkdownDocument, MetaAgent, Operation, ResourceTarget
@@ -80,14 +80,16 @@ def seed_rank_history(agent: MetaAgent, ledger: AssessmentLedger) -> AssessmentL
 class CurationTools:
     """A trusted callback runner may use these tools, but is not itself sandboxed."""
 
-    def __init__(self, agent: MetaAgent, reflections: list[Reflection], ledger: AssessmentLedger,
-                 history: list[dict], workspace: Path, *, max_calls: int = 100, max_chars: int = 40_000):
+    def __init__(self, agent: MetaAgent, reflections: list[AssessmentReport], ledger: AssessmentLedger,
+                 history: list[dict], workspace: Path, *, max_calls: int = 100, max_chars: int = 40_000,
+                 allow_observations: bool = False):
         self._agent = agent.without_ranks()
         self._reflections = {item.id: item.model_copy(deep=True) for item in reflections}
         self._ledger = ledger.model_copy(deep=True)
         self._history = history
         self._workspace = workspace
         self.max_calls, self.max_chars = max_calls, max_chars
+        self.allow_observations = allow_observations
         self.calls = []
         self.inspections: set[str] = set()
         self.changes: list[Curation] = []
@@ -174,7 +176,7 @@ class CurationTools:
                 or any(not isinstance(i, str) or i not in self._reflections for i in ids)
                 or not isinstance(arguments["reason"], str) or not arguments["reason"].strip()):
             raise ValueError("Every change requires a reason and known reflection IDs")
-        if any(not self._reflections[i].items for i in ids):
+        if not self.allow_observations and any(not self._reflections[i].items for i in ids):
             raise ValueError("Changes must cite reflections with evidence-backed items")
         value = json.loads(arguments["value_json"])
         operation = Operation(arguments["operation"])

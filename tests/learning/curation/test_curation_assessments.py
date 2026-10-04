@@ -1,8 +1,8 @@
 import pytest
 
 from thearc import MCP, ContextDocument, Hook, MetaAgent, ResourceTarget, Skill
-from thearc.learning.ace.pipeline import Reflection, ReflectionItem, ReflectionRating
-from thearc.learning.curation import AssessmentLedger, propagate_ranks
+from thearc.learning.curation.assessments import AssessmentLedger, propagate_ranks
+from thearc.learning.curation.models import AssessmentReport, ReflectionItem, ReflectionRating
 from thearc.learning.evidence.snapshot import content_hash
 from thearc.models import Ranks
 
@@ -12,7 +12,7 @@ def config():
 
 
 def reflection(agent, *, identity="r1", event="e1", rating="helpful", target=None):
-    return Reflection(
+    return AssessmentReport(
         id=identity, session_ids=["s1"],
         items=[ReflectionItem(
             target=target or ResourceTarget(kind="skill", name="graphify"),
@@ -161,14 +161,11 @@ def test_reference_edit_does_not_reset_parent_skill_counts():
     assert updated.skills["graphify"].ranks.helpful == 4
 
 
-def test_pre_version_reflection_hash_remains_usable_for_unversioned_agents():
+def test_pre_version_reflection_hash_is_rejected():
     original = config()
     observed = reflection(original)
     legacy = original.without_ranks().model_dump(mode="json")
     legacy.pop("version")
     observed.raw["manifest"]["config_sha256"] = content_hash(legacy)
-    result, _ = propagate_ranks(original, [observed], epoch_id="legacy")
-    assert result.skills["graphify"].ranks.helpful == 4
-    original.version = "1.0.0"
     with pytest.raises(ValueError, match="different configuration"):
-        propagate_ranks(original, [observed], epoch_id="versioned")
+        propagate_ranks(original, [observed], epoch_id="retired-hash")

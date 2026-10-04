@@ -15,7 +15,8 @@ import time
 from collections import Counter
 from pathlib import Path
 
-from thearc.learning import SearchFilters, SearchQuery, SessionStore, SourceConfig
+from thearc.learning.sessions.models import SearchFilters, SearchQuery, SourceConfig
+from thearc.learning.sessions.store import SessionStore
 
 CORPORA = {
     "commons": ("claude", "native", "commons/sessions/claude_code"),

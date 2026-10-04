@@ -728,16 +728,6 @@ class SessionStore:
     def diagnostics(self) -> list[dict]:
         return [dict(r) for r in self.connection.execute("SELECT * FROM diagnostics ORDER BY source_id,path,line")]
 
-    def scan_events(self, filters: SearchFilters | None = None, columns=None, batch_size: int = 8192):
-        from thearc.learning.sessions.columnar import scan_events
-
-        return scan_events(self, filters, columns, batch_size)
-
-    def export_dataset(self, destination: str | Path, filters: SearchFilters | None = None) -> Path:
-        from thearc.learning.sessions.columnar import export_dataset
-
-        return export_dataset(self, destination, filters)
-
     def split_session(self, session_id: str) -> TrajectorySplit:
         """Split all indexed events of a session into prompt-triggered trajectories."""
         from .trajectories import split_trajectories
@@ -763,6 +753,3 @@ class SessionStore:
                 yield self._enrich(Event.model_validate_json(row[0]))
         finally:
             cursor.close()
-
-# Historical service import aliases the same implementation.
-HistoryService = SessionStore

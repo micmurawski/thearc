@@ -16,12 +16,13 @@ import shutil
 import signal
 import subprocess
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
 
 from thearc import MetaAgent
-from thearc.learning import SearchFilters, SessionStore, SourceConfig
+from thearc.learning.sessions.models import SearchFilters, SourceConfig
+from thearc.learning.sessions.store import SessionStore
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 TOOL_ITEMS = {"command_execution", "file_change", "mcp_tool_call", "web_search", "collab_tool_call"}
@@ -124,7 +125,7 @@ def collect(prompt: str, label: str, args: argparse.Namespace, output: Path) -> 
     command.append("-")  # stdin avoids accidental CLI-option interpretation and shell interpolation.
     result = {"prompt": label, "cwd": str(worktree), "source_checkout": str(args.cwd),
               "base_commit": args.base_commit, "run_dir": str(run_dir),
-              "started_at": datetime.now(timezone.utc).isoformat(), "command": command,
+              "started_at": datetime.now(UTC).isoformat(), "command": command,
               "git_head": git(worktree, "rev-parse", "HEAD"),
               "git_status_before": git(worktree, "status", "--porcelain"), "status": "running"}
     save(run_dir / "manifest.json", result)
@@ -186,7 +187,7 @@ def collect(prompt: str, label: str, args: argparse.Namespace, output: Path) -> 
         elif not args.allow_response_only and (not result["tool_items"] or not result["indexed_tool_events"]):
             reason = "no_tool_activity"
     result.update(status="failed" if reason else "completed", failure_reason=reason,
-                  has_activity=activity, finished_at=datetime.now(timezone.utc).isoformat(),
+                  has_activity=activity, finished_at=datetime.now(UTC).isoformat(),
                   git_status_after=git(worktree, "status", "--porcelain"))
     # Include staged and committed tracked edits relative to the pinned baseline.
     # Untracked outputs remain available in the retained worktree itself.

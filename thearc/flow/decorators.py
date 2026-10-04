@@ -368,13 +368,3 @@ def node(
         return decorator
     else:
         return decorator(func)
-
-
-@node
-async def end(messages: list[dict]):
-    return {"messages": messages}
-
-
-@node
-def noop(messages: list[dict]):
-    return {"messages": messages}

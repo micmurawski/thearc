@@ -2,8 +2,9 @@
 
 import json
 
-from thearc.learning import SearchFilters, SearchQuery, SessionStore, SourceConfig
 from thearc.learning.sessions.adapters import DataClawAdapter
+from thearc.learning.sessions.models import SearchFilters, SearchQuery, SourceConfig
+from thearc.learning.sessions.store import SessionStore
 
 
 def test_nested_output_exit_code_and_parser_upgrade(tmp_path, monkeypatch):

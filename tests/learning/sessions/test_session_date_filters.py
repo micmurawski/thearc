@@ -5,7 +5,9 @@ from datetime import UTC, datetime
 
 import pytest
 
-from thearc.learning import EvidenceSnapshot, SearchFilters, SearchQuery, SessionStore, SourceConfig
+from thearc.learning.evidence.snapshot import EvidenceSnapshot
+from thearc.learning.sessions.models import SearchFilters, SearchQuery, SourceConfig
+from thearc.learning.sessions.store import SessionStore
 
 CUTOFF = datetime(2026, 9, 1, tzinfo=UTC)
 
@@ -163,11 +165,3 @@ def test_filtered_snapshot_has_no_session_page_limit(tmp_path):
         evidence = store.snapshot(filters=SearchFilters(started_before=CUTOFF))
     assert evidence.manifest["session_count"] == 1005
     assert evidence.manifest["event_count"] == 1005
-
-
-def test_date_filtered_export_manifest_is_json_serializable(dated_store, tmp_path):
-    pytest.importorskip("pyarrow")
-    filters = SearchFilters(started_before=CUTOFF)
-    destination = dated_store.export_dataset(tmp_path / "export", filters)
-    manifest = json.loads((destination / "manifest.json").read_text())
-    assert SearchFilters.model_validate(manifest["filters"]) == filters

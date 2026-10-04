@@ -2,7 +2,7 @@ import pytest
 from pydantic import ValidationError
 
 from thearc import MetaAgent, Skill
-from thearc.learning import EvaluationResult, TaskScore, compare_agents
+from thearc.learning.ace.evaluation import EvaluationResult, TaskScore, compare_agents
 
 
 def test_same_held_out_tasks_isolation_and_metric_deltas():

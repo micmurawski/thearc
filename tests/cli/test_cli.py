@@ -17,10 +17,10 @@ def test_cli_version():
         ([], ["sessions", "evidence", "handoff", "curation", "reflection"], ["history"]),
         (["reflection"], ["run", "handoff", "show"], []),
         (["curation"], ["run", "show", "history", "diff"], ["approve", "accept"]),
-        (["sessions"], ["index", "sync", "search", "show", "trace", "list"],
+        (["sessions"], ["index", "sync", "search", "show", "trace", "list", "render"],
          ["snapshot", "export", "inspect", "handoff"]),
         (["evidence"], ["snapshot", "export", "inspect"], ["handoff", "search"]),
-        (["handoff"], ["prepare", "reflect", "show"], ["index", "sync"]),
+        (["handoff"], ["prepare", "show"], ["index", "sync"]),
     ],
 )
 def test_help_groups(path, visible, hidden):
@@ -31,7 +31,7 @@ def test_help_groups(path, visible, hidden):
     assert commands.isdisjoint(hidden)
 
 
-@pytest.mark.parametrize("path", [["handoff"], ["sessions", "handoff"], ["history", "handoff"]])
+@pytest.mark.parametrize("path", [["handoff"]])
 def test_handoff_paths_validate_saved_plans(tmp_path, path):
     result = CliRunner().invoke(main, [*path, "show", str(tmp_path)])
     assert result.exit_code == 1
@@ -39,10 +39,9 @@ def test_handoff_paths_validate_saved_plans(tmp_path, path):
     assert "No such command" not in result.output
 
 
-def test_history_search_alias(tmp_path):
-    runner = CliRunner()
-    index = str(tmp_path / "sessions.sqlite")
-    canonical = runner.invoke(main, ["sessions", "--index", index, "list"])
-    legacy = runner.invoke(main, ["history", "--index", index, "list"])
-    assert canonical.exit_code == legacy.exit_code == 0
-    assert canonical.output == legacy.output
+@pytest.mark.parametrize("path", [["history"], ["sessions", "snapshot"], ["sessions", "handoff"],
+                                  ["handoff", "reflect"]])
+def test_removed_aliases_are_not_registered(path):
+    result = CliRunner().invoke(main, [*path, "--help"])
+    assert result.exit_code == 2
+    assert "No such command" in result.output

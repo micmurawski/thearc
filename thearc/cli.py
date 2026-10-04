@@ -1,7 +1,7 @@
 import click
 
 from thearc import __version__
-from thearc.learning.cli import evidence, handoff_commands, history, sessions
+from thearc.learning.cli import evidence, handoff_commands, sessions
 from thearc.learning.curation.cli import curation
 from thearc.learning.reflection.cli import reflection
 
@@ -15,7 +15,6 @@ def main():
 main.add_command(sessions)
 main.add_command(evidence)
 main.add_command(handoff_commands)
-main.add_command(history)
 main.add_command(curation)
 main.add_command(reflection)
 

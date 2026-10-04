@@ -55,8 +55,8 @@ the part being assessed or changed.
 - **Harness:** the agent environment that manages conversation, tools, and
   configuration conventions. A source harness also determines the native log format.
 - **Runtime:** the executable CLI or SDK used to run an agent.
-- **Backend:** `thearc`'s integration with a runtime. `ReflectionBackend` records
-  its runtime identity, adapter name, and version.
+- **Implementation:** `thearc`'s integration with a runtime, selected when creating
+  a `Reflector` or `Curator`. Execution provenance records its identity.
 - **Runner:** the callable that performs an execution through that integration
   and returns its response and execution metadata.
 
@@ -65,7 +65,7 @@ evidence-based reflection. Native handoff requires a runtime capable of forking
 the source conversation.
 
 Source: [configuration models](thearc/models/agent.py),
-[execution contracts](thearc/learning/reflection/backend.py).
+[execution contracts](thearc/learning/reflection/runtime.py).
 
 ## Sessions and behavior
 
@@ -81,6 +81,12 @@ indexed session and provenance.
 A recorded conversation and its associated events. A session can contain several
 execution runs, including delegated work. The indexed `Session` object holds
 identity and summary metadata; its events are stored and retrieved separately.
+
+`thearc.resources.Session` is the immutable historical facade. It loads events on
+first access and exposes splitting, scoped search, rendering, and `through(t)`.
+The internal `thearc.learning.sessions.models.Session` is the index metadata record. A `SessionView`
+is an immutable prefix; it includes the selected trajectory's prompt and response
+as well as earlier history from the same captured session.
 
 ### Trajectory
 
@@ -106,6 +112,9 @@ Events preceding a prompt or outside its response remain in
 `TrajectorySplit.unassigned_events`. Different runs and artifacts are split
 independently because their ordering does not establish causal relationships.
 
+The resource facade exposes this partition through `session.split_into_trajectories()`.
+Its trajectory objects and nested event contents are immutable.
+
 ### Trajectory segment
 
 A bounded portion of a trajectory selected for inspection. A sequence pattern
@@ -120,14 +129,11 @@ can identify a parent run for delegated work.
 An **adaptation run** is different in scope: one execution of the learning pipeline,
 potentially involving many sessions, reflections, and changes.
 
-### Task, episode, and outcome
+### Task and outcome
 
-- **Task:** the objective given to an agent.
-- **Episode:** a learning unit assembled around a task or related activity. An
-  `Episode` may include events from multiple sessions or runs.
-- **Outcome:** the observed result of that activity, optionally with scores and
-  supporting signals. `EpisodeOutcome` records success, failure, mixed, or unknown.
-  A failed tool call alone does not establish the outcome of the whole task.
+A **task** is the objective an agent is asked to perform. An **outcome** describes
+what happened and the evidence supporting that conclusion. Reflections describe
+recorded outcomes; held-out evaluation measures performance through `TaskScore`.
 
 ### Source, native ID, and canonical ID
 
@@ -136,11 +142,11 @@ its root and format. A **native ID** belongs to the original runtime. A
 **canonical ID** belongs to the index and is scoped to its source. APIs that fork
 native sessions require native IDs; indexed queries use canonical IDs.
 
-`SessionStore` is the local SQLite index and query service. `HistoryService` is
-a compatibility name for the same implementation.
+`thearc.resources.SessionStore` exposes immutable session handles over the local
+SQLite index. Ingestion and normalized storage live in `thearc.learning.sessions`.
 
 Source: [session models](thearc/learning/sessions/models.py),
-[episode contracts](thearc/learning/runtime/contracts.py).
+[evaluation contracts](thearc/learning/ace/evaluation.py).
 
 ## Evidence and selection
 
@@ -150,28 +156,16 @@ Recorded information available to a reflector or evaluator to support a finding.
 It can be supplied as selected events or inherited through a native session fork.
 Evidence describes what was recorded; its coverage determines what can be assessed.
 
-### Evidence snapshot and session bundle
+### Evidence snapshot and formatting
 
-- **`EvidenceSnapshot`:** a portable, integrity-checked capture of selected indexed
-  sessions and events, with provenance and coverage metadata.
-- **`SessionBundle`:** a session's metadata together with selected events and
-  lists of omitted or truncated events, prepared for evidence-based reflection.
+`EvidenceSnapshot` is a portable, integrity-checked capture of selected indexed
+sessions and events, with provenance and coverage metadata. It is a separate export
+facility from immutable resource history.
 
-### Evidence view
-
-The representation of supplied evidence shown to the reflector. **Compact** is
-the default: event content, event IDs, relevant relationships, and coverage counts.
-**Detailed** adds provenance and audit context. Both exclude source-harness labels;
-choosing detailed does not select additional events.
-
-### Coverage, omission, truncation, and selection policy
-
-- **Coverage:** what portion of the available evidence was delivered.
-- **Omitted event:** an event excluded from the supplied selection.
-- **Truncated event:** an included event whose content was shortened.
-- **Selection policy:** the rule used to choose events under a limit.
-  `SELECTION_POLICY` is descriptive text about that rule; the selection function
-  performs the actual selection.
+`evidence_to_markdown(events)` formats chosen events, including event IDs and
+relevant tool relationships. The operator composes the prompt. Formatting adds no
+selection or truncation. Coverage means which recorded events were delivered;
+omission and truncation describe excluded events and shortened content respectively.
 
 ### Behavioral pattern, pattern scanner, and pattern match
 
@@ -186,7 +180,7 @@ A match is an observed signal for inspection. Its name or severity does not by
 itself establish a cause or prove that the behavior was harmful.
 
 Source: [evidence snapshot](thearc/learning/evidence/snapshot.py),
-[evidence views](thearc/learning/reflection/evidence.py),
+[evidence formatting](thearc/resources/formats.py),
 [patterns](thearc/learning/sessions/patterns.py),
 [scanner](thearc/learning/sessions/scanner.py).
 
@@ -209,9 +203,26 @@ describes the inputs and output; evidence can be attached or already in context.
 The word **reflection process** refers to invoking the reflector and collecting
 that response. In the current implementation:
 
-- Evidence-based reflection produces a structured `Reflection` artifact.
-- Native handoff stores the response text in `HandoffReflection.reflection`,
-  alongside metadata locating the reflector's session.
+- `thearc.resources.Reflection` exposes response `text`, validated `output`, and
+  host provenance. `output_schema` can be a caller-defined `ReflectionBaseModel`
+  or JSON Schema; without one, `output` is text.
+
+### Output schema and resource validation
+
+`ReflectionBaseModel` and `CurationBaseModel` generate JSON Schema strings with
+field descriptions and nested definitions. Schemas describe the expected response
+and are embedded in the request. Structural validation checks the returned JSON;
+optional resource validation resolves typed `ResourceTarget` references against a
+captured MetaAgent. Existence does not prove historical usage. Curation targets are
+validated according to their operation against a detached candidate.
+
+### Reference and active configuration
+
+The `agent` argument is the evaluated `MetaAgent`. In **reference** mode, its
+resources are supplied for inspection. In **active** mode, supported resources are
+also applied to the reflector for that call. The reflector's execution configuration
+remains separate. The result records the mode and configuration revision; activation
+does not automatically carry into curation. Supported activation depends on the adapter.
 
 ### Reflection item and citation
 
@@ -243,14 +254,13 @@ is the evidence, so no separate evidence payload is attached. The original sessi
 remains unchanged. The equation describes logical history; a runtime may store
 inherited history by reference.
 
-For a selected trajectory, fork the session prefix through its recorded native
-turn. Earlier prompts and trajectories remain context; later turns are excluded.
-A native turn ID must be available and unambiguous.
+`reflector.handoff(RP, trajectory)` supplies only that prompt and response.
+`reflector.handoff(RP, session.through(trajectory))` includes the earlier prefix.
+A native fork requires an unambiguous recorded cutoff. Otherwise supported history
+is translated into a fresh reflector session. The source history remains immutable.
 
-`NativeSessionRef` locates the source conversation and an optional turn cutoff. `ForkReceipt` records the
-relationship between source and child. `HandoffReflection` is the saved result
-envelope containing the reflection and the session locators. The bundled native
-handoff adapter currently supports Codex.
+`NativeSessionRef` and `ForkReceipt` are internal runtime locator/receipt records.
+The public `Reflection` stores the response and provenance for either path.
 
 ### Offline handoff plan
 
@@ -265,10 +275,10 @@ Conversion of text messages between provider formats or into Markdown.
 Translation preserves a selected representation of messages; it does not provide
 the complete event history and continuity of a native fork.
 
-Source: [reflection engine](thearc/learning/reflection/engine.py),
-[native handoff](thearc/learning/reflection/handoff.py),
+Source: [reflection engine](thearc/resources/reflection.py),
+[native handoff](thearc/resources/reflection.py),
 [offline plans](thearc/learning/runtime/handoff.py),
-[handoff contract](HANDOFF.md).
+[handoff interface](docs/guides/resources.md).
 
 ## Curation and evaluation
 
@@ -280,8 +290,12 @@ additions, edits, removals, or a decision to keep the configuration unchanged.
 
 The Python `Curation` model represents **one proposed operation** on a resource or
 section, including its rationale and links to supporting reflections and evidence.
-`UpdateResult` records the resulting MetaAgent and which operations were applied
-or rejected.
+`CurationResult` records the revised MetaAgent and validated changes.
+
+The resource facade's `Curator.curate()` returns a `CurationResult` containing a
+detached revised agent, actual changes, and the model's report. `CurationReport`
+is the standard output schema; custom schemas require an explicit operation
+adapter. Supplying `output=` additionally saves a validated curation epoch.
 
 ### Baseline and candidate
 
@@ -305,6 +319,19 @@ changes, assessments, and parent epoch. Epoch history provides the ancestry of
 configuration changes. Committing an epoch does not install the configuration or
 automatically assign a new release version.
 
+### Merge
+
+Combining independent curation results that share the exact same baseline MetaAgent.
+`Merger` compares all candidates together, combines independent fields and non-overlapping
+line edits, and identifies conflicting additions, edits, or removals. A supplied
+`Curator` provides typed conflict decisions through its configured executor.
+
+`MergeReport` records selection, combination, retention of baseline content, or unresolved
+conflicts. `MergeResult` preserves source proposals, decisions, the deduplicated assessment
+ledger, and the merged agent. Unresolved structural conflicts or consistency-review issues
+block access to `.agent`. Merging leaves all source artifacts unchanged and does not prove
+that the combined guidance improves behavior.
+
 ### Evaluation
 
 Measurement of agent behavior against defined tasks and criteria. The current
@@ -319,12 +346,8 @@ evaluation measures performance under the chosen test conditions.
 
 **ACE** means agentic context engineering: using recorded experience to improve
 an agent's configuration. An adaptation run coordinates selection, evidence
-preparation, reflection, curation, and optionally evaluation. `AcePipeline` and
-the flow helpers compose these steps.
-
-A **journal** records lifecycle events. A **checkpoint** saves state at a pipeline
-stage. These records support inspection and recovery mechanisms implemented by
-the caller or workflow.
+preparation, reflection, curation, and optionally evaluation. Callers compose
+these steps through the resource interface; `cookbook/resource_ace.py` is an example.
 
 ### Workspace and installation
 
@@ -336,7 +359,7 @@ where an agent performs tasks. Specify which meaning applies when using the word
 configuration layout. It is a separate action from generating a reflection,
 committing a curation epoch, or evaluating a candidate.
 
-Source: [learning contracts](thearc/learning/ace/pipeline.py),
+Source: [learning contracts](thearc/learning/curation/models.py),
 [assessments](thearc/learning/curation/assessments.py),
 [epochs](thearc/learning/curation/epochs.py),
 [evaluation](thearc/learning/ace/evaluation.py).

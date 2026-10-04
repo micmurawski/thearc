@@ -61,7 +61,7 @@ jobs:
           python -m venv "$RUNNER_TEMP/release-smoke"
           "$RUNNER_TEMP/release-smoke/bin/python" -m pip install dist/*.whl
           "$RUNNER_TEMP/release-smoke/bin/python" -m pip check
-          "$RUNNER_TEMP/release-smoke/bin/python" -I -c 'from importlib.resources import files; from thearc import MetaAgent; from thearc.learning import SessionStore; from thearc.learning.curation import create_curator; from thearc.learning.reflection import create_reflector; assert MetaAgent(name="smoke").name == "smoke"; assert all(files("thearc.flow").joinpath(asset).is_file() for asset in ("viz.css", "viz.js"))'
+          "$RUNNER_TEMP/release-smoke/bin/python" -I -c 'from importlib.resources import files; from thearc import MetaAgent; from thearc.resources import SessionStore, Curator, Reflector; assert MetaAgent(name="smoke").name == "smoke"; assert all(files("thearc.flow").joinpath(asset).is_file() for asset in ("viz.css", "viz.js"))'
           cd "$RUNNER_TEMP"
           "$RUNNER_TEMP/release-smoke/bin/thearc" --help
       - uses: actions/upload-artifact@v4

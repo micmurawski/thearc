@@ -2,17 +2,14 @@
 
 import json
 from pathlib import Path
-from typing import get_args
 
 import click
 
-from thearc.learning.ace.pipeline import Reflection
-from thearc.learning.curation.engine import run_curation
 from thearc.learning.curation.epochs import epoch_history, load_epoch
-from thearc.learning.curation.factory import BUILTIN_CURATORS, create_curator
-from thearc.learning.reflection.engine import ReflectionError, ReflectorConfig
-from thearc.learning.sessions.models import Harness
+from thearc.learning.reflection.cli import IMPLEMENTATIONS, load_agent, runner_for
+from thearc.learning.reflection.runtime import ReflectionError
 from thearc.models import MetaAgent
+from thearc.resources import Curator, Reflection
 
 
 @click.group()
@@ -30,40 +27,35 @@ def _summary(epoch):
 
 
 @curation.command("run")
-@click.option("--agent", "agent_path", type=click.Path(exists=True, path_type=Path), required=True,
-              help="Baseline MetaAgent JSON or canonical workspace.")
-@click.option("--reflections", type=click.Path(exists=True, path_type=Path), required=True,
-              help="One reflection.json or directory containing reflection.json files.")
+@click.option("--agent", "agent_path", type=click.Path(exists=True, path_type=Path), required=True)
+@click.option("--reflections", type=click.Path(exists=True, path_type=Path), required=True)
+@click.option("--prompt-file", type=click.Path(exists=True, dir_okay=False, path_type=Path), required=True)
 @click.option("--output", type=click.Path(path_type=Path), required=True, help="Epoch history root.")
 @click.option("--model", required=True)
-@click.option("--backend", type=click.Choice([*BUILTIN_CURATORS, "custom"]), required=True,
-              help="Explicit curation runtime; independent of source-session format. No default.")
-@click.option("--runner", help="Custom backend only: trusted Python callable, package.module:function.")
-@click.option("--runtime", type=click.Choice(list(get_args(Harness))), help="Custom backend's agent identity.")
-@click.option("--adapter-version", help="Custom backend's code/runtime version for provenance.")
+@click.option("--implementation", type=click.Choice(IMPLEMENTATIONS), required=True)
+@click.option("--runner", help="Custom implementation: trusted package.module:function.")
 @click.option("--result-version")
 @click.option("--timeout", type=click.FloatRange(min=1), default=300)
-def run_command(agent_path, reflections, output, model, backend, runner, runtime, adapter_version,
+def run_command(agent_path, reflections, prompt_file, output, model, implementation, runner,
                 result_version, timeout):
-    """Invoke the selected runtime, validate edits, and commit. Uses model quota."""
+    """Curate saved Reflection artifacts and commit a validated epoch. Uses model quota."""
     try:
-        if any(source.resolve() == output.resolve() or source.resolve() in output.resolve().parents
-               for source in (agent_path, reflections) if source.is_dir()):
-            raise ValueError("Output must be outside input directories")
-        agent = (MetaAgent.from_workspace(agent_path) if agent_path.is_dir()
-                 else MetaAgent.model_validate_json(agent_path.read_text()))
+        if any(source.resolve() == output.resolve() or
+               (source.is_dir() and source.resolve() in output.resolve().parents)
+               for source in (agent_path, reflections, prompt_file)):
+            raise ValueError("Output must be outside input paths")
         paths = sorted(reflections.rglob("reflection.json")) if reflections.is_dir() else [reflections]
         if not paths:
             raise ValueError("No reflection.json artifacts found")
-        findings = [Reflection.model_validate_json(path.read_text()) for path in paths]
-        curator = create_curator(backend, ReflectorConfig(model=model, timeout_seconds=timeout),
-                                 runner=runner, runtime=runtime, adapter_version=adapter_version)
-        epoch = run_curation(
-            agent, findings, curator,
-            output=output, result_version=result_version,
-        )
-        click.echo(json.dumps(_summary(epoch), indent=2))
-    except (ValueError, OSError, KeyError, ReflectionError) as exc:
+        findings = [Reflection.load(path) for path in paths]
+        curator = Curator(implementation=implementation, model=model, timeout_seconds=timeout,
+                          runner=runner_for(implementation, runner))
+        result = curator.curate(prompt_file.read_text(), findings, agent=load_agent(agent_path),
+                                output=output, result_version=result_version)
+        from thearc.resources.immutable import thaw
+
+        click.echo(json.dumps(_summary(thaw(result.epoch)), indent=2))
+    except (ValueError, TypeError, OSError, KeyError, ImportError, AttributeError, ReflectionError) as exc:
         raise click.ClickException(str(exc)) from exc
 
 

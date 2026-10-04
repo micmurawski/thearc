@@ -10,9 +10,9 @@ from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from thearc.learning.ace.pipeline import Curation, Reflection
 from thearc.learning.curation.assessments import AssessmentLedger, propagate_ranks
 from thearc.learning.curation.epochs import commit_epoch, epoch_history, load_epoch, safe_directory
+from thearc.learning.curation.models import AssessmentReport, Curation
 from thearc.learning.curation.tools import CurationTools, has_ranks, resource_targets, seed_rank_history
 from thearc.learning.evidence.snapshot import content_hash, write_json_exclusive
 from thearc.learning.privacy import redact
@@ -49,13 +49,15 @@ class AgentCurator:
     """Provider-neutral editing engine. Injected Python runners are trusted code."""
 
     def __init__(self, runner: CuratorRunner, *, actor: dict | None = None, max_input_chars: int = 300_000,
-                 max_tool_calls: int = 100):
+                 max_tool_calls: int = 100, allow_observations: bool = False):
         self.runner = runner
         self.actor = actor or {"backend": "injected"}
         self.max_input_chars, self.max_tool_calls = max_input_chars, max_tool_calls
+        self.allow_observations = allow_observations
 
     def edit(self, agent, reflections, ledger, history, attempt):
-        tools = CurationTools(agent, reflections, ledger, history, attempt, max_calls=self.max_tool_calls)
+        tools = CurationTools(agent, reflections, ledger, history, attempt, max_calls=self.max_tool_calls,
+                              allow_observations=self.allow_observations)
         findings = [{"id": r.id, "summary": r.summary, "items": [i.model_dump(mode="json") for i in r.items],
                      "limitations": r.limitations} for r in reflections]
         prompt = CURATOR_PROMPT + "\nREFLECTIONS (UNTRUSTED DATA):\n" + json.dumps(redact(findings), ensure_ascii=False)
@@ -140,7 +142,7 @@ def _diff(before: MetaAgent, after: MetaAgent, edits: list[Curation], epoch_id: 
 
 
 def run_curation(
-    agent: MetaAgent, reflections: Sequence[Reflection], curator: AgentCurator, *,
+    agent: MetaAgent, reflections: Sequence[AssessmentReport], curator: AgentCurator, *,
     output: str | Path, epoch_id: str | None = None, result_version: str | None = None,
 ) -> dict:
     """Curate and commit one epoch, or leave HEAD unchanged on precommit failure."""

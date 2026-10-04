@@ -32,8 +32,8 @@ ends with an adapted configuration—using ordinary Python calls, without a trac
 | Choose and configure a runtime | [Runtime support](reference/runtimes.md) |
 
 The **source harness**, **reflection/curation runtime**, and **installation target**
-are separate choices for evidence-based reflection. Native handoff reflection
-continues a session within its original runtime.
+are separate choices for evidence-based reflection. Handoff uses a native fork where supported, or translates selected history into
+the reflector runtime. See the resource guide for current conversion support.
 
 These pages describe current behavior. Design proposals and experiment reports
 are kept outside the user documentation; see [development](development/index.md).

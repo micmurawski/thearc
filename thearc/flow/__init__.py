@@ -58,11 +58,6 @@ class Flow(BaseNode):
     def _run(self,shared): p=self.prep(shared); o=self._orch(shared); return self.post(shared,p,o)
     def post(self,shared,prep_res,exec_res): return exec_res
 
-class BatchFlow(Flow):
-    def _run(self,shared):
-        pr=self.prep(shared) or []
-        for bp in pr: self._orch(shared,{**self.params,**bp})
-        return self.post(shared,pr,None)
 
 class AsyncNode(Node):
     async def prep_async(self,shared): pass
@@ -94,15 +89,3 @@ class AsyncFlow(Flow,AsyncNode):
         return last_action
     async def _run_async(self,shared): p=await self.prep_async(shared); o=await self._orch_async(shared); return await self.post_async(shared,p,o) # noqa: E501
     async def post_async(self,shared,prep_res,exec_res): return exec_res
-
-class AsyncBatchFlow(AsyncFlow,BatchFlow):
-    async def _run_async(self,shared):
-        pr=await self.prep_async(shared) or []
-        for bp in pr: await self._orch_async(shared,{**self.params,**bp})
-        return await self.post_async(shared,pr,None)
-
-class AsyncParallelBatchFlow(AsyncFlow,BatchFlow):
-    async def _run_async(self,shared): 
-        pr=await self.prep_async(shared) or []
-        await asyncio.gather(*(self._orch_async(shared,{**self.params,**bp}) for bp in pr))
-        return await self.post_async(shared,pr,None)

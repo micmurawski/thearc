@@ -2,21 +2,8 @@
 
 import pytest
 
-from thearc import MetaAgent
-from thearc.learning import (
-    AceConfig,
-    AcePipeline,
-    AceQuery,
-    Event,
-    HistorySessionMaterializer,
-    HistorySessionSelector,
-    Reflection,
-    SearchFilters,
-    SessionBundle,
-    SessionStore,
-    SourceReference,
-)
-from thearc.learning.reflection.flow import build_reflection_flow
+from thearc.learning.sessions.models import Event, SearchFilters, SourceReference
+from thearc.learning.sessions.store import SessionStore
 
 
 @pytest.fixture
@@ -43,7 +30,6 @@ def test_session_iteration_complete_filtered_and_same_order(many_sessions):
     filters = SearchFilters(source_ids=["main"], harnesses=["pi"], session_ids=["s00001", "s00002", "s01009"])
     assert [s.id for s in store.iter_sessions(filters)] == ["s00001"]
     assert list(store.iter_sessions(SearchFilters(source_ids=["absent"]))) == []
-    assert len(HistorySessionSelector(store).select(AceQuery(filters=SearchFilters(source_ids=["main"])))) == 1005
 
 
 def test_session_iterator_does_not_decode_entire_selection(many_sessions, monkeypatch):
@@ -62,25 +48,6 @@ def test_session_iterator_does_not_decode_entire_selection(many_sessions, monkey
     iterator.close()
 
 
-def test_standard_ace_and_reflection_flow_do_not_cap_at_1000(many_sessions):
-    class Materializer:
-        def materialize(self, session, config):
-            return SessionBundle(session=session)
-
-    class Reflector:
-        def reflect(self, batch, agent):
-            return Reflection(id=f"reflection-{batch[0].session.id}", session_ids=[b.session.id for b in batch])
-
-    result = AcePipeline(HistorySessionSelector(many_sessions), Materializer(), Reflector(),
-                         config=AceConfig(sessions_per_reflection=256)).run(
-        MetaAgent(name="test"), reflection_only=True,
-    )
-    assert len(result.sessions) == 1010
-    assert [len(r.session_ids) for r in result.reflections] == [256, 256, 256, 242]
-    # Isolate the standalone flow's selection node without inference/materialization.
-    shared = {"history": many_sessions, "source_ids": ["main"]}
-    build_reflection_flow().start_node._run(shared)
-    assert len(shared["sessions"]) == 1005
 
 
 @pytest.mark.parametrize("timestamps", [
@@ -112,15 +79,6 @@ def test_native_event_order_and_task_outcome_selection(tmp_path, timestamps):
         store._refresh_projections()
         assert [e.id for e in store.iter_events()] == ["z", "y", "x", "w", "v", "a"]
         assert [e.id for e in store.iter_events(SearchFilters(roles=["assistant"]))] == ["y", "x", "a"]
-        bundle = HistorySessionMaterializer(store).materialize(
-            store.get_session("s"), AceConfig(max_events_per_session=2),
-        )
-        assert [e.text for e in bundle.events] == ["Original task", "Final answer"]
-        assert set(bundle.omitted_event_ids) == {"y", "x", "w", "v"}
-        larger = HistorySessionMaterializer(store).materialize(
-            store.get_session("s"), AceConfig(max_events_per_session=5),
-        )
-        assert [e.id for e in larger.events] == ["z", "y", "x", "w", "a"]
 
 
 def test_artifact_order_is_deterministic_and_native_offsets_do_not_interleave(tmp_path):

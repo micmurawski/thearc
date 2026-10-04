@@ -11,12 +11,6 @@ from thearc.models.agent import (
 from thearc.models.markdown import MarkdownDocument, MarkdownSection
 from thearc.models.ranks import Ranks
 from thearc.models.schemas import CommandDefinition, SkillDefinition, SkillMetadata
-from thearc.models.session import (
-    SessionCluster,
-    SessionLog,
-    SessionSearchEngine,
-    SessionSearchResult,
-)
 from thearc.models.strategies import (
     AgentFormatStrategy,
     AntigravityStrategy,
@@ -48,10 +42,6 @@ __all__ = [
     "ResourceTarget",
     "SectionChange",
     "SectionDiffResult",
-    "SessionCluster",
-    "SessionLog",
-    "SessionSearchEngine",
-    "SessionSearchResult",
     "Skill",
     "SkillDefinition",
     "SkillMetadata",
