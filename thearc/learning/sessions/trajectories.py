@@ -49,6 +49,11 @@ def _stream(event: Event) -> tuple:
 
 
 def _record(event: Event) -> tuple:
+    if event.harness == "opencode":
+        # One export line contains many messages; only parts of the same message
+        # belong to one prompt.
+        message_pointer = "/".join(event.raw_pointer.split("/")[:3])
+        return (*_stream(event), event.reference.byte_offset, message_pointer)
     return (*_stream(event), event.reference.byte_offset, event.reference.line)
 
 

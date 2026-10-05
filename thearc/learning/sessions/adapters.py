@@ -97,7 +97,7 @@ class BaseAdapter:
             parent_run_id=meta.get("parent_run_id") or (identity(session, "main") if meta.get("agent") else None),
             native_id=data.get("id") or data.get("uuid"),
             parent_native_id=data.get("parentId"),
-            timestamp=timestamp(data.get("timestamp")),
+            timestamp=timestamp(fields.pop("timestamp", data.get("timestamp"))),
             native_type=data.get("type"),
             reference=ref,
             raw=data,
@@ -144,6 +144,64 @@ class BaseAdapter:
                 fields.update(kind="unknown")
             block_ref = ref.model_copy(update={"json_pointer": pointer if string_content else f"{pointer}/{index}"})
             result.append(self.event(source, block_ref, data, meta, **fields))
+        return result
+
+
+class OpenCodeAdapter(BaseAdapter):
+    """Lossless OpenCode export envelopes, stored as one JSON object per line."""
+
+    version = "opencode-2"
+
+    def normalize(self, source, ref, data, metadata):
+        info = data.get("info", {})
+        if not isinstance(info, dict) or not info.get("id") or not isinstance(data.get("messages"), list):
+            raise ValueError("Expected OpenCode export with info and messages")
+        metadata.update(session=info["id"], cwd=info.get("location", {}).get("directory", info.get("directory")))
+        result = [self.event(source, ref, info, metadata, kind="metadata", raw_pointer="/info",
+                             timestamp=info.get("time", {}).get("created"))]
+        for m, message in enumerate(data["messages"]):
+            if not isinstance(message, dict):
+                raise TypeError("Expected OpenCode message with info")
+            native = "type" in message
+            message_info = message if native else message.get("info", {})
+            role = message.get("type") if native else message_info.get("role")
+            content_key = "content" if native else "parts"
+            parts = message.get(content_key) if role == "assistant" or not native else [message]
+            if not isinstance(parts, list):
+                raise TypeError("Expected OpenCode message parts")
+            for p, part in enumerate(parts):
+                if not isinstance(part, dict):
+                    raise TypeError("Expected OpenCode part object")
+                pointer = f"/messages/{m}"
+                if role == "assistant" or not native:
+                    pointer += f"/{content_key}/{p}"
+                part_ref = ref.model_copy(update={"json_pointer": pointer})
+                fields = {"role": role if role in {"assistant", "user", "system"} else None,
+                          "kind": "metadata", "text": "",
+                          "raw_pointer": part_ref.json_pointer,
+                          "timestamp": message_info.get("time", {}).get("created")}
+                if part.get("type") in {"text", "reasoning", "user", "system"}:
+                    fields.update(kind="thinking" if part["type"] == "reasoning" else "message",
+                                  text=part.get("text", ""))
+                elif part.get("type") == "tool":
+                    state = part.get("state", {})
+                    name = part.get("name") if native else part.get("tool")
+                    fields.update(kind="tool_call", tool_name=name,
+                                  action_kind=action(name), call_id=part.get("id") if native else part.get("callID"),
+                                  arguments=state.get("input", {}), text=json.dumps(state.get("input", {})))
+                    result.append(self.event(source, part_ref, part, metadata, subrecord=len(result), **fields))
+                    if state.get("status") not in {"completed", "error"}:
+                        continue
+                    output = text_content(state.get("content")) if native else state.get("output", "")
+                    error = state.get("error")
+                    if isinstance(error, dict):
+                        error = error.get("message", json.dumps(error))
+                    exit_code = state.get("metadata", {}).get("exit")
+                    failed = state["status"] == "error" or (type(exit_code) is int and exit_code != 0)
+                    fields.update(kind="tool_result", role="tool", arguments=None,
+                                  status="failure" if failed else "success",
+                                  text=str(error or output))
+                result.append(self.event(source, part_ref, part, metadata, subrecord=len(result), **fields))
         return result
 
 
@@ -215,6 +273,29 @@ class ClaudeAdapter(BaseAdapter):
 
 
 class CodexAdapter(BaseAdapter):
+    version = "codex-2"
+
+    @staticmethod
+    def result_status(output):
+        """Read explicit exit codes from tool envelopes, never error words in arbitrary output."""
+        values = output if isinstance(output, list) else [output]
+        codes = []
+        for value in values:
+            if isinstance(value, dict) and value.get("type") in {"text", "input_text", "output_text"}:
+                value = value.get("text")
+            if isinstance(value, str):
+                try:
+                    value = json.loads(value)
+                except ValueError:
+                    continue
+            if isinstance(value, dict) and "exit_code" in value:
+                codes.append(value["exit_code"])
+        if any(type(code) is int and code != 0 for code in codes):
+            return "failure"
+        if codes and all(type(code) is int and code == 0 for code in codes):
+            return "success"
+        return None
+
     def discover(self, source):
         yield from sorted(source.root.rglob("rollout-*.jsonl"))
 
@@ -269,6 +350,7 @@ class CodexAdapter(BaseAdapter):
                         role="tool",
                         call_id=payload.get("call_id"),
                         text=output if isinstance(output, str) else json.dumps(output),
+                        status=self.result_status(output),
                     )
                 ]
         kind = "compaction" if data.get("type") == "compacted" else "metadata"
@@ -386,6 +468,7 @@ class AntigravityAdapter(BaseAdapter):
 
 
 ADAPTERS: dict[str, HistoryAdapter] = {
+    "opencode": OpenCodeAdapter(),
     "pi": PiAdapter(),
     "claude": ClaudeAdapter(),
     "codex": CodexAdapter(),

@@ -47,6 +47,7 @@ nav:
       - Curate changes: guides/curation.md
       - Merge adaptations: guides/merging.md
       - More examples: examples/index.md
+      - Graphify adaptation recipes: examples/graphify.md
   - Reference:
       - Runtime support and setup: reference/runtimes.md
       - CLI: reference/cli.md

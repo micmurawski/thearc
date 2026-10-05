@@ -16,11 +16,16 @@ thearc sessions --index artifacts/sessions.sqlite list
 thearc sessions --index artifacts/sessions.sqlite search "graphify"
 ```
 
-`YOUR_SOURCE` is `antigravity`, `claude`, `codex`, or `pi`. Source IDs distinguish
+`YOUR_SOURCE` is `antigravity`, `claude`, `codex`, `pi`, or `opencode`. Source IDs distinguish
 collections; canonical session IDs are scoped to sources. The provider's native
 session ID is not interchangeable with the canonical ID returned by `list`.
 The CLI `index` command registers a source and synchronizes all registered sources.
 Use `sync` to refresh them later.
+
+For OpenCode, the index accepts native export envelopes (`info` and `messages`)
+as JSONL: one complete export object per line. The prompt collector creates these
+alongside the original JSON exports. Tool inputs, outputs, errors, and reasoning
+remain available in the normalized events.
 
 Python ingestion can target just one source:
 

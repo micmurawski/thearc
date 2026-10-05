@@ -17,7 +17,7 @@ def sessions(ctx, index):
 
 
 @sessions.command("index")
-@click.option("--source", required=True, type=click.Choice(["pi", "codex", "claude", "antigravity"]))
+@click.option("--source", required=True, type=click.Choice(["pi", "codex", "claude", "antigravity", "opencode"]))
 @click.option("--format", "source_format", type=click.Choice(["native", "dataclaw"]), default="native")
 @click.option("--root", required=True, type=click.Path(exists=True, file_okay=False, path_type=Path))
 @click.option("--source-id", help="Stable identity for this source; defaults to harness and absolute root.")
@@ -47,7 +47,7 @@ def sync_command(index):
 @sessions.command("search")
 @click.argument("text")
 @click.option("--mode", type=click.Choice(["literal", "lexical"]), default="literal")
-@click.option("--harness", multiple=True, type=click.Choice(["pi", "codex", "claude", "antigravity"]))
+@click.option("--harness", multiple=True, type=click.Choice(["pi", "codex", "claude", "antigravity", "opencode"]))
 @click.option("--kind", multiple=True)
 @click.option("--action", multiple=True)
 @click.option("--ignore-case", is_flag=True)
