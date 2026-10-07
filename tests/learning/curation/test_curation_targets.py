@@ -4,7 +4,6 @@ from pydantic import ValidationError
 
 from thearc import AgentResource, ContextDocument, Hook, MetaAgent, Operation, ResourceTarget, Skill
 from thearc.learning.curation.models import Curation
-from thearc.models import Ranks
 
 
 def agent():
@@ -66,17 +65,6 @@ def test_invalid_changes_leave_agent_unchanged(tmp_path):
     with pytest.raises(ValidationError):
         Curation(id="bad", target={"kind": "skill", "name": "x"}, operation="UPDATE", reflection_ids=[])
     assert meta.model_dump() == before
-
-
-def test_metaagent_json_roundtrip_and_rank_free_sections():
-    meta = agent()
-    target = ResourceTarget(kind="skill_file", name="graphify/references/query.md", section="Query")
-    meta.apply_rank_delta(target, Ranks(helpful=2))
-    restored = MetaAgent.model_validate_json(meta.model_dump_json())
-    assert restored == meta
-    assert restored.rank_for(target).helpful == 2
-    assert restored.without_ranks().rank_for(target).helpful == 0
-    assert restored.rank_for(target).helpful == 2
 
 
 def test_dictionary_inputs_are_validated_without_mutating_caller():

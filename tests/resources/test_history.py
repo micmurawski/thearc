@@ -59,9 +59,22 @@ def test_rendering_and_conversion(history, tmp_path):
     assert path.is_file()
     with pytest.raises(FileExistsError):
         history.to_codex().save(path)
-    unsupported = Session.from_events([event(0, kind="metadata", text="unsupported")])
+    unsupported = Session.from_events([event(0, kind="unknown", text="unsupported")])
     with pytest.raises(UnsupportedConversion):
         unsupported.to_codex()
+
+
+def test_metadata_is_skipped_and_reported_not_replayed(history):
+    events = [e.model_dump() for e in history.events]
+    attachment = event(99, kind="metadata", text="").model_dump()
+    attachment["session_id"] = events[0]["session_id"]
+    mixed = Session.from_events([events[0], attachment, *events[1:]])
+    for export in (mixed.to_codex(), mixed.to_claude()):
+        assert "e99" not in export.event_ids
+        assert export.transformations[0].startswith("1 metadata record(s)")
+        assert export.text == (history.to_codex() if export.format == "codex" else history.to_claude()).text
+    text = mixed.to_markdown()
+    assert '"e99"' not in text and "1 metadata record(s) without readable content omitted" in text
     nested = Session.from_events([event(0, text="```json\n{}\n```")])
     assert "````text" in nested.to_markdown()
 
@@ -74,6 +87,17 @@ def test_detached_search_scope_and_citations(history):
     assert history.split_into_trajectories()[1].search("SyntaxError").count() == 0
     assert history.search(status="failure", tool_name="shell").count() == 1
     assert "cached=0" in repr(history.search("Tests"))
+
+
+@pytest.mark.parametrize("text", ["Check the constructor first", ""])
+def test_foreign_thinking_is_portable_text_not_native_reasoning(text):
+    history = Session.from_events([event(0, kind="thinking", text=text)])
+    item = json.loads(history.to_codex().text)["payload"]
+    assert item["type"] == "message" and item["role"] == "assistant"
+    assert "[Historical thinking record]" in item["content"][0]["text"]
+    assert (text or "No readable thinking text") in item["content"][0]["text"]
+    with pytest.raises(UnsupportedConversion, match="signed content"):
+        history.to_claude()
 
 
 def test_store_pins_lazy_artifacts_and_result_membership(tmp_path):
@@ -117,3 +141,10 @@ def test_input_mutations_do_not_change_history():
     session = Session.from_events([supplied])
     supplied.arguments["nested"].append(2)
     assert session.events[0].arguments["nested"] == (1,)
+
+
+def test_markdown_prints_tool_arguments_once():
+    call = event(0, kind="tool_call", tool_name="Bash", call_id="c", arguments={"command": "ls"},
+                 text='{"command": "ls"}')
+    text = Session.from_events([call]).to_markdown()
+    assert text.count('"command"') == 1

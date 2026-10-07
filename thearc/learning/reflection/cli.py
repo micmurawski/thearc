@@ -2,6 +2,7 @@
 
 import importlib
 import json
+from contextlib import ExitStack
 from pathlib import Path
 
 import click
@@ -9,6 +10,7 @@ import click
 from thearc.learning.reflection.runtime import ReflectionError
 from thearc.models import MetaAgent
 from thearc.resources import Reflection, Reflector, SessionStore
+from thearc.resources.sessions import DEFAULT_INDEX
 
 IMPLEMENTATIONS = ["codex", "claude", "antigravity", "custom"]
 
@@ -58,7 +60,8 @@ def common_options(command):
 
 
 def execute_request(*, implementation, model, prompt_file, agent_path, agent_mode, schema_path,
-                    validate_resources, runner, timeout, output, execute, history=None):
+                    validate_resources, runner, timeout, output, execute, history=None, agent=None,
+                    tool_transport=None):
     inputs = [prompt_file, agent_path, schema_path]
     destination = output.resolve()
     if any(part.is_symlink() for part in (output.absolute(), *output.absolute().parents)):
@@ -66,22 +69,39 @@ def execute_request(*, implementation, model, prompt_file, agent_path, agent_mod
     if any(p and (p.resolve() == destination or (p.is_dir() and p.resolve() in destination.parents)) for p in inputs):
         raise ValueError("Output must be outside input paths")
     reflector = Reflector(implementation=implementation, model=model,
-                          runner=runner_for(implementation, runner), timeout_seconds=timeout, artifact_dir=output)
+                          runner=runner_for(implementation, runner), timeout_seconds=timeout, artifact_dir=output,
+                          **({"tool_transport": tool_transport} if tool_transport else {}))
     prompt = prompt_file.read_text(encoding="utf-8")
-    options = {"agent": load_agent(agent_path), "agent_mode": agent_mode,
-               "output_schema": json.loads(schema_path.read_text()) if schema_path else None,
-               "validate_resources": validate_resources}
+    agent = load_agent(agent_path) or agent
+    schema = json.loads(schema_path.read_text()) if schema_path else None
+    tools = None
+    if tool_transport:
+        from thearc.resources import ReflectionTools, TaggedReflection
+
+        if agent is None:
+            raise ValueError("Reflection tools require --agent or a collector batch with an agent snapshot")
+        tools = ReflectionTools(agent=agent, evidence=history, reflection_schema=schema or TaggedReflection,
+                                output=output / "submission.json")
+        options = {"tools": tools, "agent_mode": agent_mode, "validate_resources": validate_resources}
+    else:
+        options = {"agent": agent, "agent_mode": agent_mode, "output_schema": schema,
+                   "validate_resources": validate_resources}
     prepared = reflector.prepare(prompt, **options)
     if history is not None:
         prepared["history"] = {"artifact_id": (history.session if hasattr(history, "session") else history).artifact_id,
                                "event_ids": [e.id for e in history.selected_events]}
     output.mkdir(parents=True, exist_ok=False)
-    preview = {key: value for key, value in prepared.items() if key != "agent"}
+    preview = {key: value for key, value in prepared.items() if key not in {"agent", "tools"}}
     (output / "preview.json").write_text(json.dumps(preview, ensure_ascii=False, indent=2) + "\n")
     if execute:
         result = (reflector.reflect(prompt, **options) if history is None
                   else reflector.handoff(prompt, history, **options))
-        click.echo(json.dumps({"id": result.id, "text": result.text}, ensure_ascii=False, indent=2))
+        if tools is not None:
+            findings = [item.output.model_dump(mode="json") for item in result]
+            (output / "reflections.json").write_text(json.dumps(findings, ensure_ascii=False, indent=2) + "\n")
+            click.echo(json.dumps({"accepted": len(findings), "reflections": str(output / "reflections.json")}))
+        else:
+            click.echo(json.dumps({"id": result.id, "text": result.text}, ensure_ascii=False, indent=2))
     else:
         click.echo(json.dumps({"status": "prepared", "preview": str(output / "preview.json")}))
 
@@ -89,6 +109,50 @@ def execute_request(*, implementation, model, prompt_file, agent_path, agent_mod
 @click.group()
 def reflection():
     """Reflect on an operator prompt or continue captured session history."""
+
+
+@reflection.command("serve")
+@click.option("--agent", "agent_path", required=True, type=click.Path(exists=True, path_type=Path))
+@click.option("--schema", "schema_path", type=click.Path(exists=True, dir_okay=False, path_type=Path),
+              help="JSON Schema for one reflection. Defaults to TaggedReflection.")
+@click.option("--evidence", type=click.Path(exists=True, dir_okay=False, path_type=Path),
+              help="JSON array of canonical events; alternative to --index and --session-id.")
+@click.option("--index", type=click.Path(exists=True, dir_okay=False, path_type=Path))
+@click.option("--session-id", help="Canonical indexed session ID.")
+@click.option("--trajectory", type=click.IntRange(min=0))
+@click.option("--ledger", type=click.Path(exists=True, dir_okay=False, path_type=Path),
+              help="Optional assessment ledger for current and lifetime resource ranks.")
+@click.option("--output", required=True, type=click.Path(path_type=Path), help="New submission JSON file.")
+@click.option("--max-submissions", default=3, type=click.IntRange(min=1), show_default=True)
+def serve_command(agent_path, schema_path, evidence, index, session_id, trajectory, ledger, output, max_submissions):
+    """Expose resource lookup and validated reflection submission as stdio MCP tools."""
+    from thearc.learning.curation.assessments import AssessmentLedger
+    from thearc.resources import ReflectionTools, TaggedReflection
+    from thearc.resources.reflection_mcp import serve_reflections
+
+    try:
+        if evidence is not None:
+            if index is not None or session_id is not None or trajectory is not None:
+                raise ValueError("Use --evidence or --index/--session-id, not both")
+        elif index is None or session_id is None:
+            raise ValueError("Supply --evidence or both --index and --session-id")
+        with ExitStack() as stack:
+            if evidence is not None:
+                history = json.loads(evidence.read_text(encoding="utf-8"))
+            else:
+                store = stack.enter_context(SessionStore(index))
+                history = store.get(session_id)
+                if trajectory is not None:
+                    history = history.split_into_trajectories()[trajectory]
+            tools = ReflectionTools(
+                agent=load_agent(agent_path), evidence=history,
+                reflection_schema=json.loads(schema_path.read_text()) if schema_path else TaggedReflection,
+                ledger=AssessmentLedger.model_validate_json(ledger.read_text()) if ledger else None,
+                output=output, max_submissions=max_submissions,
+            )
+            serve_reflections(tools)
+    except (ValueError, TypeError, OSError, KeyError, IndexError, ImportError, ReflectionError) as exc:
+        raise click.ClickException(str(exc)) from exc
 
 
 @reflection.command("run")
@@ -103,25 +167,83 @@ def run_command(**options):
 
 @reflection.command("handoff")
 @common_options
-@click.option("--index", required=True, type=click.Path(exists=True, dir_okay=False, path_type=Path))
-@click.option("--session-id", required=True, help="Canonical indexed session ID.")
+@click.option("--index", type=click.Path(dir_okay=False, path_type=Path), default=DEFAULT_INDEX, show_default=True)
+@click.option("--source", "sources", multiple=True, type=click.Path(exists=True, file_okay=False, path_type=Path),
+              help="Transcript directory or collector batch to register and sync first; repeatable.")
+@click.option("--session-id", "session", help="Indexed, native or collector run ID, or a unique prefix; "
+              "default: the most recent session.")
 @click.option("--trajectory", type=click.IntRange(min=0), help="Zero-based trajectory index.")
 @click.option("--through", is_flag=True, help="Include the session prefix through the selected trajectory.")
-def handoff_command(index, session_id, trajectory, through, **options):
+@click.option("--tools", "tool_transport", type=click.Choice(["host", "mcp"]),
+              help="Submit findings through ReflectionTools (built-in Codex only).")
+def handoff_command(index, sources, session, trajectory, through, tool_transport, **options):
     """Append the reflection prompt to a captured session or trajectory."""
+    from thearc.resources import Sessions
+
     try:
         if through and trajectory is None:
             raise ValueError("--through requires --trajectory")
-        if options['output'].resolve() == index.resolve():
+        if options['output'].resolve() == index.expanduser().resolve():
             raise ValueError("Output must be outside the index")
-        with SessionStore(index) as store:
-            session = store.get(session_id)
-            history = session
-            if trajectory is not None:
-                selected = session.split_into_trajectories()[trajectory]
-                history = session.through(selected) if through else selected
-            execute_request(**options, history=history)
-    except (ValueError, TypeError, OSError, KeyError, IndexError, ImportError, AttributeError, ReflectionError) as exc:
+        with Sessions.open(index) as store:
+            for source in sources:
+                store.add(source)
+            selected = store.get(session)
+            agent = store.agent(selected)
+        history = selected
+        if trajectory is not None:
+            chosen = selected.split_into_trajectories()[trajectory]
+            history = selected.through(chosen) if through else chosen
+        execute_request(**options, history=history, agent=agent, tool_transport=tool_transport)
+    except (ValueError, TypeError, OSError, KeyError, IndexError, LookupError, ImportError, AttributeError,
+            ReflectionError) as exc:
+        raise click.ClickException(str(exc)) from exc
+
+
+@reflection.command("resources")
+@click.option("--agent", "agent_path", type=click.Path(exists=True, path_type=Path),
+              help="Workspace directory or MetaAgent JSON (e.g. a batch's runs/<id>/agent-before.json).")
+@click.option("--index", type=click.Path(dir_okay=False, path_type=Path), default=DEFAULT_INDEX, show_default=True)
+@click.option("--session-id", "session", help="Use the agent recorded for this collector-batch session instead.")
+@click.option("--format", "output_format", type=click.Choice(["markdown", "json", "files"]), default="markdown",
+              show_default=True, help="files: write the agent files a reflector reads and cites into --output.")
+@click.option("--outline", is_flag=True,
+              help="Markdown: list headings with their file locations instead of full content.")
+@click.option("--ranks", is_flag=True, help="Include current ranks (and lifetime ranks when they differ).")
+@click.option("--output", type=click.Path(path_type=Path), help="Write here instead of stdout.")
+def resources_command(agent_path, index, session, output_format, outline, ranks, output):
+    """Show the agent as Markdown with every resource and section labelled by file location (and ranks)."""
+    from thearc.resources import ResourceView, Sessions
+
+    try:
+        if (agent_path is None) == (session is None):
+            raise ValueError("Supply exactly one of --agent or --session-id")
+        if agent_path is not None:
+            agent = load_agent(agent_path)
+        else:
+            with Sessions.open(index) as store:
+                agent = store.agent(store.get(session))
+            if agent is None:
+                raise ValueError("That session has no recorded agent; use --agent")
+        if output_format == "files":
+            if output is None:
+                raise ValueError("--format files requires --output DIRECTORY")
+            agent.files().write(output)
+            click.echo(f"Wrote {output}")
+            return
+        view = ResourceView(agent)
+        if output_format == "markdown":
+            text = view.catalog_markdown(include_ranks=ranks, include_content=not outline,
+                                         title=f"Agent: {agent.name}")
+        else:
+            text = json.dumps(view.catalog(include_ranks=ranks), ensure_ascii=False, indent=2) + "\n"
+        if output is None:
+            click.echo(text, nl=False)
+        else:
+            with output.open("x", encoding="utf-8") as stream:
+                stream.write(text)
+            click.echo(f"Wrote {output}")
+    except (ValueError, TypeError, OSError, LookupError) as exc:
         raise click.ClickException(str(exc)) from exc
 
 

@@ -10,6 +10,7 @@ from thearc.models.agent import (
 )
 from thearc.models.markdown import MarkdownDocument, MarkdownSection
 from thearc.models.ranks import Ranks
+from thearc.models.references import AgentFiles, FileSpan
 from thearc.models.schemas import CommandDefinition, SkillDefinition, SkillMetadata
 from thearc.models.strategies import (
     AgentFormatStrategy,
@@ -23,6 +24,7 @@ from thearc.models.tracker import IndexedSection, MDFile, SectionChange, Section
 
 __all__ = [
     "MCP",
+    "AgentFiles",
     "AgentFormatStrategy",
     "AgentResource",
     "AntigravityStrategy",
@@ -30,6 +32,7 @@ __all__ = [
     "CodexStrategy",
     "CommandDefinition",
     "ContextDocument",
+    "FileSpan",
     "Hook",
     "IndexedSection",
     "MDFile",

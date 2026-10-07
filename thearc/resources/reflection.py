@@ -1,4 +1,4 @@
-"""Prompt-only reflection and exact historical handoff with caller-defined outputs."""
+"""Reflection from prompts or history, with typed output or validated tool submission."""
 
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ from thearc.learning.reflection.runtime import (
 from thearc.learning.sessions.models import Event
 from thearc.models import MetaAgent
 
-from .formats import codex_items, native_control
+from .formats import codex_items, provenance_only
 from .history import History, Session, SessionView
 from .immutable import freeze, thaw
 from .schemas import ResourceAssessmentReport, native_output_schema, parse_output, schema_for
@@ -95,18 +95,47 @@ class Reflector:
 
     A supplied runner is trusted application code with signature (prompt, schema,
     config). Native history and activation use the verified built-in adapter only.
+    With ReflectionTools, reflect/handoff return the accepted list of Reflections.
+    Without tools they return a single Reflection containing the final response.
+    tool_transport="mcp" owns a temporary MCP endpoint; "host" uses scoped host tools.
     """
 
-    def __init__(self, *, implementation, model, runner=None, artifact_dir=None, **settings):
+    def __init__(self, *, implementation, model, runner=None, artifact_dir=None, tool_transport="host", **settings):
         if implementation not in {"codex", "claude", "antigravity", "custom"}:
             raise ValueError(f"Unknown implementation: {implementation}")
+        if tool_transport not in {"host", "mcp"}:
+            raise ValueError("tool_transport must be host or mcp")
+        if tool_transport == "mcp" and (implementation != "codex" or runner is not None):
+            raise ReflectionError("capability", "Managed MCP reflection requires the built-in Codex adapter")
         self.implementation = implementation
+        self.tool_transport = tool_transport
         self.config = ExecutionConfig(model=model, **settings)
         self.runner = runner
         self.artifact_dir = Path(artifact_dir) if artifact_dir is not None else None
 
     def prepare(self, prompt, *, agent=None, agent_mode="reference", output_schema=None,
-                validate_resources=False):
+                validate_resources=False, tools=None, include_catalog=True):
+        """``include_catalog=False`` is for callers whose prompt already presents the agent."""
+        if self.tool_transport == "mcp" and tools is None:
+            raise ValueError("MCP reflection requires ReflectionTools")
+        if tools is not None:
+            from .reflection_tools import ReflectionTools
+
+            if not isinstance(tools, ReflectionTools):
+                raise TypeError("tools must be ReflectionTools")
+            if output_schema is not None or agent_mode != "reference":
+                raise ValueError("ReflectionTools owns the reflection schema and evaluated reference agent")
+            if agent is not None:
+                if not isinstance(agent, MetaAgent):
+                    raise TypeError("agent must be a MetaAgent")
+                if agent.without_ranks() != tools.agent:
+                    raise ValueError("ReflectionTools was prepared for a different MetaAgent")
+            if tools.accepted:
+                raise ValueError("Use a new ReflectionTools instance for each run")
+            if self.implementation != "codex" or self.runner is not None:
+                raise ReflectionError("capability", "In-process reflection tools require built-in Codex; "
+                                      "use the reflection MCP server with other harnesses")
+            agent = tools.agent
         if not isinstance(prompt, str) or not prompt.strip():
             raise ValueError("A nonempty prompt is required")
         if agent_mode not in {"reference", "active"}:
@@ -116,7 +145,7 @@ class Reflector:
         if agent is not None and not isinstance(agent, MetaAgent):
             raise TypeError("agent must be a MetaAgent")
         snapshot = agent.without_ranks() if agent is not None else None
-        schema = schema_for(output_schema)
+        schema = tools.schema if tools is not None else schema_for(output_schema)
         if validate_resources and schema is None:
             raise ValueError("Resource validation requires an output schema")
         active = ""
@@ -131,15 +160,18 @@ class Reflector:
             active = "\n\n".join([doc.content for doc in snapshot.context.values()] +
                                    [r.content for r in snapshot.resources.values()])
         effective = prompt
-        if snapshot is not None:
+        if tools is not None:
+            effective += "\n\n" + tools.instructions
+        elif snapshot is not None and include_catalog:
             effective += "\n\nAGENT RESOURCE CATALOG (reference data):\n" + json.dumps(
                 resource_catalog(snapshot), ensure_ascii=False,
             )
-        if schema is not None:
+        if schema is not None and tools is None:
             effective += "\n\nReturn JSON matching this JSON Schema:\n" + json.dumps(schema, ensure_ascii=False)
         if len(effective) + len(active) > self.config.max_input_chars:
             raise ReflectionError("input_too_large", "Request exceeds input limit; select a smaller input explicitly")
         return {"prompt": effective, "schema": schema, "active_instructions": active,
+                **({"tools": tools} if tools is not None else {}),
                 "agent": snapshot, "manifest": {
                     "version": 1, "implementation": self.implementation, "settings": self.config.model_dump(),
                     "agent_mode": agent_mode,
@@ -149,25 +181,30 @@ class Reflector:
                     "configuration_provenance": "supplied snapshot; historical installation/loading is unverified",
                     "schema_sha256": _hash(schema) if schema is not None else None,
                     "prompt_sha256": _hash(effective),
+                    **({"tool_transport": self.tool_transport} if tools is not None else {}),
                 }}
 
-    def reflect(self, prompt, *, agent=None, agent_mode="reference", output_schema=None, validate_resources=False):
+    def reflect(self, prompt, *, agent=None, agent_mode="reference", output_schema=None, validate_resources=False,
+                tools=None, include_catalog=True):
         prepared = self.prepare(prompt, agent=agent, agent_mode=agent_mode, output_schema=output_schema,
-                                validate_resources=validate_resources)
+                                validate_resources=validate_resources, tools=tools,
+                                include_catalog=include_catalog)
         return self._execute(prepared, output_schema, validate_resources)
 
     def handoff(self, prompt, history, *, agent=None, agent_mode="reference", output_schema=None,
-                validate_resources=False):
+                validate_resources=False, tools=None):
         if not isinstance(history, History):
             raise TypeError("handoff requires a Session, Trajectory or SessionView")
         prepared = self.prepare(prompt, agent=agent, agent_mode=agent_mode, output_schema=output_schema,
-                                validate_resources=validate_resources)
+                                validate_resources=validate_resources, tools=tools)
         if self.implementation != "codex" or self.runner is not None:
             raise ReflectionError("capability", "Historical handoff requires the built-in Codex adapter")
         session = history if isinstance(history, Session) else history.session
         selected = history.selected_events
         if not selected:
             raise ValueError("Cannot hand off empty history")
+        if tools is not None and not tools.matches_history(history):
+            raise ValueError("ReflectionTools evidence must match the handoff history")
         streams = {(e.run_id, e.reference.path, e.reference.generation) for e in selected}
         if len(streams) != 1:
             raise ReflectionError("capability", "Handoff across multiple streams requires a known causal order")
@@ -184,6 +221,10 @@ class Reflector:
         native = (isinstance(history, (Session, SessionView)) and session._archive is not None
                   and session.metadata.harness == "codex" and turn)
         if native:
+            if tools is not None and self.tool_transport == "host":
+                raise ReflectionError("capability", "The pinned Codex fork API cannot register host tools. "
+                                      "Hand off a Trajectory for explicit history import, or attach the MCP server "
+                                      "with tool_transport='mcp'.")
             if any(e.parent_run_id for e in selected):
                 raise ReflectionError("capability", "Native prefix handoff requires one unambiguous main stream")
             # Verify source bytes still contain the captured records before using a mutable native locator.
@@ -210,8 +251,8 @@ class Reflector:
                                       "use a larger explicit selection or an evidence prompt")
             prepared["manifest"]["mode"] = "import"
             prepared["manifest"]["conversion"] = {
-                "model_event_ids": [e.id for e in selected if not native_control(e.model_dump())],
-                "lifecycle_event_ids": [e.id for e in selected if native_control(e.model_dump())],
+                "model_event_ids": [e.id for e in selected if not provenance_only(e.model_dump())],
+                "lifecycle_event_ids": [e.id for e in selected if provenance_only(e.model_dump())],
                 "lifecycle_storage": "captured artifact and history.json; not model-visible conversation items",
             }
         return self._execute(prepared, output_schema, validate_resources)
@@ -220,15 +261,26 @@ class Reflector:
         if self.runner is not None:
             return self.runner(prepared["prompt"], prepared["schema"], self.config)
         if self.implementation == "codex":
+            from contextlib import nullcontext
+
             from thearc.learning.reflection.providers.codex import _run_isolated_sdk
 
-            return _run_isolated_sdk(
-                prepared["prompt"], native_output_schema(prepared["schema"]), self.config, instructions=INSTRUCTIONS,
-                fork_from=prepared.get("fork_from"),
-                on_fork=lambda value: receipt(value.model_dump(mode="json")),
-                history_items=prepared.get("history_items"), on_import=receipt,
-                active_instructions=prepared["active_instructions"],
-            )
+            from .reflection_mcp import reflection_mcp_transport
+
+            transport = (reflection_mcp_transport(prepared["tools"])
+                         if self.tool_transport == "mcp" else nullcontext(None))
+            with transport as servers:
+                return _run_isolated_sdk(
+                    prepared["prompt"],
+                    None if "tools" in prepared else native_output_schema(prepared["schema"]),
+                    self.config, instructions=INSTRUCTIONS,
+                    scoped_tools=prepared.get("tools") if self.tool_transport == "host" else None,
+                    fork_from=prepared.get("fork_from"),
+                    on_fork=lambda value: receipt(value.model_dump(mode="json")),
+                    history_items=prepared.get("history_items"), on_import=receipt,
+                    active_instructions=prepared["active_instructions"],
+                    **({"mcp_servers": servers} if servers is not None else {}),
+                )
         if self.implementation in {"claude", "antigravity"}:
             import importlib
 
@@ -267,11 +319,41 @@ class Reflector:
         save("request.json", {"prompt": prepared["prompt"], "schema": prepared["schema"], "manifest": manifest})
         if prepared.get("history_resource") is not None:
             save("history.json", [e.model_dump() for e in prepared["history_resource"].selected_events])
+        if "tools" in prepared:
+            save("resources.json", prepared["tools"].resources.catalog())
+            if prepared["tools"].files is not None and directory is not None:
+                # The exact lines the reflector read, so cited path#Lx-Ly references stay checkable.
+                prepared["tools"].files.write(directory / "agent-files")
         try:
             response = self._run(prepared, receipt)
             save("response.json", response)
             if not isinstance(response, dict) or response.get("status") != "completed":
                 raise ReflectionError("incomplete", "Reflector did not complete")
+            if "tools" in prepared:
+                if "mode" in manifest and (
+                    receipt_value is None or response.get("thread_id") != receipt_value["session_id"]
+                ):
+                    raise ReflectionError("invalid_receipt", "Reflection does not belong to the prepared destination")
+                tools = prepared["tools"]
+                results = []
+                execution = {key: value for key, value in response.items() if key != "final_response"}
+                if receipt_value is not None:
+                    execution["destination"] = receipt_value
+                for reflection in tools.reflections:
+                    provenance = {**manifest, **thaw(reflection.provenance)}
+                    result = Reflection(reflection.id, reflection.text, reflection.output, freeze(provenance),
+                                        freeze(execution), prepared.get("history_resource") or reflection.history)
+                    if directory is not None:
+                        (directory / result.id).mkdir()
+                    save(f"{result.id}/reflection.json", {
+                        "id": result.id, "text": result.text, "schema": prepared["schema"],
+                        "output": json.loads(result.text), "provenance": provenance, "execution": execution,
+                    })
+                    results.append(result)
+                save("submission.json", {"accepted": True, "reflection_ids": [r.id for r in results],
+                                         "resource_ids": tools.resources.mapping,
+                                         "assessments": [r.model_dump(mode="json") for r in tools.assessments]})
+                return results
             text = response.get("final_response")
             if not isinstance(text, str) or not text.strip():
                 raise ReflectionError("invalid_output", "Reflector returned no final response")
@@ -293,3 +375,6 @@ class Reflector:
         except BaseException as exc:
             save("failure.json", {"error_type": type(exc).__name__, "code": getattr(exc, "code", None)})
             raise
+        finally:
+            if "tools" in prepared:
+                prepared["tools"].close()

@@ -30,6 +30,7 @@ include = ["thearc*"]
 "thearc.flow" = ["viz.css", "viz.js"]
 
 [project.optional-dependencies]
+mcp = ["mcp>=2.2,<3"]
 docs = ["mkdocs>=1.6,<2"]
 codex = ["openai-codex==0.157.1"]
 antigravity = ["google-antigravity==0.1.19"]

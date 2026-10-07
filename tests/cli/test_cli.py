@@ -15,9 +15,9 @@ def test_cli_version():
     ("path", "visible", "hidden"),
     [
         ([], ["sessions", "evidence", "handoff", "curation", "reflection"], ["history"]),
-        (["reflection"], ["run", "handoff", "show"], []),
+        (["reflection"], ["run", "handoff", "serve", "resources", "show"], []),
         (["curation"], ["run", "show", "history", "diff"], ["approve", "accept"]),
-        (["sessions"], ["index", "sync", "search", "show", "trace", "list", "render"],
+        (["sessions"], ["add", "sources", "index", "sync", "search", "show", "trace", "list", "render"],
          ["snapshot", "export", "inspect", "handoff"]),
         (["evidence"], ["snapshot", "export", "inspect"], ["handoff", "search"]),
         (["handoff"], ["prepare", "show"], ["index", "sync"]),

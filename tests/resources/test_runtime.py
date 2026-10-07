@@ -55,6 +55,22 @@ def runtime(tmp_path, monkeypatch):
                 {"type": "response.output_item.done", "output_index": 0, "item": message},
                 {"type": "response.completed", "response": response},
             ]
+            request = requests[-1]
+            if ("MCP_FIXTURE" in json.dumps(request)
+                    and not any(i.get("type") == "function_call_output" for i in request["input"])):
+                namespace = next(t for t in request["tools"] if t.get("type") == "namespace"
+                                 and t["name"].startswith("mcp__thearc_reflection_"))
+                tool = next(t for t in namespace["tools"] if t["name"] == "submit_reflections")
+                call = {"id": "fc_submit", "type": "function_call", "call_id": "call_submit",
+                        "name": tool["name"], "namespace": namespace["name"], "arguments": '{"reflections":[]}'}
+                events = [
+                    {"type": "response.created", "response": {**response, "status": "in_progress", "output": []}},
+                    {"type": "response.output_item.added", "output_index": 0, "item": {**call, "arguments": ""}},
+                    {"type": "response.function_call_arguments.delta", "item_id": call["id"],
+                     "output_index": 0, "delta": call["arguments"]},
+                    {"type": "response.output_item.done", "output_index": 0, "item": call},
+                    {"type": "response.completed", "response": {**response, "output": [call]}},
+                ]
             body = "".join(f"event: {e['type']}\ndata: {json.dumps(e)}\n\n" for e in events).encode()
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream")
@@ -139,6 +155,31 @@ def test_native_schema_and_typed_response(runtime):
     assert requests[0]["text"]["format"]["type"] == "json_schema"
 
 
+def test_cookbook_native_mcp_submission(runtime, tmp_path):
+    """Public Reflector -> real Codex -> real MCP; only inference is mocked."""
+    pytest.importorskip("mcp")
+    from cookbook.codex_example import ReflectionSchema, generate_reflections
+    from thearc.resources import Session
+
+    from .conftest import event
+
+    requests, _, _, _ = runtime
+    output = tmp_path / "prepared"
+    output.mkdir()
+    (output / "agent.json").write_text(MetaAgent(name="subject").model_dump_json())
+    (output / "evidence.json").write_text("[]")
+    (output / "reflection-schema.json").write_text(json.dumps(ReflectionSchema.model_json_schema()))
+    (output / "prompt.txt").write_text("MCP_FIXTURE: submit an empty reflections list")
+    Session.from_events([event(0, role="user", text="Historical task"),
+                         event(1, role="assistant", text="Completed")]).save(output / "history.json")
+    assert generate_reflections(output, model="fixture-model", timeout=30) == []
+    assert json.loads((output / "reflections.json").read_text()) == []
+    assert json.loads((output / "submission.json").read_text())["accepted"] is True
+    assert len(requests) == 2
+    calls = json.loads(next((output / "reflection-runs").rglob("response.json")).read_text())["mcp_calls"]
+    assert calls[0]["tool"] == "submit_reflections"
+
+
 def test_native_prefix_remains_at_captured_boundary(runtime, tmp_path):
     requests, make_client, sdk, workspace = runtime
     client = make_client(sdk.CodexConfig(cwd=str(workspace)))
@@ -172,3 +213,18 @@ def test_native_prefix_remains_at_captured_boundary(runtime, tmp_path):
     assert imported.provenance["mode"] == "import"
     assert "Later excluded request" in json.dumps(requests[-1]["input"])
     assert "Original task" not in json.dumps(requests[-1]["input"])
+
+    # MCP is configured on the fork itself; host dynamic tools cannot be attached
+    # through the pinned fork API. Preserve the exact captured boundary.
+    pytest.importorskip("mcp")
+    from thearc.resources import ReflectionTools
+
+    prefix = captured.through(captured.split_into_trajectories()[0])
+    tools = ReflectionTools(agent=MetaAgent(name="subject"), evidence=prefix)
+    mcp_reflector = Reflector(implementation="codex", model="fixture-model",
+                              tool_transport="mcp", timeout_seconds=30)
+    assert mcp_reflector.handoff("MCP_FIXTURE: submit an empty list", prefix, tools=tools) == []
+    assert tools.accepted
+    assert "Original task" in json.dumps(requests[-1]["input"])
+    assert "Later excluded request" not in json.dumps(requests[-1]["input"])
+    assert path.read_bytes() == original

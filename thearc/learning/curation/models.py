@@ -31,6 +31,9 @@ class ReflectionItem(BaseModel):
     reason: str = Field(min_length=1)
     evidence: list[ReflectionEvidence]
     limitations: list[str]
+    # Omitted when absent so digests of existing reports and ledgers stay unchanged.
+    reference: str | None = Field(default=None, exclude_if=lambda value: value is None,
+                                  description="Cited agent lines, e.g. skills/x/SKILL.md#L14-L25.")
 
 
 class AssessmentReport(BaseModel):

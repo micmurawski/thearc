@@ -11,11 +11,22 @@ claim about every version or capability of the upstream products.
 | Claude | Supported | Claude Code CLI adapter; offline contracts tested, live acceptance pending |
 | Codex | Supported | SDK adapter; local mock-model persistence and isolation tests |
 | Pi | Supported | Supply a custom runner; no bundled native execution adapter |
+| OpenCode | Session ingestion supported | Supply a custom runner; no bundled native execution adapter |
 
 Session format, execution backend, and installation target are independent.
 Reflection and curation require explicit backend/model choices. Missing runtimes
 fail rather than silently falling back to another provider. A successful experiment
 does not establish general reflection quality or equivalent behavior across agents.
+
+`thearc reflection serve` separately exposes reflection submission and paged resource
+lookup over stdio MCP. Any compatible harness can attach it using its own MCP
+configuration; this does not require a bundled execution adapter. Install
+`thearc[mcp]` (MCP Python SDK 2.2–2.x). See
+[tool-based reflection](../guides/reflections.md#submit-reflections-through-tools).
+`Reflector(..., tool_transport="mcp")` manages its own temporary loopback MCP endpoint
+for `reflect(..., tools=...)` and `handoff(..., tools=...)`, including native forks.
+The default `tool_transport="host"` uses scoped Codex host tools; the pinned native
+fork API does not support attaching host tools.
 
 ## Antigravity
 

@@ -6,6 +6,7 @@ See [your first ACE run](../docs/start/first-ace.md) for setup and calls.
 
 Other standalone examples:
 
+- [codex_example.py](codex_example.py): collect sessions from a log directory, pick a trajectory by any ID, and save validated Codex reflections through MCP. See [the walkthrough](../docs/examples/codex.md).
 - [graphify_evidence.py](graphify_evidence.py): filter indexed sessions, match behaviors, and reflect on matched evidence.
 - [graphify_patterns.py](graphify_patterns.py): a retry matcher that retains intervening commentary.
 - [graphify_handoff.py](graphify_handoff.py): inherit a trajectory, reflect with a custom schema, then curate.

@@ -306,6 +306,10 @@ class Session(History):
     def split_into_trajectories(self):
         return self._trajectories
 
+    @property
+    def trajectories(self):
+        return self._trajectories
+
     def through(self, trajectory):
         if trajectory.session.artifact_id != self.artifact_id or trajectory.session.id != self.id:
             raise ValueError("Trajectory belongs to a different session artifact")

@@ -126,7 +126,8 @@ class Curator:
                         if tool == "arc_read":
                             # The reflector supplies the complete rank-free catalog once.
                             if offset == 0:
-                                destination.append({"target": item["target"], "editable": item["editable"],
+                                destination.append({"id": item["id"], "target": item["target"],
+                                                    "editable": item["editable"],
                                                     "lifetime_ranks": page["lifetime_ranks"],
                                                     "current_ranks": page["current_ranks"]})
                         else:

@@ -5,7 +5,7 @@ Commands are grouped by the object they work with:
 
 | Group | Commands | Calls a model? |
 | --- | --- | --- |
-| `sessions` | `index`, `sync`, `list`, `search`, `show`, `trace`, `render` | No |
+| `sessions` | `add`, `sources`, `index`, `sync`, `list`, `search`, `show`, `trace`, `render` | No |
 | `evidence` | `snapshot`, `export`, `inspect` | No |
 | `reflection` | `run`, `handoff`, `show` | `run --execute` or `handoff --execute` |
 | `curation` | `run`, `show`, `history`, `diff` | `run` does |

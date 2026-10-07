@@ -128,6 +128,8 @@ class CurationTools:
         )
 
     def call(self, name: str, arguments: dict):
+        from thearc.resources.resource_view import ResourceView
+
         with self._lock:
             if self._closed.is_set() or len(self.calls) >= self.max_calls:
                 raise ValueError("Curation tools closed or call budget exhausted")
@@ -138,8 +140,18 @@ class CurationTools:
                 raise ValueError("Tool arguments exceed limit")
             self.calls.append({"tool": name, "arguments": redact(arguments)})
             if name == "arc_list":
-                return [{"target": target.model_dump(), "editable": self._editable(target)}
-                        for target in resource_targets(self._agent)]
+                targets = resource_targets(self._agent)
+                # Include rated sections so their current/lifetime counts reach the curator.
+                for entry in [*self._ledger.baselines, *self._ledger.assessments]:
+                    if entry.target not in targets:
+                        try:
+                            self._agent.read_target(entry.target)
+                        except KeyError:
+                            continue  # A removed target remains in history, not the editable catalog.
+                        targets.append(entry.target)
+                return [{"id": ResourceView.id_for(target), "target": target.model_dump(),
+                         "editable": self._editable(target)}
+                        for target in targets]
             target = ResourceTarget.model_validate_json(arguments["target_json"])
             if name == "arc_change":
                 return self._change(target, arguments)
@@ -147,11 +159,15 @@ class CurationTools:
             if type(offset) is not int or offset < 0:
                 raise ValueError("Invalid offset")
             if name == "arc_read":
-                content = json.dumps(redact(_content(self._agent, target)), ensure_ascii=False)
+                value = _content(self._agent, target)
+                if target.section is not None:
+                    target = target.model_copy(update={"section": value["title"]})
+                content = json.dumps(redact(value), ensure_ascii=False)
                 if offset >= len(content):
                     raise ValueError("Read offset is outside the resource")
                 self.inspections.add("resource")
-                return {"content": content[offset:offset + self.max_chars], "total_chars": len(content),
+                return {"id": ResourceView.id_for(target),
+                        "content": content[offset:offset + self.max_chars], "total_chars": len(content),
                         "next_offset": offset + self.max_chars if offset + self.max_chars < len(content) else None,
                         "lifetime_ranks": self._ledger.ranks(target).model_dump(),
                         "current_ranks": self._ledger.ranks(

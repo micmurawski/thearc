@@ -5,12 +5,55 @@ current Python types where useful. A concept can exist without a dedicated class
 
 ## The learning cycle
 
-```text
-Agent execution → Session / Trajectory → Evidence → Reflection
-                                                    ↓
-Baseline MetaAgent + Reflections → Curation → Candidate MetaAgent
-                                                    ↓
-                                   Evaluation against the baseline
+```mermaid
+%%{init: {'flowchart': {'curve': 'basis'}}}%%
+
+flowchart LR
+    A0[Agne v1]
+    A1[Agent v1]
+    AF[Agent v2 final]
+    Meger@{ shape: cross-circ, label: "Meger" }
+    ReflectorPrompt@{shape: doc}
+    CuratorPrompt@{shape: doc}
+    ReflectionSchema@{shape: doc} 
+    Reflections@{shape: docs}
+    S0@{ shape: docs, label: "Sessions" }
+    S1@{ shape: docs, label: "Sessions" }
+    T@{shape: docs, label: "Trajectories"}
+    R@{shape: processes, label: "Reflectors"}
+    C@{shape: processes, label: "Curators"}
+    AC@{shape: processes, label: "Agent v2 candidates"}
+    
+    subgraph "Agent execution #1"
+      A0 --> S0
+    end
+    
+    subgraph "Agent execution #N"
+      A1 --> S1
+    end
+    
+    subgraph "ACE Pipeline"
+        subgraph "Relection"
+        S1 --> T
+        S0 --> T 
+        T -. handoff or attach to prompt .-> R
+        ReflectionSchema --> R
+        ReflectorPrompt --> R
+        R --> Reflections
+        end
+        subgraph "Curation"
+        Reflections -.-> C
+        CuratorPrompt --> C
+        C -.update agent resources.-> AC
+        end
+    AC --> Meger --> AF
+    
+    end
+    
+
+    
+    %% Styling for clarity
+    %% style A fill:#f9f,stroke:#333,stroke-width:2px
 ```
 
 Reflection produces findings. Curation turns findings into configuration changes.

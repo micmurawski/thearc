@@ -130,6 +130,35 @@ class MarkdownDocument(BaseModel):
 
         return cls(frontmatter=frontmatter, root_content=root_content, sections=sections)
 
+    @classmethod
+    def heading_spans(cls, text: str) -> list[tuple[int, int, int, str]]:
+        """``(first_line, last_line, level, title)`` per heading, 1-based, as ``parse`` sees them.
+
+        A section runs from its heading to the line before the next heading of the
+        same or a higher level. Titles have rank suffixes removed.
+        """
+        lines = text.splitlines()
+        offset = 0
+        if text.startswith("---"):
+            parts = text.split("---", 2)
+            if len(parts) >= 3:
+                try:
+                    yaml.safe_load(parts[1])
+                    offset = len(("---" + parts[1] + "---").splitlines()) - 1
+                except yaml.YAMLError:
+                    offset = 0
+        header = re.compile(r"^(#{1,6})\s+(.+)$")
+        found = []
+        for idx, line in cls._heading_lines(lines[offset:]):
+            match = header.match(line)
+            if match:
+                found.append((idx + offset + 1, len(match.group(1)), split_ranked_title(match.group(2).strip())[0]))
+        spans = []
+        for position, (start, level, title) in enumerate(found):
+            end = next((line - 1 for line, other, _ in found[position + 1:] if other <= level), len(lines))
+            spans.append((start, end, level, title))
+        return spans
+
     @staticmethod
     def _heading_lines(lines: list[str]):
         """Yield candidate headings outside fenced and indented code blocks."""

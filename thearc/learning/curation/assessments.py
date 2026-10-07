@@ -38,6 +38,9 @@ class Assessment(BaseModel):
     configuration_provenance: str
     counted: bool
     overlaps: list[str] = Field(default_factory=list)
+    reference: str | None = Field(default=None, exclude_if=lambda value: value is None)
+    target_id: str | None = Field(default=None, exclude_if=lambda value: value is None,
+                                  description="SectionId/ResourceId of target, e.g. res_90c7…")
 
 
 class AssessmentLedger(BaseModel):
@@ -150,7 +153,7 @@ def propagate_ranks(
                 target=target, revision=revision, rating=item.rating, reason=item.reason,
                 evidence=item.evidence, limitations=item.limitations,
                 configuration_provenance=provenance or "unknown; historical configuration loading is unverified",
-                counted=not overlaps, overlaps=overlaps,
+                counted=not overlaps, overlaps=overlaps, reference=item.reference, target_id=target.id,
             ))
         history.reflection_hashes[reflection.id] = digest
 

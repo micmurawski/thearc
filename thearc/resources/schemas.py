@@ -51,6 +51,47 @@ class ReflectionBaseModel(OutputBaseModel):
     """Extend with any response fields; ResourceTarget fields carry reference semantics."""
 
 
+class ResourceTag(OutputBaseModel):
+    """A rating of a resource ID from the evaluated agent's ResourceView."""
+
+    id: str = Field(min_length=1)
+    tag: ReflectionRating
+
+
+class TaggedReflection(ReflectionBaseModel):
+    """One evidence-backed reflection. submit_reflections accepts a list of these."""
+
+    reasoning: str = Field(min_length=1, description="Concise evidence-based explanation of the finding.")
+    error_identification: str | None
+    root_cause_analysis: str | None
+    correct_approach: str | None
+    key_insight: str = Field(min_length=1)
+    event_ids: list[str] = Field(min_length=1)
+    bullet_tags: list[ResourceTag]
+
+
+class ResourceReference(OutputBaseModel):
+    """A rating of the agent lines at ``ref``; ranks go to the innermost section containing them."""
+
+    ref: str = Field(pattern=r"^[^#\s]+#L[1-9][0-9]*(-L[1-9][0-9]*)?$",
+                     description="Agent file lines, e.g. skills/debug/SKILL.md#L14-L25 or hooks.json#L3-L9.")
+    tag: ReflectionRating
+
+
+class ReferencedReflection(ReflectionBaseModel):
+    """One reflection on the supplied history, citing agent files by line. submit_reflections accepts a list.
+
+    The whole supplied history is the evidence for each rating; no event IDs are cited.
+    """
+
+    reasoning: str = Field(min_length=1, description="Concise evidence-based explanation of the finding.")
+    error_identification: str | None
+    root_cause_analysis: str | None
+    correct_approach: str | None
+    key_insight: str = Field(min_length=1)
+    resource_refs: list[ResourceReference]
+
+
 class CurationBaseModel(OutputBaseModel):
     """Custom reports need an explicit operation adapter before application."""
 

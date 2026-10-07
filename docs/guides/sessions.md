@@ -7,25 +7,57 @@ Native transcripts are the source of evidence. `SessionStore` indexes them in
 SQLite and exposes provider-neutral sessions, runs, messages, and tool activity.
 Source files remain unchanged.
 
-## Ingest logs
+## Collect sessions
+
+Point the index at any transcript directory or collector batch. The harness is
+detected from the files; pass `--harness` when a directory is ambiguous.
 
 ```sh
-thearc sessions --index artifacts/sessions.sqlite index \
-  --source YOUR_SOURCE --source-id experiment --root /path/to/logs
-thearc sessions --index artifacts/sessions.sqlite list
-thearc sessions --index artifacts/sessions.sqlite search "graphify"
+thearc sessions add ~/.codex/sessions ~/.claude/projects logs/claude-traning
+thearc sessions sources                      # registered roots
+thearc sessions sync                         # refresh every source later
+thearc sessions list --harness claude --since 2026-10-01
+thearc sessions render 14a6b5fe --trajectory 0   # Markdown; --format codex|claude|thearc
 ```
 
-`YOUR_SOURCE` is `antigravity`, `claude`, `codex`, `pi`, or `opencode`. Source IDs distinguish
-collections; canonical session IDs are scoped to sources. The provider's native
-session ID is not interchangeable with the canonical ID returned by `list`.
-The CLI `index` command registers a source and synchronizes all registered sources.
-Use `sync` to refresh them later.
+The default index is `~/.thearc/learning.sqlite`; choose another with
+`thearc sessions --index PATH ...`. The index must live outside the sources.
+Commands that take a session accept the indexed ID, the native session ID, a
+collector run directory name, or a unique prefix of any of them. A collector batch
+(`runs/*/manifest.json` beside `sessions/`) is registered through its `sessions/`
+folder, and its recorded `agent-before.json` snapshots stay available.
+
+The same flow in Python:
+
+```python
+from thearc.resources import Sessions
+
+with Sessions.open() as sessions:
+    sessions.add("~/.codex/sessions")
+    sessions.add("logs/claude-traning")
+    for record in sessions.list(harness="claude", since="2026-10-01"):
+        print(record.id, record.native_id, record.started_at)
+    session = sessions.get("14a6b5fe")        # None selects the most recent
+    agent = sessions.agent(session)           # recorded MetaAgent, or None
+trajectory = session.trajectories[0]
+print(trajectory.to_markdown())
+```
+
+Each harness adapter normalizes native records into provider-neutral events when a
+source syncs. Conversion to another harness format happens later, on export or
+handoff. Metadata without a conversation form (Codex lifecycle records, Claude
+attachments) is skipped there and reported, but stays in the canonical history.
 
 For OpenCode, the index accepts native export envelopes (`info` and `messages`)
 as JSONL: one complete export object per line. The prompt collector creates these
 alongside the original JSON exports. Tool inputs, outputs, errors, and reasoning
 remain available in the normalized events.
+
+## Low-level indexing
+
+`thearc sessions index --source HARNESS --root PATH [--source-id ID]` registers a
+source with an explicit harness and source ID. The provider's native session ID is
+not interchangeable with the canonical ID; `Sessions.get` resolves either.
 
 Python ingestion can target just one source:
 

@@ -1,15 +1,20 @@
 from __future__ import annotations
 
+import hashlib
 import json
-from collections.abc import Iterator
+import re
+from collections.abc import Callable, Iterator
 from enum import Enum
 from pathlib import Path, PurePath
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from thearc.models.markdown import MarkdownDocument, MarkdownSection
 from thearc.models.ranks import Ranks
+
+if TYPE_CHECKING:
+    from thearc.models.references import AgentFiles
 
 ImplementationLiteral = Literal['claudecode', 'codex', 'anitgravity', 'antigravity', 'claude', 'pi']
 
@@ -198,6 +203,12 @@ class ResourceTarget(BaseModel):
             if not separator or not skill or not path or ".." in PurePath(self.name).parts:
                 raise ValueError("skill file target must be '<skill>/<relative-file-path>'")
         return self
+
+    @property
+    def id(self) -> str:
+        """Stable address ID used by reflectors and curators; content and ranks never change it."""
+        payload = json.dumps(self.model_dump(mode="json"), ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        return "res_" + hashlib.sha256(payload.encode()).hexdigest()[:24]
 
 
 class MetaAgent(BaseModel):
@@ -408,6 +419,135 @@ class MetaAgent(BaseModel):
             collection[key] = model.model_validate({**data, **identities})
         return before, None if operation == Operation.REMOVE else self.read_target(target)
 
+    def _whole_targets(self) -> list[ResourceTarget]:
+        targets = [ResourceTarget(kind=kind, name=name)
+                   for kind, collection in (("skill", self.skills), ("hook", self.hooks),
+                                            ("mcp", self.mcps), ("context", self.context))
+                   for name in collection]
+        targets += [ResourceTarget(kind="skill_file", name=name) for name, _ in self.iter_skill_files()]
+        targets += [ResourceTarget(kind=item.location[:-1], name=item.path) for item in self.resources.values()]
+        return sorted(targets, key=lambda t: (t.kind, t.name))
+
+    def _markdown_of(self, target: ResourceTarget) -> MarkdownDocument | None:
+        """The parsed document behind a whole resource, or None for hooks, MCPs and non-Markdown files."""
+        if target.kind in {"hook", "mcp"} or (target.kind == "skill_file" and not target.name.endswith(".md")):
+            return None
+        return self._target_markdown(target)
+
+    def iter_targets(self) -> Iterator[tuple[ResourceTarget, int]]:
+        """Every addressable resource, each followed by its Markdown sections in document order.
+
+        Depth 0 is a whole resource; sections start at 1. Headings that repeat within a
+        document cannot be addressed unambiguously and are skipped.
+        """
+        for target in self._whole_targets():
+            yield target, 0
+            document = self._markdown_of(target)
+            if document is None:
+                continue
+
+            def walk(sections, depth, target=target, document=document):
+                for section in sections:
+                    if len(self._section_matches(document, section.title)) == 1:
+                        yield target.model_copy(update={"section": section.title}), depth
+                    yield from walk(section.subsections, depth + 1)
+
+            yield from walk(document.sections, 1)
+
+    def files(self) -> AgentFiles:
+        """The rank-free agent as line-addressable files (``skills/<name>/SKILL.md``, ``hooks.json``, ...).
+
+        ``files().resolve("skills/x/SKILL.md#L14-L25")`` returns the innermost
+        resource or section those lines belong to; ranks attach to that target.
+        """
+        from thearc.models.references import AgentFiles
+
+        return AgentFiles.from_agent(self)
+
+    def propagate_ranks(self, assessments, *, epoch_id: str, ledger=None, allow_unverified: bool = False):
+        """Count assessment votes into ranks; returns ``(ranked_agent, ledger)`` without mutating self.
+
+        Accepts the ``AssessmentReport`` list from accepted reflections (for example
+        ``ReflectionTools.assessments``). Repeated evidence on unchanged content is
+        recorded but not counted twice; pass the returned ledger to the next call.
+        """
+        from thearc.learning.curation.assessments import AssessmentLedger, propagate_ranks
+        from thearc.learning.curation.tools import seed_rank_history
+
+        history = seed_rank_history(self, ledger or AssessmentLedger())
+        return propagate_ranks(self, assessments, epoch_id=epoch_id, ledger=history,
+                               allow_unverified=allow_unverified)
+
+    def _ranks_or_none(self, target: ResourceTarget,
+                       ranks: Callable[[ResourceTarget], Ranks] | None) -> Ranks | None:
+        try:
+            return ranks(target) if ranks is not None else self.rank_for(target)
+        except (KeyError, ValueError):
+            return None  # MCP configurations carry no ranks.
+
+    def to_labeled_markdown(self, *, include_ranks: bool = False, outline: bool = False,
+                            ranks: Callable[[ResourceTarget], Ranks] | None = None,
+                            title: str | None = None) -> str:
+        """Render the agent with section IDs, resource files, and optionally ranks on every heading.
+
+        Section headings read ``## Usage [SectionId: res_…, ranks: (harmful: …, neutral: …, helpful: …)]``;
+        resource headings show their file instead, e.g. ``# skill: x [skills/x/SKILL.md, ranks: (…)]``.
+        A reflector's ``path#Lx-Ly`` reference is credited to the section it lands in. ``outline=True`` lists
+        headings only. ``ranks`` overrides the agent's own counts, for example with an assessment
+        ledger; ranks appear only when ``include_ranks`` is set.
+        """
+        files = self.files()
+        spans = {span.target: span for span in files.spans}
+
+        def label(target):
+            span = spans[target]
+            if target.section:  # Sections are what references land in and what gets ranked.
+                parts = [f"SectionId: {target.id}"]
+            else:
+                parts = [span.path if span.depth == 0 and not span.path.endswith(".json") else span.reference]
+            counted = self._ranks_or_none(target, ranks) if include_ranks else None
+            if counted is not None:
+                parts.append(f"ranks: {counted.suffix().strip()}")
+            return f"[{', '.join(parts)}]"
+
+        targets = list(self.iter_targets())
+        whole = sum(1 for _, depth in targets if depth == 0)
+        lines = [f"# {title or f'Agent: {self.name}'}", "",
+                 f"{whole} resources and {len(targets) - whole} sections.", ""]
+        for target in self._whole_targets():
+            heading = f"{target.kind}: {target.name} {label(target)}"
+            if outline:
+                lines += [f"## {heading}", ""]
+                sections = [(t, d) for t, d in targets if d and (t.kind, t.name) == (target.kind, target.name)]
+                lines += [f"{'  ' * (depth - 1)}- {t.section} {label(t)}" for t, depth in sections]
+                if sections:
+                    lines.append("")
+                continue
+            # Resource headings sit beside the content's own headings, so rules mark the boundaries.
+            lines += ["---", "", f"# {heading}", "", self._labeled_body(target, label).rstrip(), ""]
+        return "\n".join(lines).rstrip() + "\n"
+
+    def _labeled_body(self, target: ResourceTarget, label: Callable[[ResourceTarget], str]) -> str:
+        document = self._markdown_of(target)
+        if document is None:
+            # Same shape as hooks.json / mcp.json in files(), without rank metadata.
+            value = {"hook": lambda: self.hooks[target.name].to_dict(include_ranks=False),
+                     "mcp": lambda: self.mcps[target.name].to_dict()}.get(target.kind, lambda: None)()
+            if value is None:
+                value = self.read_target(target)
+            text = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False, indent=2)
+            fence = "`" * max(3, 1 + max((len(run) for run in re.findall(r"`+", text)), default=0))
+            return f"{fence}{'' if isinstance(value, str) else 'json'}\n{text}\n{fence}"
+
+        def visit(sections):
+            for section in sections:
+                if len(self._section_matches(document, section.title)) == 1:
+                    section.title = f"{section.title} {label(target.model_copy(update={'section': section.title}))}"
+                visit(section.subsections)
+
+        visit(document.sections)
+        return document.to_markdown(include_ranks=False)
+
     def rank_for(self, target: ResourceTarget) -> Ranks:
         """Read the rank of an existing resource or unique Markdown section."""
         if target.kind == "mcp":
@@ -419,21 +559,6 @@ class MetaAgent(BaseModel):
         else:
             ranks = value.get("ranks")
         return Ranks.model_validate(ranks) if ranks else Ranks()
-
-    def apply_rank_delta(
-        self, target: ResourceTarget, delta: Ranks,
-    ) -> tuple[Any, Any]:
-        """Increment ranks through the same addressed EDIT path as curations."""
-        ranks = self._add_ranks(self.rank_for(target), delta)
-        value = self.read_target(target)
-        if target.section is None and target.kind in {"skill_file", "context", "rule", "workflow", "command"}:
-            text = value if isinstance(value, str) else value["content"]
-            document = MarkdownDocument.parse(text)
-            document.frontmatter["ranks"] = ranks.model_dump()
-            value = document.to_markdown() if target.kind == "skill_file" else {"content": document.to_markdown()}
-        else:
-            value = {"ranks": ranks.model_dump()}
-        return self.apply_change(target, Operation.EDIT, value)
 
     def without_ranks(self) -> MetaAgent:
         """Return a deep-copied view suitable for an unbiased reflector."""

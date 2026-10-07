@@ -48,6 +48,7 @@ nav:
       - Merge adaptations: guides/merging.md
       - More examples: examples/index.md
       - Graphify adaptation recipes: examples/graphify.md
+      - Codex reflections through MCP: examples/codex.md
   - Reference:
       - Runtime support and setup: reference/runtimes.md
       - CLI: reference/cli.md

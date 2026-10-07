@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import tempfile
+import time
 from importlib.metadata import version
 from pathlib import Path
 from threading import Event as ThreadEvent
@@ -72,21 +73,56 @@ def _source_turn(client, thread_id, through_turn_id):
             raise ReflectionError("missing_history", "Selected native turn does not belong to the source session")
 
 
+def _wait_for_mcp(client, thread_id, configured):
+    """Wait for the explicitly configured servers; inherited servers must remain disabled."""
+    from openai_codex.generated.v2_all import ListMcpServerStatusResponse
+
+    while True:
+        connected, cursor = set(), None
+        while True:
+            page = client.request("mcpServerStatus/list", {"threadId": thread_id, "cursor": cursor},
+                                  response_model=ListMcpServerStatusResponse)
+            for server in page.data:
+                status = getattr(server.runtime_status, "value", None)
+                name = getattr(server, "name", None)
+                if name not in configured:
+                    if status != "disabled" or server.tools or server.resources or server.resource_templates:
+                        raise ReflectionError("isolation", "Reflection thread exposes an unconfigured MCP capability")
+                    continue
+                if status in {"failed", "cancelled", "disabled", "authenticationRequired"} or server.tools_error:
+                    raise ReflectionError("mcp_startup", f"Reflection MCP server could not connect: {name}")
+                if status == "connected":
+                    names = {tool.name for tool in server.tools.values()}
+                    if names != set(configured[name]["enabled_tools"]) or server.resources or server.resource_templates:
+                        raise ReflectionError("isolation", "MCP server exposed an unexpected capability catalog")
+                    connected.add(name)
+            cursor = page.next_cursor
+            if not cursor:
+                break
+        if connected == set(configured):
+            return
+        time.sleep(0.05)  # The runtime's deadline timer bounds startup and inference together.
+
+
 def _run_isolated_sdk(prompt, schema, config, *, instructions, scoped_tools=None, fork_from=None, on_fork=None,
-                      history_items=None, on_import=None, active_instructions=""):
+                      history_items=None, on_import=None, active_instructions="", mcp_servers=None):
     """Shared isolated runtime; only explicitly supplied host capabilities may act."""
     try:
         from openai_codex import CodexConfig, Thread, is_retryable_error
         from openai_codex.client import CodexClient
-        from openai_codex.generated.v2_all import ConfigReadResponse, ListMcpServerStatusResponse
+        from openai_codex.generated.v2_all import ConfigReadResponse
     except ImportError as exc:
         raise ReflectionError("missing_sdk", "Install thearc[codex] to generate real reflections") from exc
     if version("openai-codex") != SDK_VERSION:
         raise ReflectionError("sdk_version", f"This adapter requires openai-codex=={SDK_VERSION}")
-    # Tool-using models route dynamic host tools through the local Code Mode
-    # dispatcher. Its only operational capabilities remain the scoped callbacks;
+    mcp_servers = mcp_servers or {}
+    if any(not server.get("enabled_tools") or server.get("enabled") is not True
+           for server in mcp_servers.values()):
+        raise ValueError("Explicit MCP servers require enabled=True and an enabled_tools allow list")
+    # Tool-using models route host/MCP tools through the local Code Mode
+    # dispatcher. Its only operational capabilities remain explicitly supplied tools;
     # shell/filesystem/network tools stay disabled and the runtime stays read-only.
-    enabled = {"code_mode", "code_mode_host"} if scoped_tools is not None else set()
+    enabled = {"code_mode", "code_mode_host"} if scoped_tools is not None or mcp_servers else set()
     disabled = [name for name in _DISABLED_FEATURES if name not in enabled]
     overrides = [f"features.{name}=false" for name in disabled] + [
         *[f"features.{name}=true" for name in sorted(enabled)],
@@ -104,7 +140,8 @@ def _run_isolated_sdk(prompt, schema, config, *, instructions, scoped_tools=None
                     import json
 
                     text = json.dumps(result, ensure_ascii=False)
-                    return {"contentItems": [{"type": "inputText", "text": text}], "success": True}
+                    return {"contentItems": [{"type": "inputText", "text": text}],
+                            "success": not (isinstance(result, dict) and result.get("accepted") is False)}
                 except (ValueError, KeyError, TypeError, OSError) as exc:
                     return {"contentItems": [{"type": "inputText", "text": str(exc)}], "success": False}
             # Never use the SDK's permissive default approval handler.
@@ -152,6 +189,9 @@ def _run_isolated_sdk(prompt, schema, config, *, instructions, scoped_tools=None
             thread_config = {"mcp_servers": {
                 name: {"enabled": False} for name in effective.get("mcp_servers", {})
             }}
+            if mcp_servers.keys() & thread_config["mcp_servers"].keys():
+                raise ReflectionError("isolation", "Use fresh MCP server names to avoid inherited configuration")
+            thread_config["mcp_servers"].update(mcp_servers)
             if fork_from is None:
                 started = client.thread_start({
                     "cwd": workspace, "model": config.model, "sandbox": "read-only",
@@ -215,18 +255,7 @@ def _run_isolated_sdk(prompt, schema, config, *, instructions, scoped_tools=None
                     contains(a, b) for a, b in zip(persisted[-len(history_items):], history_items, strict=True)
                 ):
                     raise ReflectionError("invalid_import", "Persisted history differs from the selected import")
-            cursor = None
-            while True:
-                servers = client.request(
-                    "mcpServerStatus/list", {"threadId": started.thread.id, "cursor": cursor},
-                    response_model=ListMcpServerStatusResponse,
-                )
-                if any(getattr(s.runtime_status, "value", None) != "disabled"
-                       or s.tools or s.resources or s.resource_templates for s in servers.data):
-                    raise ReflectionError("isolation", "Reflection thread still exposes an active MCP capability")
-                cursor = servers.next_cursor
-                if not cursor:
-                    break
+            _wait_for_mcp(client, started.thread.id, mcp_servers)
             thread = Thread(client, started.thread.id)
             result = thread.run(prompt, output_schema=schema, effort=config.reasoning_effort)
             if timed_out.is_set():
@@ -236,8 +265,17 @@ def _run_isolated_sdk(prompt, schema, config, *, instructions, scoped_tools=None
             allowed = {"userMessage", "agentMessage", "reasoning"}
             if scoped_tools is not None:
                 allowed.add("dynamicToolCall")
+            if mcp_servers:
+                allowed.add("mcpToolCall")
             if any(getattr(getattr(item, "root", item), "type", None) not in allowed for item in result.items):
                 raise ReflectionError("isolation", "Unexpected tool activity in the reflection turn")
+            mcp_calls = []
+            for wrapped in result.items:
+                item = getattr(wrapped, "root", wrapped)
+                if item.type == "mcpToolCall":
+                    if item.server not in mcp_servers or item.tool not in mcp_servers[item.server]["enabled_tools"]:
+                        raise ReflectionError("isolation", "Unexpected MCP tool call in the reflection turn")
+                    mcp_calls.append({"server": item.server, "tool": item.tool, "status": item.status.value})
             if (fork_from is not None or history_items is not None) and result.status.value == "completed":
                 saved = client.thread_read(thread.id).thread
                 if saved.ephemeral or not saved.path or _latest_turn(client, thread.id) != result.id:
@@ -246,6 +284,7 @@ def _run_isolated_sdk(prompt, schema, config, *, instructions, scoped_tools=None
                 "status": result.status.value, "final_response": result.final_response,
                 "thread_id": thread.id, "turn_id": result.id, "sdk_version": SDK_VERSION,
                 "usage": result.usage.model_dump(mode="json") if result.usage else None,
+                **({"mcp_calls": mcp_calls} if mcp_servers else {}),
             }
         except ReflectionError:
             raise
