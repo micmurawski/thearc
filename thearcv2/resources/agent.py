@@ -177,6 +177,7 @@ class MetaAgent(BaseModel):
             data = item.model_dump() if isinstance(item, BaseModel) else item
             if not isinstance(data, dict):
                 raise ValueError(f"invalid {field} entry: {key}")  # noqa: TRY004 -- Pydantic validation error
+            identity: Any
             if field == "resources":
                 if "location" not in data or "path" not in data:
                     raise ValueError("resource entries require location and path")
@@ -201,8 +202,9 @@ class MetaAgent(BaseModel):
             return self.skills[skill].files[path]
         if target.kind in {"rule", "workflow", "command"}:
             return self.resources[f"{target.kind}s/{target.name}"]
-        collection = {"skill": self.skills, "hook": self.hooks, "mcp": self.mcps, "context": self.context}
-        return collection[target.kind][target.name]
+        collections: dict[str, dict[str, Any]] = {"skill": self.skills, "hook": self.hooks, "mcp": self.mcps,
+                                                  "context": self.context}
+        return collections[target.kind][target.name]
 
     def files(self) -> AgentFiles:
         """The configuration as line-addressable files, as reflectors read and cite them."""

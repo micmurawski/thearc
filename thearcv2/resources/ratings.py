@@ -125,7 +125,7 @@ class CategoricalScale(RatingScale):
 
     def add(self, summary: Summary, value: RatingValue, weight: float = 1.0) -> CountSummary:
         assert isinstance(summary, CountSummary)
-        return summary.merge(CountSummary({value: weight}))
+        return summary.merge(CountSummary({str(value): weight}))
 
     def render(self, summary: Summary) -> str:
         assert isinstance(summary, CountSummary)
@@ -161,7 +161,7 @@ class LabelScale(RatingScale):
 
     def add(self, summary: Summary, value: RatingValue, weight: float = 1.0) -> CountSummary:
         assert isinstance(summary, CountSummary)
-        return summary.merge(CountSummary({value: weight}))
+        return summary.merge(CountSummary({str(value): weight}))
 
     def render(self, summary: Summary) -> str:
         assert isinstance(summary, CountSummary)

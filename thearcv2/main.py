@@ -32,7 +32,9 @@ import shutil
 import subprocess
 import sys
 from collections import Counter
+from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 from pydantic import BaseModel
 
@@ -44,9 +46,12 @@ from thearcv2.resources import (
     ContextDocument,
     Journal,
     MetaAgent,
+    Modified,
+    Moved,
     ReflectionSchema,
     ResourceTarget,
     Skill,
+    Span,
     agent_at,
     agent_outline,
     annotated_files,
@@ -161,10 +166,10 @@ def show_tree(root: Path) -> None:
 
 
 def sample_agent() -> MetaAgent:
-    return MetaAgent(name="sample", skills=[Skill(
-        name="retry", description="Retry flaky operations",
-        instructions="# Retry\n\nUse retries.\n\n## Examples\n\nretry(3)\n\n## Limits\n\nNever more than 3.\n")],
-        context=[ContextDocument(filename="AGENTS.md", content="# Rules\n\nBe brief.\n\n## Tests\n\nRun pytest.\n")])
+    instructions = "# Retry\n\nUse retries.\n\n## Examples\n\nretry(3)\n\n## Limits\n\nNever more than 3.\n"
+    retry = Skill(name="retry", description="Retry flaky operations", instructions=instructions)
+    rules = ContextDocument(filename="AGENTS.md", content="# Rules\n\nBe brief.\n\n## Tests\n\nRun pytest.\n")
+    return MetaAgent(name="sample", skills={"retry": retry}, context={"AGENTS.md": rules})
 
 
 def main() -> None:
@@ -216,8 +221,8 @@ def main() -> None:
 
     banner("6. Export the full workspace and the four file views")
     print(write_workspace(agent, out / "workspace", overwrite=True))
-    variants = {"plain": {}, "ratings": {"scales": USEFULNESS}, "ids": {"ids": True},
-                "ids+ratings": {"scales": USEFULNESS, "ids": True}}
+    variants: dict[str, dict[str, Any]] = {"plain": {}, "ratings": {"scales": USEFULNESS}, "ids": {"ids": True},
+                                           "ids+ratings": {"scales": USEFULNESS, "ids": True}}
     for variant, options in variants.items():
         write_files(annotated_files(agent, **options), out / "views" / variant)
         print(out / "views" / variant)
@@ -267,9 +272,16 @@ def commit(repo: Path, message: str) -> str:
     return sha
 
 
-def change_lines(repo: Path, target: ResourceTarget, change) -> None:
+def configuration_at(repo: Path, revision: str) -> MetaAgent:
+    agent = agent_at(repo, revision)
+    if agent is None:
+        raise SystemExit(f"{revision} has no workspace")
+    return agent
+
+
+def change_lines(repo: Path, target: ResourceTarget, change: Callable[[list[str], Span], None]) -> None:
     """Apply ``change(lines, span)`` to the file holding ``target`` at the repository's current state."""
-    files = agent_at(repo, "HEAD").files()
+    files = configuration_at(repo, "HEAD").files()
     span = files.span(target)
     path = repo / span.path
     lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
@@ -282,7 +294,7 @@ def add_note(repo: Path, target: ResourceTarget, note: str) -> None:
 
 
 def rename(repo: Path, target: ResourceTarget, title: str) -> None:
-    def retitle(lines, span):
+    def retitle(lines: list[str], span: Span) -> None:
         hashes = lines[span.start - 1].split(" ", 1)[0]
         lines[span.start - 1] = f"{hashes} {title}\n"
     change_lines(repo, target, retitle)
@@ -324,14 +336,14 @@ def commit_changes(agent: MetaAgent, repo: Path, rng: random.Random) -> None:
     for line in git(repo, "log", "--reverse", "--format=%H %s", f"{base}..HEAD").splitlines():
         sha, subject = line.split(" ", 1)
         print(f"\n### {sha[:8]} {subject}")
-        print(agent_at(repo, f"{sha}^").diff(agent_at(repo, sha), context_lines=1))
+        print(configuration_at(repo, f"{sha}^").diff(configuration_at(repo, sha), context_lines=1))
 
     banner("9b. record_commits: one journal entry per changed section, the commit message as its reason")
     entries = record_commits(repo, agent.journal, since=base)
     show_journal(agent.journal, last=len(entries))
 
     banner("9c. The same change entries as stored in journal.jsonl")
-    agent = agent_at(repo, "HEAD").model_copy(update={"journal": agent.journal})
+    agent = configuration_at(repo, "HEAD").model_copy(update={"journal": agent.journal})
     write_workspace(agent, repo, overwrite=True)
     stored = [json.loads(line) for line in (repo / "journal.jsonl").read_text(encoding="utf-8").splitlines()]
     for kind in ("modified", "added", "moved"):
@@ -346,12 +358,12 @@ def commit_changes(agent: MetaAgent, repo: Path, rng: random.Random) -> None:
         for change in agent.journal.changes(target):
             reason, sha = (change.reason or "-").splitlines()[0], (change.commit or "-")[:8]
             print(f"  {change.at.astimezone():%Y-%m-%d %H:%M} {sha:<8} {change.kind:<8} {reason}")
-            if change.kind == "modified":
+            if isinstance(change, Modified):
                 print("\n".join(f"{'':4}{line}" for line in change.diff(context_lines=1).splitlines()))
-            elif change.kind == "moved":
+            elif isinstance(change, Moved):
                 print(f"{'':4}from {change.previous}")
 
-    banner(f"9d. journal.diff(commit={base[:8]!r}, head='HEAD'): net change per section, journal only")
+    banner(f"9e. journal.diff(commit={base[:8]!r}, head='HEAD'): net change per section, journal only")
     print(agent.journal.diff(commit=base[:8], head="HEAD", context_lines=1))
 
 

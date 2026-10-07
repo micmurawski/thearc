@@ -59,7 +59,7 @@ def test_detects_each_harness_and_refuses_ambiguity(tmp_path, claude_dir, codex_
 
 
 def test_collects_multiple_harnesses_into_one_index(tmp_path, claude_dir, codex_dir, batch):
-    with Sessions.open(tmp_path / "index.sqlite") as sessions:
+    with Sessions(tmp_path / "index.sqlite") as sessions:
         assert sessions.add(claude_dir).harness == "claude"
         assert sessions.add(codex_dir).harness == "codex"
         source = sessions.add(batch)
@@ -83,5 +83,5 @@ def test_collects_multiple_harnesses_into_one_index(tmp_path, claude_dir, codex_
 
 
 def test_index_must_stay_outside_source(claude_dir):
-    with Sessions.open(claude_dir / "index.sqlite") as sessions, pytest.raises(ValueError, match="outside"):
+    with Sessions(claude_dir / "index.sqlite") as sessions, pytest.raises(ValueError, match="outside"):
         sessions.add(claude_dir)

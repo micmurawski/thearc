@@ -2,9 +2,10 @@
 
 from collections.abc import Mapping
 from types import MappingProxyType
+from typing import Any
 
 
-def freeze(value):
+def freeze(value: Any) -> Any:
     if isinstance(value, Mapping):
         return MappingProxyType({key: freeze(item) for key, item in value.items()})
     if isinstance(value, (list, tuple)):
@@ -12,7 +13,7 @@ def freeze(value):
     return value
 
 
-def thaw(value):
+def thaw(value: Any) -> Any:
     if isinstance(value, Mapping):
         return {key: thaw(item) for key, item in value.items()}
     if isinstance(value, tuple):
@@ -25,21 +26,21 @@ class Record:
 
     __slots__ = ("_data",)
 
-    def __init__(self, data):
+    def __init__(self, data: Mapping[str, Any]):
         object.__setattr__(self, "_data", freeze(data))
 
-    def __setattr__(self, name, value):
+    def __setattr__(self, name: str, value: Any) -> None:
         raise AttributeError("Historical records are immutable")
 
-    def __getattr__(self, name):
+    def __getattr__(self, name: str) -> Any:
         try:
             value = self._data[name]
         except KeyError as exc:
             raise AttributeError(name) from exc
         return Record(value) if name == "reference" else value
 
-    def model_dump(self, **kwargs):
+    def model_dump(self, **kwargs: Any) -> dict[str, Any]:
         return thaw(self._data)
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"Record(id={self._data.get('id')!r})"

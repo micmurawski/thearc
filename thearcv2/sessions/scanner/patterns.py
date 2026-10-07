@@ -32,7 +32,7 @@ class PatternMatch:
     end_index: int
     """Index into the event list where the match ends (inclusive)."""
 
-    events: tuple[Event, ...]
+    events: tuple[Any, ...]
     """The exact slice of events constituting the match."""
 
     context: dict[str, Any] = field(default_factory=dict)

@@ -24,7 +24,7 @@ def test_immutable_detached_history_and_round_trip(history, tmp_path):
     detached["arguments"]["command"].append("bad")
     assert len(history.events[1].arguments["command"]) == 2
     path = history.save(tmp_path / "session.json")
-    assert Session.open(path).to_jsonl() == history.to_jsonl()
+    assert Session.open(path).export().text == history.export().text
     with pytest.raises(FileExistsError):
         history.save(path)
     data = json.loads(path.read_text())
@@ -52,15 +52,18 @@ def test_rendering_and_conversion(history, tmp_path):
     assert "fixture.jsonl" not in text and "harness" not in text
     assert 'Responds to: "e1"' in text
     assert "SyntaxError" in text
-    assert json.loads(history.to_codex().text.splitlines()[1])["payload"]["type"] == "function_call"
-    assert json.loads(history.to_claude().text.splitlines()[2])["message"]["content"][0]["is_error"]
-    path = history.to_codex().save(tmp_path / "export.jsonl")
+    assert json.loads(history.export("codex").text.splitlines()[0])["type"] == "session_meta"
+    items = [json.loads(line)["payload"] for line in history.export("codex").text.splitlines()]
+    assert [item["type"] for item in items if item.get("type") in {"function_call", "task_started"}][:2] == [
+        "task_started", "function_call"]
+    assert json.loads(history.export("claude").text.splitlines()[2])["message"]["content"][0]["is_error"]
+    path = history.export("codex").save(tmp_path / "export.jsonl")
     assert path.is_file()
     with pytest.raises(FileExistsError):
-        history.to_codex().save(path)
+        history.export("codex").save(path)
     unsupported = Session.from_events([event(0, kind="unknown", text="unsupported")])
     with pytest.raises(UnsupportedConversion):
-        unsupported.to_codex()
+        unsupported.export("codex")
 
 
 def test_metadata_is_skipped_and_reported_not_replayed(history):
@@ -68,10 +71,10 @@ def test_metadata_is_skipped_and_reported_not_replayed(history):
     attachment = event(99, kind="metadata", text="").model_dump()
     attachment["session_id"] = events[0]["session_id"]
     mixed = Session.from_events([events[0], attachment, *events[1:]])
-    for export in (mixed.to_codex(), mixed.to_claude()):
+    for export in (mixed.export("codex"), mixed.export("claude")):
         assert "e99" not in export.event_ids
         assert export.transformations[0].startswith("1 metadata record(s)")
-        assert export.text == (history.to_codex() if export.format == "codex" else history.to_claude()).text
+        assert export.text == (history.export("codex") if export.format == "codex" else history.export("claude")).text
     text = mixed.to_markdown()
     assert '"e99"' not in text and "1 metadata record(s) without readable content omitted" in text
     nested = Session.from_events([event(0, text="```json\n{}\n```")])
@@ -82,21 +85,21 @@ def test_detached_search_scope_and_citations(history):
     result = history.search("syntaxerror", case_sensitive=False)[0]
     assert result.event.id == "e2" and result.trajectory.id == "e0"
     assert result.match_ranges == ((0, 11),)
-    assert history.search("SyntaxError", mode="lexical").count() == 1
-    assert history.trajectories[1].search("SyntaxError").count() == 0
-    assert history.search(status="failure", tool_name="shell").count() == 1
+    assert len(history.search("SyntaxError", mode="lexical")) == 1
+    assert len(history.trajectories[1].search("SyntaxError")) == 0
+    assert len(history.search(status="failure", tool_name="shell")) == 1
     assert "cached=0" in repr(history.search("Tests"))
 
 
 @pytest.mark.parametrize("text", ["Check the constructor first", ""])
 def test_foreign_thinking_is_portable_text_not_native_reasoning(text):
     history = Session.from_events([event(0, kind="thinking", text=text)])
-    item = json.loads(history.to_codex().text)["payload"]
+    item = json.loads(history.export("codex").text.splitlines()[1])["payload"]
     assert item["type"] == "message" and item["role"] == "assistant"
     assert "[Historical thinking record]" in item["content"][0]["text"]
     assert (text or "No readable thinking text") in item["content"][0]["text"]
-    with pytest.raises(UnsupportedConversion, match="signed content"):
-        history.to_claude()
+    with pytest.raises(UnsupportedConversion, match="no Claude signature"):
+        history.export("claude")
 
 
 def test_sessions_pin_lazy_artifacts_and_result_membership(tmp_path):

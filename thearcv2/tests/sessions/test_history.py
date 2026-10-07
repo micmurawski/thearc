@@ -190,7 +190,6 @@ def test_session_and_run_projections_are_provider_neutral(archive):
         runs = archive.list_runs(session.id)
         assert len(runs) == session.run_count
         assert sum(run.event_count for run in runs) == session.event_count
-        assert archive.session_stats(session.id)["event_count"] == session.event_count
 
 
 def test_internal_records_and_duplicate_codex_events(archive):

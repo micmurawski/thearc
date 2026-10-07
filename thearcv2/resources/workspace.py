@@ -20,7 +20,7 @@ from typing import Any
 
 from pydantic import TypeAdapter, ValidationError
 
-from thearcv2.resources.agent import MCP, SKILL_FILE, AgentResource, ContextDocument, Hook, MetaAgent, Skill
+from thearcv2.resources.agent import MCP, SKILL_FILE, AgentResource, ContextDocument, Hook, MetaAgent
 from thearcv2.resources.files import HOOKS_FILE, MCP_FILE
 from thearcv2.resources.journal import Entry, Journal
 from thearcv2.resources.markdown import split_frontmatter
@@ -31,7 +31,7 @@ GITATTRIBUTES = ".gitattributes"
 UNION_MERGE = f"{JOURNAL_FILE} merge=union"
 SCHEMA_VERSION = 2
 CONFIG_DIRS = ("skills", "context", "rules", "workflows", "commands")
-_ENTRY = TypeAdapter(Entry)
+_ENTRY: TypeAdapter[Entry] = TypeAdapter(Entry)
 
 
 def _root(path: str | Path) -> Path:
@@ -193,7 +193,7 @@ def parse_workspace(texts: dict[str, str]) -> MetaAgent:
         elif top == "context" and rest:
             context.append(ContextDocument(filename=rest, content=text))
         elif top in {"rules", "workflows", "commands"} and rest:
-            resources.append(AgentResource(location=top, path=rest, content=text))
+            resources.append(AgentResource.model_validate({"location": top, "path": rest, "content": text}))
         elif relative == JOURNAL_FILE:
             entries = load_journal(text)
         else:
@@ -201,6 +201,6 @@ def parse_workspace(texts: dict[str, str]) -> MetaAgent:
     for name, skill in skills.items():
         if not skill.pop("has_instructions", False):
             raise ValueError(f"skills/{name} has no {SKILL_FILE}")
-    return MetaAgent(name=manifest["name"], version=manifest["version"],
-                     skills=[Skill(**skill) for skill in skills.values()], hooks=hooks, mcps=mcps,
-                     context=context, resources=resources, journal=Journal(entries=entries))
+    return MetaAgent.model_validate({
+        "name": manifest["name"], "version": manifest["version"], "skills": list(skills.values()), "hooks": hooks,
+        "mcps": mcps, "context": context, "resources": resources, "journal": Journal(entries=entries)})

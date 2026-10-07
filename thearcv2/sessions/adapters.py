@@ -76,7 +76,7 @@ class BaseAdapter:
     def discover(self, source: SourceConfig) -> Iterator[Path]:
         yield from sorted(source.root.rglob("*.jsonl"))
 
-    def event(self, source: SourceConfig, ref: SourceReference, data: dict, meta: dict, **fields) -> Event:
+    def event(self, source: SourceConfig, ref: SourceReference, data: dict, meta: dict, **fields: Any) -> Event:
         native_session = meta.get("session", ref.path.stem)
         session = identity(source.id, native_session)
         run = identity(session, meta.get("agent", "main"))
@@ -104,11 +104,12 @@ class BaseAdapter:
             **fields,
         )
 
-    def blocks(self, source, ref, data, meta, message, pointer="/message/content") -> list[Event]:
+    def blocks(self, source: SourceConfig, ref: SourceReference, data: dict, meta: dict, message: dict,
+               pointer: str = "/message/content") -> list[Event]:
         role = message.get("role")
         content = message.get("content", "")
         string_content = isinstance(content, str)
-        result = []
+        result: list[Event] = []
         if isinstance(content, str):
             content = [{"type": "text", "text": content}]
         if not isinstance(content, list):
@@ -152,7 +153,7 @@ class OpenCodeAdapter(BaseAdapter):
 
     version = "opencode-2"
 
-    def normalize(self, source, ref, data, metadata):
+    def normalize(self, source: SourceConfig, ref: SourceReference, data: dict, metadata: dict) -> list[Event]:
         info = data.get("info", {})
         if not isinstance(info, dict) or not info.get("id") or not isinstance(data.get("messages"), list):
             raise ValueError("Expected OpenCode export with info and messages")
@@ -206,12 +207,18 @@ class OpenCodeAdapter(BaseAdapter):
 
 
 class PiAdapter(BaseAdapter):
-    def normalize(self, source, ref, data, metadata):
+    version = "pi-2"
+
+    def normalize(self, source: SourceConfig, ref: SourceReference, data: dict, metadata: dict) -> list[Event]:
         if data.get("type") == "session":
             metadata.update(session=data.get("id", ref.path.stem), cwd=data.get("cwd"))
         message = data.get("message")
         if isinstance(message, dict):
             role = message.get("role")
+            if role == "system":
+                # Pi records the system prompt it sent (sections, tools) — configuration, not conversation.
+                return [self.event(source, ref, data, metadata, kind="metadata", role="system",
+                                   text=text_content(message.get("content")))]
             if role == "toolResult":
                 return [
                     self.event(
@@ -251,12 +258,12 @@ class PiAdapter(BaseAdapter):
 
 
 class ClaudeAdapter(BaseAdapter):
-    def discover(self, source):
+    def discover(self, source: SourceConfig) -> Iterator[Path]:
         for path in super().discover(source):
             if path.name != "history.jsonl" and "tool-results" not in path.parts:
                 yield path
 
-    def normalize(self, source, ref, data, metadata):
+    def normalize(self, source: SourceConfig, ref: SourceReference, data: dict, metadata: dict) -> list[Event]:
         child = "subagents" in ref.path.parts
         metadata.update(
             session=data.get("sessionId", metadata.get("session", ref.path.stem)),
@@ -273,10 +280,29 @@ class ClaudeAdapter(BaseAdapter):
 
 
 class CodexAdapter(BaseAdapter):
-    version = "codex-2"
+    version = "codex-3"
 
     @staticmethod
-    def result_status(output):
+    def result_text(output: Any) -> str:
+        """Readable output: text blocks of a content list, without blocks that only report an exit code."""
+        if not isinstance(output, list):
+            return output if isinstance(output, str) else json.dumps(output)
+        parts = []
+        for block in output:
+            if not isinstance(block, dict) or block.get("type") not in {"text", "input_text", "output_text"}:
+                continue
+            text = str(block.get("text", ""))
+            try:
+                envelope = json.loads(text)
+            except ValueError:
+                envelope = None
+            if isinstance(envelope, dict) and set(envelope) == {"exit_code"}:
+                continue
+            parts.append(text)
+        return "\n".join(parts)
+
+    @staticmethod
+    def result_status(output: Any) -> str | None:
         """Read explicit exit codes from tool envelopes, never error words in arbitrary output."""
         values = output if isinstance(output, list) else [output]
         codes = []
@@ -296,10 +322,10 @@ class CodexAdapter(BaseAdapter):
             return "success"
         return None
 
-    def discover(self, source):
+    def discover(self, source: SourceConfig) -> Iterator[Path]:
         yield from sorted(source.root.rglob("rollout-*.jsonl"))
 
-    def normalize(self, source, ref, data, metadata):
+    def normalize(self, source: SourceConfig, ref: SourceReference, data: dict, metadata: dict) -> list[Event]:
         payload = data.get("payload", {})
         if not isinstance(payload, dict):
             return [self.event(source, ref, data, metadata, kind="unknown")]
@@ -349,7 +375,7 @@ class CodexAdapter(BaseAdapter):
                         kind="tool_result",
                         role="tool",
                         call_id=payload.get("call_id"),
-                        text=output if isinstance(output, str) else json.dumps(output),
+                        text=self.result_text(output),
                         status=self.result_status(output),
                     )
                 ]
@@ -368,103 +394,78 @@ class CodexAdapter(BaseAdapter):
 
 
 class AntigravityAdapter(BaseAdapter):
+    """Antigravity ``transcript.jsonl`` steps.
+
+    Tool calls carry no IDs: each ``PLANNER_RESPONSE`` lists its calls, and the
+    steps that follow report their results in the same order, typed by tool
+    (``VIEW_FILE``, ``RUN_COMMAND``, ``CODE_ACTION``, ``GENERIC``, …). Calls waiting
+    for a result are kept in the per-file state, so incremental syncs keep pairing.
+    """
+
+    version = "antigravity-2"
+    _NOT_RESULTS = frozenset({"USER_INPUT", "PLANNER_RESPONSE", "SYSTEM_MESSAGE", "CHECKPOINT",
+                              "CONVERSATION_HISTORY", "ERROR_MESSAGE"})
+
     def discover(self, source: SourceConfig) -> Iterator[Path]:
         yield from sorted(source.root.rglob("transcript.jsonl"))
 
     def normalize(self, source: SourceConfig, ref: SourceReference, data: dict, metadata: dict) -> list[Event]:
-        session_id = data.get("conversation_id") or metadata.get("session")
-        if not session_id:
-            for part in reversed(ref.path.parts[:-1]):
-                if part not in {".system_generated", "logs"}:
-                    session_id = part
-                    break
+        if not metadata.get("session"):
+            session_id = data.get("conversation_id")
             if not session_id:
-                session_id = ref.path.parent.name
+                parts = [part for part in ref.path.parts[:-1] if part not in {".system_generated", "logs"}]
+                session_id = parts[-1] if parts else ref.path.parent.name
             metadata["session"] = session_id
-
+        if data.get("cwd"):
+            metadata["cwd"] = data["cwd"]
+        pending: list = metadata.setdefault("_pending_calls", [])
         step_type = data.get("type")
-        events: list[Event] = []
+        content = text_content(data.get("content") or "")
+        timestamp = data.get("created_at")
 
         if step_type == "USER_INPUT":
-            content = data.get("content", "")
-            events.append(
-                self.event(
-                    source,
-                    ref,
-                    data,
-                    metadata,
-                    kind="message",
-                    role="user",
-                    text=text_content(content),
-                )
-            )
-        elif step_type == "PLANNER_RESPONSE":
+            pending.clear()  # A new prompt ends the previous response; unanswered calls stay unanswered.
+            return [self.event(source, ref, data, metadata, kind="message", role="user", text=content,
+                               timestamp=timestamp)]
+        if step_type == "SYSTEM_MESSAGE":
+            return [self.event(source, ref, data, metadata, kind="message", role="system", text=content,
+                               timestamp=timestamp)]
+        if step_type == "CHECKPOINT":
+            return [self.event(source, ref, data, metadata, kind="compaction", text=content, timestamp=timestamp)]
+        if step_type == "PLANNER_RESPONSE":
+            pending.clear()
+            events = []
             if data.get("thinking"):
-                events.append(
-                    self.event(
-                        source,
-                        ref,
-                        data,
-                        metadata,
-                        kind="thinking",
-                        role="assistant",
-                        text=str(data["thinking"]),
-                        subrecord=0,
-                    )
-                )
-            if data.get("content"):
-                events.append(
-                    self.event(
-                        source,
-                        ref,
-                        data,
-                        metadata,
-                        kind="message",
-                        role="assistant",
-                        text=text_content(data["content"]),
-                        subrecord=1,
-                    )
-                )
-            tool_calls = data.get("tool_calls") or []
-            for idx, call in enumerate(tool_calls):
-                tool_name = call.get("name")
-                args = call.get("args") or call.get("arguments", {})
-                call_id = call.get("id") or f"{ref.path.stem}-{data.get('step_index')}-{idx}"
-                events.append(
-                    self.event(
-                        source,
-                        ref,
-                        data,
-                        metadata,
-                        kind="tool_call",
-                        role="assistant",
-                        tool_name=tool_name,
-                        action_kind=action(tool_name),
-                        call_id=call_id,
-                        arguments=args,
-                        text=json.dumps(args, ensure_ascii=False) if isinstance(args, dict) else str(args),
-                        subrecord=10 + idx,
-                    )
-                )
-        elif step_type in {"GENERIC", "TOOL_OUTPUT"}:
-            status = "failure" if data.get("status") == "ERROR" else "success"
-            content = data.get("content", "")
-            events.append(
-                self.event(
-                    source,
-                    ref,
-                    data,
-                    metadata,
-                    kind="tool_result",
-                    role="tool",
-                    status=status,
-                    text=text_content(content),
-                )
-            )
-        else:
-            events.append(self.event(source, ref, data, metadata, kind="metadata"))
-
-        return events
+                events.append(self.event(source, ref, data, metadata, kind="thinking", role="assistant",
+                                         text=str(data["thinking"]), timestamp=timestamp, subrecord=0))
+            if content:
+                events.append(self.event(source, ref, data, metadata, kind="message", role="assistant",
+                                         text=content, timestamp=timestamp, subrecord=1))
+            for index, call in enumerate(data.get("tool_calls") or []):
+                name = call.get("name")
+                args = call.get("args", call.get("arguments", {}))
+                call_id = call.get("id") or f"{metadata['session']}-{data.get('step_index')}-{index}"
+                pending.append([call_id, name])
+                events.append(self.event(
+                    source, ref, data, metadata, kind="tool_call", role="assistant", tool_name=name,
+                    action_kind=action(name), call_id=call_id, arguments=args, timestamp=timestamp,
+                    subrecord=10 + index,
+                    text=json.dumps(args, ensure_ascii=False) if isinstance(args, dict) else str(args)))
+            return events
+        if step_type not in self._NOT_RESULTS or (step_type == "ERROR_MESSAGE" and pending):
+            call_id, name = pending.pop(0) if pending else (None, None)
+            exit_code = data.get("exit_code")
+            if data.get("status") == "ERROR" or data.get("error") or (type(exit_code) is int and exit_code != 0):
+                status = "failure"
+            elif data.get("status") == "RUNNING":
+                status = None
+            else:
+                status = "success"
+            return [self.event(source, ref, data, metadata, kind="tool_result", role="tool", call_id=call_id,
+                               tool_name=name, action_kind=action(name), status=status,
+                               text=content or str(data.get("error") or ""), timestamp=timestamp)]
+        return [self.event(source, ref, data, metadata, kind="metadata", text=str(data.get("error") or ""),
+                           timestamp=timestamp)]
 
 
 ADAPTERS: dict[str, TranscriptAdapter] = {
@@ -481,14 +482,14 @@ class DataClawAdapter(BaseAdapter):
 
     version = "dataclaw-1"
 
-    def normalize(self, source, ref, data, metadata):
+    def normalize(self, source: SourceConfig, ref: SourceReference, data: dict, metadata: dict) -> list[Event]:
         messages = data.get("messages")
         if not isinstance(messages, list) or not data.get("session_id"):
             raise ValueError("DataClaw records require session_id and a messages list")
         metadata.update(session=data["session_id"], cwd=None)
-        events = []
+        events: list[Event] = []
 
-        def append(raw, pointer, **fields):
+        def append(raw: dict, pointer: str, **fields: Any) -> None:
             event_ref = ref.model_copy(update={"json_pointer": pointer})
             events.append(
                 self.event(source, event_ref, raw, metadata, subrecord=len(events), raw_pointer=pointer, **fields)

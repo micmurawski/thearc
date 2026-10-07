@@ -53,7 +53,7 @@ def detect_changes(before: MetaAgent | None, after: MetaAgent, *, reason: str | 
     old_files = before.files() if before is not None else None
     new_targets = set(new_files.targets)
     old_targets = set(old_files.targets) if old_files is not None else set()
-    common = {"revision": new_files.revision, "at": at, "commit": commit, "extra": extra,
+    common: dict[str, Any] = {"revision": new_files.revision, "at": at, "commit": commit, "extra": extra,
               "reason": reason, "parent": parent}
     removed, added = old_targets - new_targets, new_targets - old_targets
     moves: list[tuple[ResourceTarget, ResourceTarget]] = []
@@ -74,7 +74,8 @@ def detect_changes(before: MetaAgent | None, after: MetaAgent, *, reason: str | 
             content = resource if isinstance(resource, str) else resource.model_dump(mode="json", exclude=identity)
             return target.kind, json.dumps(content, sort_keys=True, ensure_ascii=False)
 
-        def owned(files: AgentFiles, target: ResourceTarget, scope: Callable[[ResourceTarget], Hashable]):
+        def owned(files: AgentFiles, target: ResourceTarget,
+                  scope: Callable[[ResourceTarget], Hashable]) -> Hashable | None:
             text = files.owned_text(target)
             return (scope(target), files.content_hash(target)) if text else None
 

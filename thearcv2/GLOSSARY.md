@@ -435,6 +435,29 @@ session index — rather than two.
 A session up to and including one trajectory: everything the agent had seen
 when that trajectory ended. It must end at a recorded trajectory boundary.
 
+### Export
+
+A session, trajectory, or session view written in a harness's own transcript
+format — `claude`, `codex`, `pi`, `opencode`, or `antigravity` — or as canonical
+`thearc` JSONL. Prompts, replies, thinking, tool calls with their results and
+status, system messages, and compaction summaries use the target's native form
+where it has one. An export is **strict** by default: anything the target
+cannot represent faithfully (thinking without the signature Claude requires,
+Codex's encrypted reasoning, …) is refused. A **best-effort** export keeps such
+events as clearly labelled text and lists each one, by event ID, in the
+export's transformations.
+
+### Session installation
+
+An export written where a harness looks for sessions, so the harness can resume or
+fork it — for example a Claude trajectory installed into Codex so a Codex
+reflector can fork it. An installed session is a **copy** with its own ID,
+derived from the selected events and the target harness: installing the same
+selection again finds the earlier copy, which is replaced only on request. In
+Codex, each trajectory becomes one turn, so a fork can stop at any trajectory.
+Codex, Claude, and Pi load installed files directly; OpenCode needs an import
+command; Antigravity cannot load transcripts at all.
+
 ### Harness
 
 The agent environment that records sessions and runs a MetaAgent: `claude`,
@@ -453,6 +476,7 @@ harness's **layout** is where installed configuration goes in a project.
 | Session index | `sessions.SessionIndex` |
 | Records the index stores | `sessions.SessionMetadata`, `Run`, `Event`, `SourceConfig`, `IndexHit` |
 | Behavioral patterns | `sessions.scanner` |
-| Converting transcripts between harness formats | `sessions.translation` |
+| Export to a harness format | `session.export(format)`, `sessions.export_events` (`sessions.export`) |
+| Session installation | `session.install(harness)`, `Sessions.install_all`, `thearcv2 s install` |
 | Harness names; installation layout | `harnesses.Harness`; `resources.HarnessLayout` |
 | Command line | `python -m thearcv2 sessions …` (`sessions.cli`) |

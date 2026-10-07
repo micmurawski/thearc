@@ -8,7 +8,7 @@ import sqlite3
 from collections.abc import Iterator
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Self
+from typing import Self
 
 from thearcv2.sessions.adapters import get_adapter
 from thearcv2.sessions.models import (
@@ -24,10 +24,6 @@ from thearcv2.sessions.models import (
     SourceReference,
     SyncReport,
 )
-
-if TYPE_CHECKING:
-    from .trajectories import TrajectorySplit
-
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value INTEGER NOT NULL);
@@ -70,7 +66,7 @@ CREATE TABLE IF NOT EXISTS diagnostics(
 """
 
 
-def prefix_hasher(path: Path, length: int):
+def prefix_hasher(path: Path, length: int) -> hashlib._Hash:
     digest = hashlib.sha256()
     with path.open("rb") as stream:
         remaining = length
@@ -145,7 +141,7 @@ class SessionIndex:
     def __enter__(self) -> Self:
         return self
 
-    def __exit__(self, *args) -> None:
+    def __exit__(self, *args: object) -> None:
         self.close()
 
     @property
@@ -487,10 +483,6 @@ class SessionIndex:
         ).fetchall()
         return [self._run_from_row(row) for row in rows]
 
-    def session_stats(self, session_id: str) -> dict[str, int | str]:
-        session = self.get_session(session_id)
-        return {"session_id": session.id, "event_count": session.event_count, "run_count": session.run_count}
-
     def read_evidence(self, event_id: str) -> dict:
         """Read the original JSON record, rejecting unavailable or changed evidence."""
         event = self.get_event(event_id)
@@ -637,7 +629,7 @@ class SessionIndex:
         event = self.get_event(event_id)
         if event.harness == "pi" and event.native_id:
             # Follow parentId edges, never chronological siblings from abandoned branches.
-            def native_group(native_id):
+            def native_group(native_id: str) -> list[Event]:
                 return [
                     self._enrich(Event.model_validate_json(r[0]))
                     for r in self.connection.execute(
@@ -646,7 +638,8 @@ class SessionIndex:
                     )
                 ]
 
-            ancestors, parent, seen = [], event.parent_native_id, set()
+            ancestors: list[Event] = []
+            parent, seen = event.parent_native_id, set()
             while parent and parent not in seen:
                 seen.add(parent)
                 group = native_group(parent)
@@ -665,7 +658,7 @@ class SessionIndex:
             "SELECT path,byte_offset,subrecord FROM events WHERE id=?", (event_id,)
         ).fetchone()
         key = tuple(location)
-        prior = self.connection.execute(
+        earlier = self.connection.execute(
             "SELECT data FROM events WHERE run_id=? AND (path,byte_offset,subrecord)<(?,?,?) "
             "ORDER BY path DESC,byte_offset DESC,subrecord DESC LIMIT ?",
             (event.run_id, *key, before),
@@ -676,9 +669,9 @@ class SessionIndex:
             (event.run_id, *key, after),
         ).fetchall()
         return (
-            [self._enrich(Event.model_validate_json(r[0])) for r in reversed(prior)]
+            [self._enrich(Event.model_validate_json(row[0])) for row in reversed(earlier)]
             + [event]
-            + [self._enrich(Event.model_validate_json(r[0])) for r in following]
+            + [self._enrich(Event.model_validate_json(row[0])) for row in following]
         )
 
     def get_delegation_trace(self, run_id: str) -> RunTrace:
@@ -715,12 +708,6 @@ class SessionIndex:
     def diagnostics(self) -> list[dict]:
         return [dict(r) for r in self.connection.execute("SELECT * FROM diagnostics ORDER BY source_id,path,line")]
 
-    def split_session(self, session_id: str) -> TrajectorySplit:
-        """Split all indexed events of a session into prompt-triggered trajectories."""
-        from .trajectories import split_trajectories
-
-        self.get_session(session_id)  # Distinguish a missing session from an empty split.
-        return split_trajectories(list(self.iter_events(SearchFilters(session_ids=[session_id]))))
 
     def iter_events(self, filters: SearchFilters | None = None) -> Iterator[Event]:
         """Yield native stream order, never hash-ID order.

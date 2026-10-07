@@ -373,7 +373,7 @@ def install(agent: MetaAgent, harness: Harness | HarnessLayout, project_dir: str
     hooks = {name: hook for name, hook in agent.hooks.items() if hook.enabled and harness.hooks_file}
     mcps = agent.mcps if harness.mcp_file else {}
     files = _planned_files(agent, harness)
-    configuration = {harness.hooks_file, harness.mcp_file, harness.marker, *agent.context}
+    configuration = {path for path in (harness.hooks_file, harness.mcp_file, harness.marker, *agent.context) if path}
     if clash := configuration & files.keys():
         raise ValueError(f"resources collide with harness configuration files: {sorted(clash)}")
 
@@ -407,7 +407,7 @@ def install(agent: MetaAgent, harness: Harness | HarnessLayout, project_dir: str
     hook_keys: dict[str, list] = {}
     if harness.hooks_file is not None:
         if harness.hooks_format == "nested":
-            owned: set[HookKey] = {tuple(key) for key in owned_hook_names.values()}  # type: ignore[misc]
+            owned: set[HookKey] = {tuple(key) for key in owned_hook_names.values()}
             data, hook_keys = _merge_nested_hooks(hook_data, hooks, harness, owned)
         else:
             data = {name: value for name, value in hook_data.items() if name not in owned_hook_names}
@@ -438,7 +438,7 @@ def _install_context(root: Path, agent: MetaAgent, owned: dict[str, list[str] | 
             path.unlink()
             _prune(path.parent, root)
         else:
-            path.write_text(replace_sections(path.read_text(encoding="utf-8"), [], remove=tuple(owned[filename])),
+            path.write_text(replace_sections(path.read_text(encoding="utf-8"), [], remove=tuple(owned[filename] or ())),
                             encoding="utf-8")
     for filename, document in sorted(agent.context.items()):
         path = _destination(root, filename)
@@ -516,6 +516,7 @@ def read_installation(harness: Harness | HarnessLayout, project_dir: str | Path,
         else:
             hooks = [Hook(name=hook_name, **entry) for hook_name, entry in data.items()]
     mcps = [_decode_mcp(harness, server, data) for server, data in _read_mcp_servers(root, harness).items()]
-    return MetaAgent(name=name or marker.get("name") or f"{harness.name}-project",
-                     version=version if version is not None else marker.get("version"),
-                     skills=skills, hooks=hooks, mcps=mcps, context=context, resources=resources)
+    return MetaAgent.model_validate({
+        "name": name or marker.get("name") or f"{harness.name}-project",
+        "version": version if version is not None else marker.get("version"),
+        "skills": skills, "hooks": hooks, "mcps": mcps, "context": context, "resources": resources})

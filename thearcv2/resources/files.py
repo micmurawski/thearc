@@ -25,10 +25,12 @@ from dataclasses import dataclass
 from difflib import unified_diff
 from pathlib import Path, PurePosixPath
 from types import MappingProxyType
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
+
+from pydantic import BaseModel
 
 from thearcv2.resources.markdown import outline, render_frontmatter, split_frontmatter
-from thearcv2.resources.targets import ResourceTarget
+from thearcv2.resources.targets import Kind, ResourceTarget
 
 if TYPE_CHECKING:
     from thearcv2.resources.agent import MetaAgent
@@ -95,7 +97,7 @@ def skill_markdown(name: str, description: str, metadata: dict, instructions: st
     return render_frontmatter(frontmatter, instructions)
 
 
-def structured_entry(model) -> dict:
+def structured_entry(model: BaseModel) -> dict[str, Any]:
     """The JSON form of a hook or MCP inside ``hooks.json`` / ``mcp.json``."""
     return model.model_dump(mode="json", exclude={"name"}, exclude_defaults=True)
 
@@ -144,7 +146,9 @@ class AgentFiles:
             add(f"context/{filename}", document.content, ResourceTarget(kind="context", name=filename), markdown=True)
         for key, item in sorted(agent.resources.items()):
             add(key, item.content, ResourceTarget(kind=item.kind, name=item.path), markdown=True)
-        for path, kind, collection in ((HOOKS_FILE, "hook", agent.hooks), (MCP_FILE, "mcp", agent.mcps)):
+        structured: list[tuple[str, Kind, dict[str, Any]]] = [
+            (HOOKS_FILE, "hook", dict(agent.hooks)), (MCP_FILE, "mcp", dict(agent.mcps))]
+        for path, kind, collection in structured:
             if collection:
                 text, entry_spans = _json_entries({name: structured_entry(item) for name, item in collection.items()})
                 files[path] = text

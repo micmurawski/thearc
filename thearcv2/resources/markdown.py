@@ -7,6 +7,7 @@ round trip exactly and line numbers stay stable.
 from __future__ import annotations
 
 import re
+from collections.abc import Iterator
 from dataclasses import dataclass
 from typing import Any
 
@@ -59,7 +60,7 @@ class Heading:
         return SECTION_SEPARATOR.join(self.path)
 
 
-def _heading_lines(lines: list[str]):
+def _heading_lines(lines: list[str]) -> Iterator[tuple[int, str]]:
     """Yield candidate headings outside fenced and indented code blocks."""
     fence = None
     for index, line in enumerate(lines):

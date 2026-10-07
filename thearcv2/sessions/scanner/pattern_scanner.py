@@ -147,7 +147,7 @@ class PatternScanner:
     ) -> list[PatternMatch]:
         """Scan an already-loaded list of events (no store required).
 
-        Useful for scanning translation-extracted events or test fixtures.
+        Useful for scanning exported events or test fixtures.
         """
         active = self._resolve_patterns(pattern_names)
         return self._match_events(events, active)

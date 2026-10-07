@@ -5,7 +5,7 @@ import json
 import pytest
 
 from thearcv2.sessions.index import SessionIndex
-from thearcv2.sessions.models import Event, SourceConfig, SourceReference
+from thearcv2.sessions.models import Event, SearchFilters, SourceConfig, SourceReference
 from thearcv2.sessions.trajectories import split_trajectories
 
 
@@ -95,7 +95,7 @@ def test_sqlite_split_uses_complete_records_and_prepares_native_reference(tmp_pa
     with SessionIndex(tmp_path / "index.sqlite") as store:
         store.ingest(SourceConfig(id="source", harness="codex", root=tmp_path))
         session = next(store.iter_sessions())
-        result = store.split_session(session.id)
+        result = split_trajectories(list(store.iter_events(SearchFilters(session_ids=[session.id]))))
         assert [t.prompt_text for t in result.trajectories] == ["t1", "t2"]
         assert [t.native_turn_id for t in result.trajectories] == ["t1", "t2"]
         all_events = [*result.unassigned_events, *(e for t in result.trajectories for e in t.prompt_events + t.events)]

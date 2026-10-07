@@ -2,12 +2,15 @@
 
 Public entry point: ``Sessions``. One class per concept — ``Session``, ``Trajectory``,
 ``SessionIndex`` — plus the normalized records the index stores (``models``).
-Subpackages: ``scanner`` (behavioral patterns) and ``translation`` (transcript conversion).
+Exports to harness formats: ``Session.to_jsonl`` / ``export_events``. Subpackage: ``scanner`` (behavioral patterns).
 """
 
-from . import scanner, translation
-from .formats import Export, UnsupportedConversion, evidence_to_markdown
+from . import scanner
+from .events import UnsupportedConversion
+from .export import FORMATS, Export, export_events
 from .index import SessionIndex
+from .install import INSTALLABLE, InstalledSession, SessionAlreadyInstalled, install_export
+from .markdown import evidence_to_markdown
 from .models import (
     Event,
     IndexHit,
@@ -26,9 +29,12 @@ from .sessions import Sessions, detect_harness
 from .trajectories import split_trajectories
 
 __all__ = [
+    "FORMATS",
+    "INSTALLABLE",
     "Event",
     "Export",
     "IndexHit",
+    "InstalledSession",
     "Results",
     "Run",
     "RunTrace",
@@ -37,6 +43,7 @@ __all__ = [
     "SearchPage",
     "SearchQuery",
     "Session",
+    "SessionAlreadyInstalled",
     "SessionIndex",
     "SessionMetadata",
     "SessionView",
@@ -49,7 +56,8 @@ __all__ = [
     "UnsupportedConversion",
     "detect_harness",
     "evidence_to_markdown",
+    "export_events",
+    "install_export",
     "scanner",
     "split_trajectories",
-    "translation",
 ]

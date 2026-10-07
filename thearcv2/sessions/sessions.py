@@ -9,24 +9,32 @@ Indexing never writes into a source directory.
 
 from __future__ import annotations
 
+import builtins
 import json
 import sqlite3
+from collections.abc import Iterable, Iterator
 from datetime import UTC, datetime
 from itertools import islice
 from pathlib import Path
 from tempfile import NamedTemporaryFile
+from types import TracebackType
+from typing import Any, Literal, Self, cast
 from uuid import uuid4
+
+from thearcv2.harnesses import Harness
 
 from .immutable import Record
 from .index import SessionIndex
-from .models import SearchFilters, SourceConfig, SyncReport
+from .install import InstalledSession
+from .models import SearchFilters, SessionMetadata, SourceConfig, SyncReport
 from .session import Results, SearchHit, Session, query_events, read_only_index, search_filters
 
 DEFAULT_INDEX = Path("~/.thearc/learning.sqlite")
 _PROBE_FILES = 20
+Moment = datetime | str | None
 
 
-def _first_record(path):
+def _first_record(path: Path) -> dict | None:
     try:
         with path.open(encoding="utf-8") as stream:
             for line in islice(stream, 5):
@@ -38,21 +46,18 @@ def _first_record(path):
     return None
 
 
-def detect_harness(root):
+def detect_harness(root: str | Path) -> Harness:
     """Infer the harness from a few native files; raise if absent or ambiguous."""
     root = Path(root).expanduser().resolve()
-    votes = set()
+    votes: set[Harness] = set()
     for path in islice(sorted(root.rglob("*.jsonl")), _PROBE_FILES):
         if path.name == "transcript.jsonl":
             votes.add("antigravity")
-            continue
-        if path.name.startswith("rollout-"):
+        elif path.name.startswith("rollout-"):
             votes.add("codex")
+        elif (record := _first_record(path)) is None:
             continue
-        record = _first_record(path)
-        if record is None:
-            continue
-        if isinstance(record.get("info"), dict) and isinstance(record.get("messages"), list):
+        elif isinstance(record.get("info"), dict) and isinstance(record.get("messages"), list):
             votes.add("opencode")
         elif record.get("type") in {"session_meta", "response_item", "event_msg", "turn_context"}:
             votes.add("codex")
@@ -66,7 +71,7 @@ def detect_harness(root):
     return votes.pop()
 
 
-def _batch_runs(root):
+def _batch_runs(root: Path) -> Iterator[tuple[Path, dict[str, Any]]]:
     """Collector batches store runs/<id>/manifest.json beside the sessions/ transcripts."""
     for path in sorted((root / "runs").glob("*/manifest.json")):
         try:
@@ -75,48 +80,56 @@ def _batch_runs(root):
             continue
 
 
-def _compact(value):
+def _compact(value: str) -> str:
     return value.replace("-", "").lower()
 
 
-class Sessions:
-    """Collect, list and resolve sessions from many harnesses in one index.
+def _moment(value: Moment) -> datetime | None:
+    """A datetime or ISO string; naive values are UTC."""
+    value = datetime.fromisoformat(value) if isinstance(value, str) else value
+    return value.replace(tzinfo=UTC) if value is not None and value.tzinfo is None else value
 
-        sessions = Sessions.open()
-        sessions.add("~/.codex/sessions")
-        sessions.add("~/.claude/projects")
-        sessions.add("logs/batch")          # collector batch: also exposes agent snapshots
-        sessions.sync()
-        trajectory = sessions.get("14a6b5fe").trajectories[0]
+
+def _names(value: str | Iterable[str] | None) -> builtins.list[str]:
+    return [value] if isinstance(value, str) else list(value or [])
+
+
+class Sessions:
+    """Collect, list, and resolve sessions from many harnesses in one index.
+
+        with Sessions() as sessions:
+            sessions.add("~/.codex/sessions")
+            sessions.add("logs/batch")          # a collector batch
+            trajectory = sessions.get("14a6b5fe").trajectories[0]
 
     The first read after a synchronization copies the index into ``artifact_dir``;
     sessions and results keep reading that snapshot.
     """
 
-    def __init__(self, index_path=DEFAULT_INDEX, *, artifact_dir=None):
+    def __init__(self, index_path: str | Path = DEFAULT_INDEX, *, artifact_dir: str | Path | None = None):
         self.path = Path(index_path).expanduser().resolve()
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.artifact_dir = (Path(artifact_dir).expanduser().resolve()
-                             if artifact_dir else self.path.with_suffix(".artifacts"))
+        self.artifact_dir = (Path(artifact_dir).expanduser().resolve() if artifact_dir
+                             else self.path.with_suffix(".artifacts"))
         self.index = SessionIndex(self.path)
-        self._snapshot = None
-        self._revision = None
+        self._snapshot: Path | None = None
+        self._revision: tuple | None = None
 
-    @classmethod
-    def open(cls, index=DEFAULT_INDEX, *, artifact_dir=None):
-        return cls(index, artifact_dir=artifact_dir)
-
-    def close(self):
+    def close(self) -> None:
         self.index.close()
 
-    def __enter__(self):
+    def __enter__(self) -> Self:
         return self
 
-    def __exit__(self, *args):
+    def __exit__(self, kind: type[BaseException] | None, error: BaseException | None,
+                 trace: TracebackType | None) -> None:
         self.close()
 
-    def add(self, path, *, harness=None, source_id=None, format="native", sync=True):
-        """Register a transcript directory or collector batch; returns its SourceConfig."""
+    # --- sources ------------------------------------------------------------------------------------------------
+
+    def add(self, path: str | Path, *, harness: Harness | None = None, source_id: str | None = None,
+            format: Literal["native", "dataclaw"] = "native", sync: bool = True) -> SourceConfig:
+        """Register a transcript directory or collector batch, and synchronize it unless ``sync=False``."""
         root = Path(path).expanduser().resolve()
         if not root.is_dir():
             raise NotADirectoryError(root)
@@ -144,32 +157,27 @@ class Sessions:
             self.sync(source_ids=[source.id])
         return source
 
-    def sources(self):
-        return self.index.list_sources()
-
     def ingest(self, source: SourceConfig) -> SyncReport:
         """Register an explicit source configuration and synchronize only it."""
         return self.index.ingest(source)
 
-    def sync(self, *, source_ids=None) -> SyncReport:
+    def sources(self) -> builtins.list[SourceConfig]:
+        return self.index.list_sources()
+
+    def sync(self, *, source_ids: builtins.list[str] | None = None) -> SyncReport:
         return self.index.sync(source_ids=source_ids)
 
-    def list(self, *, harness=None, source=None, since=None, until=None):
-        """Session records, newest first. `since`/`until` accept datetimes or ISO strings (naive = UTC)."""
-        def moment(value):
-            value = datetime.fromisoformat(value) if isinstance(value, str) else value
-            return value.replace(tzinfo=UTC) if value is not None and value.tzinfo is None else value
+    # --- finding sessions ---------------------------------------------------------------------------------------
 
-        filters = SearchFilters(
-            harnesses=[harness] if isinstance(harness, str) else list(harness or []),
-            source_ids=[source] if isinstance(source, str) else list(source or []),
-            started_after=moment(since), started_before=moment(until),
-        )
-        records = list(self.index.iter_sessions(filters))
-        return sorted(records, key=lambda s: (s.started_at or "", s.id), reverse=True)
+    def list(self, *, harness: str | Iterable[str] | None = None, source: str | Iterable[str] | None = None,
+             since: Moment = None, until: Moment = None) -> builtins.list[SessionMetadata]:
+        """Session records, newest first."""
+        filters = SearchFilters(harnesses=cast("list[Harness]", _names(harness)), source_ids=_names(source),
+                                started_after=_moment(since), started_before=_moment(until))
+        return sorted(self.index.iter_sessions(filters), key=lambda s: (s.started_at or "", s.id), reverse=True)
 
-    def resolve(self, reference=None):
-        """Map an indexed ID, native ID, collector run ID, or unique prefix to an indexed ID."""
+    def resolve(self, reference: str | None = None) -> str:
+        """Map an indexed ID, native ID, collector run ID, or unique prefix to an indexed ID; None means latest."""
         if reference is None:
             latest = self.list()
             if not latest:
@@ -179,44 +187,97 @@ class Sessions:
         exact = [r["id"] for r in rows if reference in (r["id"], r["native_id"])]
         if len(exact) == 1:
             return exact[0]
-        compact = _compact(reference)
-        native = {self._run_native_id(reference)} - {None}
+        compact, native = _compact(reference), self._run_native_id(reference)
         matches = {r["id"] for r in rows if r["id"].startswith(reference)
-                   or _compact(r["native_id"]).startswith(compact) or r["native_id"] in native}
+                   or _compact(r["native_id"]).startswith(compact) or (native and r["native_id"] == native)}
         if len(matches) != 1:
             problem = "matches no indexed session" if not matches else f"is ambiguous ({len(matches)} sessions)"
             raise LookupError(f"Session reference {reference!r} {problem}")
         return matches.pop()
 
-    def get(self, reference=None):
+    def get(self, reference: str | None = None) -> Session:
         """The immutable Session for any reference; None selects the most recent session."""
         return self._get(self._capture(), self.resolve(reference))
 
-    def _batches(self):
-        for source in self.sources():
-            if source.root.name == "sessions" and (source.root.parent / "runs").is_dir():
-                yield source.root.parent
+    def search(self, text: str | None = None, *, mode: str = "literal", case_sensitive: bool | None = None,
+               **filters: Any) -> Results:
+        """Events matching ``text`` and/or filters (``kind=``, ``status=``, ``tool_name=``, …), in recorded order."""
+        selection = search_filters(filters)
+        sensitive = (mode == "literal") if case_sensitive is None else case_sensitive
 
-    def _run_native_id(self, run_id):
-        for batch in self._batches():
-            manifest = batch / "runs" / run_id / "manifest.json"
-            if manifest.is_file():
-                return json.loads(manifest.read_text(encoding="utf-8")).get("thread_id")
-        return None
+        def generate() -> Iterator[SearchHit]:
+            path = self._capture()
+            index = read_only_index(path)
+            sessions: dict[str, Session] = {}
+            try:
+                for row in query_events(index, text, selection, mode, sensitive):
+                    if row["session_id"] not in sessions:
+                        sessions[row["session_id"]] = self._get(path, row["session_id"])
+                    event = Record(index.get_event(row["id"]).model_dump(mode="json"))
+                    ranges = (SessionIndex._literal_ranges(event.text, text, sensitive)
+                              if text and mode == "literal" else [])
+                    yield SearchHit(event, sessions[row["session_id"]], tuple(ranges))
+            finally:
+                index.close()
+        return Results(generate)
 
-    def run(self, session):
-        """Collector run directory and manifest that produced this session, if any."""
-        session = session if hasattr(session, "metadata") else self.get(session)
+    def match(self, pattern: Any, **filters: Any) -> Results:
+        """Behavioral pattern matches (see ``scanner``) in the sessions the filters select."""
+        selection = search_filters(filters)
+
+        def generate() -> Iterator[Any]:
+            path = self._capture()
+            index = read_only_index(path)
+            try:
+                for record in index.iter_candidate_sessions(selection):
+                    yield from self._get(path, record.id).match(pattern)
+            finally:
+                index.close()
+        return Results(generate)
+
+    # --- collector batches and installation ---------------------------------------------------------------------
+
+    def run(self, session: Session | str) -> tuple[Path, dict[str, Any]] | None:
+        """The collector run directory and manifest that produced this session, if any."""
+        session = session if isinstance(session, Session) else self.get(session)
         source = next((s for s in self.sources() if s.id == session.metadata.source_id), None)
         if source is None or source.root.name != "sessions":
             return None
-        for directory, manifest in _batch_runs(source.root.parent):
-            if manifest.get("thread_id") == session.metadata.native_id:
-                return directory, manifest
+        return next(((directory, manifest) for directory, manifest in _batch_runs(source.root.parent)
+                     if manifest.get("thread_id") == session.metadata.native_id), None)
+
+    def install_all(self, harness: str, *, references: Iterable[str] | None = None,
+                    source_harness: str | Iterable[str] | None = None, source: str | Iterable[str] | None = None,
+                    since: Moment = None, until: Moment = None, home: str | Path | None = None,
+                    overwrite: bool = False, strict: bool = True,
+                    keep_id: bool = False) -> builtins.list[tuple[Any, InstalledSession | Exception]]:
+        """Install the given sessions, or every one matching the filters, into ``harness``.
+
+        Returns ``(session metadata, InstalledSession or the exception)`` per session;
+        one failure does not stop the others.
+        """
+        records = ([self.get(reference).metadata for reference in references] if references
+                   else self.list(harness=source_harness, source=source, since=since, until=until))
+        results: builtins.list[tuple[Any, InstalledSession | Exception]] = []
+        for record in records:
+            try:
+                results.append((record, self.get(record.id).install(
+                    harness, home=home, overwrite=overwrite, strict=strict, keep_id=keep_id)))
+            except (ValueError, OSError) as exc:
+                results.append((record, exc))
+        return results
+
+    def _run_native_id(self, run_id: str) -> str | None:
+        for source in self.sources():
+            manifest = source.root.parent / "runs" / run_id / "manifest.json"
+            if source.root.name == "sessions" and manifest.is_file():
+                return json.loads(manifest.read_text(encoding="utf-8")).get("thread_id")
         return None
 
-    def _capture(self):
-        # data_version also detects commits by another connection.
+    # --- snapshots ----------------------------------------------------------------------------------------------
+
+    def _capture(self) -> Path:
+        """A read-only copy of the index, refreshed when it changed (also by another connection)."""
         revision = (self.index.revision, self.index.connection.total_changes,
                     self.index.connection.execute("PRAGMA data_version").fetchone()[0])
         if self._snapshot is None or revision != self._revision:
@@ -235,45 +296,10 @@ class Sessions:
         return self._snapshot
 
     @staticmethod
-    def _get(path, session_id):
+    def _get(path: Path, session_id: str) -> Session:
         index = read_only_index(path)
         try:
             metadata = index.get_session(session_id)
         finally:
             index.close()
         return Session(Record(metadata.model_dump(mode="json")), f"{path.stem}:{session_id}", path)
-
-    def search(self, text=None, *, mode="literal", case_sensitive=None, **options):
-        filters = search_filters(options)
-        sensitive = (mode == "literal") if case_sensitive is None else case_sensitive
-
-        def generate():
-            path = self._capture()
-            index = read_only_index(path)
-            sessions = {}
-            try:
-                for row in query_events(index, text, filters, mode, sensitive):
-                    session = sessions.setdefault(row["session_id"], None)
-                    if session is None:
-                        session = self._get(path, row["session_id"])
-                        sessions[session.id] = session
-                    event = Record(index.get_event(row["id"]).model_dump(mode="json"))
-                    ranges = (SessionIndex._literal_ranges(event.text, text, sensitive)
-                              if text and mode == "literal" else [])
-                    yield SearchHit(event, session, tuple(ranges))
-            finally:
-                index.close()
-        return Results(generate)
-
-    def match(self, pattern, **options):
-        filters = search_filters(options)
-
-        def generate():
-            path = self._capture()
-            index = read_only_index(path)
-            try:
-                for record in index.iter_candidate_sessions(filters):
-                    yield from self._get(path, record.id).match(pattern)
-            finally:
-                index.close()
-        return Results(generate)

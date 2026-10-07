@@ -10,24 +10,31 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
-from collections.abc import Iterator, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from functools import cached_property
 from itertools import groupby
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
-from .formats import evidence_to_markdown, export_events, immutable_events
+from .events import EventLike, immutable_events
+from .export import Export, export_events
 from .immutable import Record
 from .index import SCHEMA, SessionIndex, _utc_timestamp
+from .markdown import evidence_to_markdown
 from .models import Event, SearchFilters, SessionMetadata
 from .trajectories import _stream, split_trajectories
 
+if TYPE_CHECKING:
+    from .install import InstalledSession
+    from .scanner import BehavioralPattern, PatternMatch
 
-def _hash(value):
+
+def _hash(value: Any) -> str:
     return hashlib.sha256(json.dumps(value, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
 
 
-def read_only_index(path) -> SessionIndex:
+def read_only_index(path: str | Path) -> SessionIndex:
     """A query-only connection to an index snapshot; it never migrates or writes."""
     index = SessionIndex.__new__(SessionIndex)
     index.connection = sqlite3.connect(Path(path).resolve().as_uri() + "?mode=ro", uri=True)
@@ -36,7 +43,7 @@ def read_only_index(path) -> SessionIndex:
     return index
 
 
-def search_filters(options) -> SearchFilters:
+def search_filters(options: Mapping[str, Any]) -> SearchFilters:
     """Keyword filters such as ``kind="tool_call"`` or ``status=["failure"]`` as ``SearchFilters``."""
     aliases = {"kind": "kinds", "role": "roles", "status": "statuses", "tool_name": "tool_names",
                "action_kind": "action_kinds", "session_id": "session_ids", "source_id": "source_ids",
@@ -52,7 +59,8 @@ def search_filters(options) -> SearchFilters:
     return SearchFilters(**data)
 
 
-def query_events(index, text, filters, mode, sensitive, ids=None) -> Iterator[sqlite3.Row]:
+def query_events(index: SessionIndex, text: str | None, filters: SearchFilters, mode: str, sensitive: bool,
+                 ids: list[str] | None = None) -> Iterator[sqlite3.Row]:
     """Matching ``(id, session_id)`` rows in recorded order."""
     if mode not in {"literal", "lexical"}:
         raise ValueError("mode must be literal or lexical")
@@ -86,13 +94,13 @@ def query_events(index, text, filters, mode, sensitive, ids=None) -> Iterator[sq
 class Results(Sequence):
     """Reusable lazy results. Membership is pinned on first evaluation."""
 
-    def __init__(self, factory):
+    def __init__(self, factory: Callable[[], Iterator[Any]]):
         self._factory = factory
-        self._iterator = None
-        self._cache = []
+        self._iterator: Iterator[Any] | None = None
+        self._cache: list[Any] = []
         self._done = False
 
-    def _next(self):
+    def _next(self) -> bool:
         if self._done:
             return False
         if self._iterator is None:
@@ -104,32 +112,28 @@ class Results(Sequence):
             self._done = True
             return False
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[Any]:
         position = 0
         while position < len(self._cache) or self._next():
             yield self._cache[position]
             position += 1
 
-    def __getitem__(self, position):
+    def __getitem__(self, position: Any) -> Any:
         if isinstance(position, slice) or position < 0:
             return self.collect()[position]
         while len(self._cache) <= position and self._next():
             pass
         return self._cache[position]
 
-    def __len__(self):
-        return self.count()
+    def __len__(self) -> int:
+        return len(self.collect())
 
-    def count(self):
+    def collect(self) -> list[Any]:
         while self._next():
             pass
-        return len(self._cache)
-
-    def collect(self):
-        self.count()
         return list(self._cache)
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"Results(cached={len(self._cache)}, complete={self._done})"
 
 
@@ -150,39 +154,37 @@ class SearchHit:
 class EventSequence:
     """Rendering, export, search, and pattern matching shared by sessions, trajectories, and views."""
 
-    selected_events: tuple
+    @property
+    def selected_events(self) -> tuple[Record, ...]:
+        raise NotImplementedError
 
-    def to_markdown(self):
+    def to_markdown(self) -> str:
         return evidence_to_markdown(self.selected_events)
 
-    def to_jsonl(self, format="thearc"):
-        return export_events(self.selected_events, format).text
+    def export(self, format: str = "thearc", *, strict: bool = True, session_id: str | None = None) -> Export:
+        """These events in ``format`` (see ``export.FORMATS``); ``strict=False`` labels what it cannot hold."""
+        return export_events(self.selected_events, format, strict=strict, session_id=session_id)
 
-    def iter_jsonl(self, format="thearc"):
-        # Canonical rendering streams records; provider conversion validates whole relationships.
-        if format == "thearc":
-            for event in self.selected_events:
-                yield json.dumps(event.model_dump(), ensure_ascii=False) + "\n"
-        else:
-            yield from self.to_jsonl(format).splitlines(keepends=True)
+    def install(self, harness: str, *, home: str | Path | None = None, overwrite: bool = False, strict: bool = True,
+                keep_id: bool = False) -> InstalledSession:
+        """Install these events into ``harness`` as a session it can resume or fork; see ``sessions.install``."""
+        from .install import install_events
 
-    def to_codex(self):
-        return export_events(self.selected_events, "codex")
-
-    def to_claude(self):
-        return export_events(self.selected_events, "claude")
+        return install_events(self.selected_events, harness, home=home, overwrite=overwrite, strict=strict,
+                              keep_id=keep_id)
 
     def _session(self) -> Session:
-        session = self if isinstance(self, Session) else self.session
+        session = self if isinstance(self, Session) else getattr(self, "session", None)
         if session is None:
             raise ValueError("This trajectory was split from loose events; it has no session to search")
         return session
 
-    def search(self, text=None, *, mode="literal", case_sensitive=None, **filters) -> Results:
+    def search(self, text: str | None = None, *, mode: str = "literal", case_sensitive: bool | None = None,
+               **filters: Any) -> Results:
         selection = search_filters(filters)
         sensitive = (mode == "literal") if case_sensitive is None else case_sensitive
 
-        def generate():
+        def generate() -> Iterator[SearchHit]:
             session = self._session()
             index = session._index()
             try:
@@ -198,12 +200,12 @@ class EventSequence:
                 index.close()
         return Results(generate)
 
-    def match(self, pattern):
+    def match(self, pattern: BehavioralPattern) -> tuple[PatternMatch, ...]:
         results = []
         events = [Event.model_validate(e.model_dump()) for e in self.selected_events]
         offset = 0
-        for _, group in groupby(events, key=_stream):
-            group = list(group)
+        for _, stream in groupby(events, key=_stream):
+            group = list(stream)
             for match in pattern.find_matches(group):
                 results.append(replace(match, start_index=match.start_index + offset,
                                        end_index=match.end_index + offset,
@@ -254,7 +256,7 @@ class Trajectory(EventSequence):
     def selected_events(self) -> tuple:
         return self.prompt_events + self.events
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"Trajectory(id={self.id!r}, session_id={self.session_id!r}, boundary={self.boundary!r})"
 
 
@@ -265,10 +267,10 @@ class TrajectorySplit(Sequence):
     trajectories: tuple[Trajectory, ...] = ()
     unassigned_events: tuple = ()
 
-    def __getitem__(self, index):
+    def __getitem__(self, index: Any) -> Any:
         return self.trajectories[index]
 
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self.trajectories)
 
 
@@ -293,11 +295,12 @@ class Session(EventSequence):
     def metadata(self) -> Record:
         return self._metadata
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"Session(id={self.id!r}, artifact_id={self.artifact_id!r})"
 
     @classmethod
-    def from_events(cls, events, *, metadata=None) -> Session:
+    def from_events(cls, events: EventLike, *,
+                    metadata: SessionMetadata | Record | Mapping[str, Any] | None = None) -> Session:
         captured = immutable_events(events)
         if metadata is None:
             if not captured:
@@ -319,7 +322,7 @@ class Session(EventSequence):
         return cls(Record(data), identity, _captured=captured)
 
     @classmethod
-    def open(cls, path) -> Session:
+    def open(cls, path: str | Path) -> Session:
         data = json.loads(Path(path).read_text(encoding="utf-8"))
         if data.get("version") != 1:
             raise ValueError("Unsupported session artifact version")
@@ -328,7 +331,7 @@ class Session(EventSequence):
             raise ValueError("Session artifact checksum mismatch")
         return result
 
-    def save(self, path) -> Path:
+    def save(self, path: str | Path) -> Path:
         detached = Session.from_events(self.events, metadata=self.metadata)
         data = {"version": 1, "session": detached.metadata.model_dump(),
                 "events": [e.model_dump() for e in detached.events], "sha256": detached.artifact_id}
@@ -337,9 +340,10 @@ class Session(EventSequence):
         return Path(path)
 
     @cached_property
-    def events(self) -> tuple:
+    def events(self) -> tuple[Record, ...]:
         if self._captured is not None:
             return self._captured
+        assert self._archive is not None, "a session has either captured events or an index snapshot"
         index = read_only_index(self._archive)
         try:
             return immutable_events(list(index.iter_events(SearchFilters(session_ids=[self.id]))))
@@ -396,7 +400,7 @@ class SessionView(EventSequence):
     stop: int
     native_turn_id: str | None = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if type(self.stop) is not int or not 0 < self.stop <= len(self.session.events):
             raise ValueError("A session prefix requires a valid positive endpoint")
         endings = [t for t in self.session.trajectories
@@ -412,5 +416,5 @@ class SessionView(EventSequence):
     def events(self) -> tuple:
         return self.selected_events
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"SessionView(session_id={self.session.id!r}, stop={self.stop})"

@@ -112,8 +112,8 @@ def split_trajectories(events: Sequence[Event]) -> TrajectorySplit:
 
     drafts: list[_Draft] = []
     unassigned: list[Event] = []
-    for _, segment in groupby(events, key=_stream):
-        segment = list(segment)
+    for _, stream in groupby(events, key=_stream):
+        segment = list(stream)
         context_records = _context_records(segment)
         current: _Draft | None = None
         pending_turn: str | None = None
@@ -156,7 +156,8 @@ def split_trajectories(events: Sequence[Event]) -> TrajectorySplit:
             last.boundary = "end_of_stream"
     # Several user prompts may be injected within one native turn. Such a turn
     # cannot isolate any individual trajectory, so don't advertise it for handoff.
-    counts = Counter((d.prompt_events[0].session_id, d.native_turn_id) for d in drafts if d.native_turn_id)
+    counts: Counter[tuple[str, str | None]] = Counter(
+        (d.prompt_events[0].session_id, d.native_turn_id) for d in drafts if d.native_turn_id)
     for draft in drafts:
         if counts[(draft.prompt_events[0].session_id, draft.native_turn_id)] > 1:
             draft.native_turn_id = None

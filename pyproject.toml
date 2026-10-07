@@ -17,6 +17,7 @@ dependencies = [
 
 [project.scripts]
 thearc = "thearc.cli:main"
+thearcv2 = "thearcv2.cli:main"
 
 [project.urls]
 Repository = "https://github.com/micmurawski/thearc"
@@ -37,6 +38,7 @@ antigravity = ["google-antigravity==0.1.19"]
 dev = [
     "pytest>=8.0.0",
     "ruff>=0.8.0",
+    "mypy>=1.13",
 ]
 
 [tool.pytest.ini_options]
@@ -50,3 +52,13 @@ extend-exclude = ["tests/fastapi"]
 
 [tool.ruff.lint]
 extend-select = ["E501"]
+
+[tool.mypy]
+python_version = "3.11"
+files = ["thearcv2"]
+exclude = ["thearcv2/tests/"]
+ignore_missing_imports = true
+check_untyped_defs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+warn_unused_ignores = true
