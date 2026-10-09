@@ -13,11 +13,18 @@ CUTOFF = datetime(2026, 9, 1, tzinfo=UTC)
 
 def write_session(root, name, timestamps):
     records = [{"type": "session_meta", "payload": {"id": name}}]
-    records.extend({
-        "type": "response_item", "timestamp": timestamp,
-        "payload": {"type": "message", "role": "user",
-                    "content": [{"type": "input_text", "text": f"evidence {name}"}]},
-    } for timestamp in timestamps)
+    records.extend(
+        {
+            "type": "response_item",
+            "timestamp": timestamp,
+            "payload": {
+                "type": "message",
+                "role": "user",
+                "content": [{"type": "input_text", "text": f"evidence {name}"}],
+            },
+        }
+        for timestamp in timestamps
+    )
     (root / f"rollout-{name}.jsonl").write_text("\n".join(map(json.dumps, records)) + "\n")
 
 
@@ -81,13 +88,16 @@ def test_event_queries_filter_session_start_not_event_time(dated_store):
         assert {h.event.session_id for h in hits} == expected
 
 
-@pytest.mark.parametrize("arguments", [
-    {"started_before": datetime(2026, 9, 1)},  # noqa: DTZ001 -- naive bounds must be rejected
-    {"started_after": "2026-09-01"},
-    {"started_before": "not-a-date"},
-    {"started_before": CUTOFF, "started_after": CUTOFF},
-    {"started_before": CUTOFF, "started_after": "2026-09-02T00:00:00Z"},
-])
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        {"started_before": datetime(2026, 9, 1)},  # noqa: DTZ001 -- naive bounds must be rejected
+        {"started_after": "2026-09-01"},
+        {"started_before": "not-a-date"},
+        {"started_before": CUTOFF, "started_after": CUTOFF},
+        {"started_before": CUTOFF, "started_after": "2026-09-02T00:00:00Z"},
+    ],
+)
 def test_invalid_filter_bounds_are_rejected(arguments):
     with pytest.raises(ValueError):
         SearchFilters(**arguments)

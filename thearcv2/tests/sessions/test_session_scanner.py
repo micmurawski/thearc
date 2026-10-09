@@ -429,6 +429,7 @@ class TestPatternScanner:
 
 # SQLite candidate filtering and exact sequence/coverage contracts.
 
+
 @pytest.fixture
 def indexed_store(tmp_path):
     import json
@@ -441,17 +442,40 @@ def indexed_store(tmp_path):
     for name, tool, failure in [("retry", "bash", True), ("other", "read", True), ("ok", "bash", False)]:
         records = [
             {"role": "user", "content": "Investigate"},
-            {"role": "assistant", "content": [{"type": "tool_use", "id": "call-1", "name": tool,
-                                                 "input": {"command": "test"}}]},
-            {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "call-1",
-                                            "content": "Error" if failure else "OK", "is_error": failure}]},
-            {"role": "assistant", "content": [{"type": "tool_use", "id": "call-2", "name": tool,
-                                                 "input": {"command": "test again"}}]},
+            {
+                "role": "assistant",
+                "content": [{"type": "tool_use", "id": "call-1", "name": tool, "input": {"command": "test"}}],
+            },
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": "call-1",
+                        "content": "Error" if failure else "OK",
+                        "is_error": failure,
+                    }
+                ],
+            },
+            {
+                "role": "assistant",
+                "content": [{"type": "tool_use", "id": "call-2", "name": tool, "input": {"command": "test again"}}],
+            },
             {"role": "assistant", "content": "Finished"},
         ]
-        (root / f"{name}.jsonl").write_text("\n".join(json.dumps({
-            "sessionId": name, "timestamp": "2026-09-01T00:00:00Z", "message": message,
-        }) for message in records) + "\n")
+        (root / f"{name}.jsonl").write_text(
+            "\n".join(
+                json.dumps(
+                    {
+                        "sessionId": name,
+                        "timestamp": "2026-09-01T00:00:00Z",
+                        "message": message,
+                    }
+                )
+                for message in records
+            )
+            + "\n"
+        )
     with SessionIndex(tmp_path / "index.sqlite") as store:
         store.ingest(SourceConfig(id="test", harness="claude", root=root))
         yield store
@@ -461,8 +485,13 @@ def test_sql_filters_select_sessions_and_load_complete_sequences(indexed_store, 
     from thearcv2.sessions.models import SearchFilters
 
     store = indexed_store
-    filters = SearchFilters(statuses=["failure"], tool_names=["bash"], roles=["tool"],
-                            started_after="2026-08-01T00:00:00Z", source_ids=["test"])
+    filters = SearchFilters(
+        statuses=["failure"],
+        tool_names=["bash"],
+        roles=["tool"],
+        started_after="2026-08-01T00:00:00Z",
+        source_ids=["test"],
+    )
     decoded = []
     original = store._session_from_row
 
@@ -508,9 +537,17 @@ def test_filters_must_match_the_same_event(indexed_store):
     from thearcv2.sessions.models import SearchFilters
 
     # These sessions contain both calls and failures, but no failed call event.
-    assert list(indexed_store.iter_candidate_sessions(SearchFilters(
-        statuses=["failure"], kinds=["tool_call"],
-    ))) == []
+    assert (
+        list(
+            indexed_store.iter_candidate_sessions(
+                SearchFilters(
+                    statuses=["failure"],
+                    kinds=["tool_call"],
+                )
+            )
+        )
+        == []
+    )
 
 
 def test_candidate_selection_has_no_page_cap(tmp_path):
@@ -522,9 +559,18 @@ def test_candidate_selection_has_no_page_cap(tmp_path):
     root = tmp_path / "logs"
     root.mkdir()
     # One artifact can contain many sessions. All should reach Python matching.
-    records = [{"sessionId": f"s-{i}", "message": {"role": "user", "content": [
-        {"type": "tool_result", "tool_use_id": "c", "is_error": True, "content": ""},
-    ]}} for i in range(1005)]
+    records = [
+        {
+            "sessionId": f"s-{i}",
+            "message": {
+                "role": "user",
+                "content": [
+                    {"type": "tool_result", "tool_use_id": "c", "is_error": True, "content": ""},
+                ],
+            },
+        }
+        for i in range(1005)
+    ]
     (root / "sessions.jsonl").write_text("\n".join(map(json.dumps, records)) + "\n")
     with SessionIndex(tmp_path / "index.sqlite") as store:
         store.ingest(SourceConfig(id="test", harness="claude", root=root))
@@ -550,9 +596,11 @@ def test_no_match_crosses_conversation_or_artifact_boundaries(change):
     events = [_tool_call(), _tool_result(), _tool_call()]
     if change in {"path", "generation"}:
         value = "other.jsonl" if change == "path" else 2
-        events[-1] = events[-1].model_copy(update={
-            "reference": events[-1].reference.model_copy(update={change: value}),
-        })
+        events[-1] = events[-1].model_copy(
+            update={
+                "reference": events[-1].reference.model_copy(update={change: value}),
+            }
+        )
     else:
         events[-1] = events[-1].model_copy(update={change: "other"})
     assert StubbornToolLoop().find_matches(events) == []
@@ -567,9 +615,16 @@ def test_custom_patterns_receive_contiguous_segments_and_original_offsets():
         description = "Record each native stream"
 
         def find_matches(self, events):
-            return [PatternMatch(pattern_name=self.name, description=self.description,
-                                 session_id=events[0].session_id, start_index=0, end_index=len(events) - 1,
-                                 events=tuple(events))]
+            return [
+                PatternMatch(
+                    pattern_name=self.name,
+                    description=self.description,
+                    session_id=events[0].session_id,
+                    start_index=0,
+                    end_index=len(events) - 1,
+                    events=tuple(events),
+                )
+            ]
 
     first = [_assistant()]
     second = [_evt(session_id="other"), _evt(session_id="other")]
@@ -586,14 +641,17 @@ def test_overlapping_windows_are_preserved():
     assert [m.start_index for m in StubbornToolLoop().find_matches(events)] == [0, 2]
 
 
-@pytest.mark.parametrize("factory, kwargs", [
-    (StubbornToolLoop, {"min_repeats": 1}),
-    (StubbornToolLoop, {"min_repeats": 2.5}),
-    (FrustrationSpike, {"window": 0}),
-    (FrustrationSpike, {"threshold": -1}),
-    (FrustrationSpike, {"threshold": 6}),
-    (FrustrationSpike, {"window": True}),
-])
+@pytest.mark.parametrize(
+    "factory, kwargs",
+    [
+        (StubbornToolLoop, {"min_repeats": 1}),
+        (StubbornToolLoop, {"min_repeats": 2.5}),
+        (FrustrationSpike, {"window": 0}),
+        (FrustrationSpike, {"threshold": -1}),
+        (FrustrationSpike, {"threshold": 6}),
+        (FrustrationSpike, {"window": True}),
+    ],
+)
 def test_invalid_pattern_parameters(factory, kwargs):
     with pytest.raises(ValueError):
         factory(**kwargs)
@@ -622,7 +680,16 @@ def test_abandoned_fix_requires_evidence_of_editing_another_file():
 
 def test_pattern_definitions_have_one_canonical_module():
     from thearcv2.sessions.scanner import patterns
-    assert all(getattr(patterns, name).__module__ == patterns.__name__ for name in (
-        "AbandonedFix", "EmptyToolResult", "FrustrationSpike", "IgnoredUserInstruction",
-        "LongSilence", "SelfOverwrite", "StubbornToolLoop",
-    ))
+
+    assert all(
+        getattr(patterns, name).__module__ == patterns.__name__
+        for name in (
+            "AbandonedFix",
+            "EmptyToolResult",
+            "FrustrationSpike",
+            "IgnoredUserInstruction",
+            "LongSilence",
+            "SelfOverwrite",
+            "StubbornToolLoop",
+        )
+    )

@@ -22,23 +22,26 @@ from .sessions import DEFAULT_INDEX, Sessions
 
 def _errors(command: Callable[..., None]) -> Callable[..., None]:
     """Report expected failures (unknown references, bad input, unreadable files) as CLI errors."""
+
     @functools.wraps(command)
     def wrapper(*args: Any, **kwargs: Any) -> None:
         try:
             return command(*args, **kwargs)
         except (ValueError, LookupError, OSError) as exc:
             raise click.ClickException(str(exc).strip("'")) from exc
+
     return wrapper
 
 
 def _one_line(text: str | None, width: int) -> str:
     text = " ".join((text or "").split())
-    return text if len(text) <= width else text[:width - 1] + "…"
+    return text if len(text) <= width else text[: width - 1] + "…"
 
 
 @click.group(name="sessions", cls=AliasedGroup, aliases=["s"])
-@click.option("--index", type=click.Path(path_type=Path), default=DEFAULT_INDEX, show_default=True,
-              help="Session index file.")
+@click.option(
+    "--index", type=click.Path(path_type=Path), default=DEFAULT_INDEX, show_default=True, help="Session index file."
+)
 @click.pass_context
 def sessions(ctx: click.Context, index: Path) -> None:
     """Collect agent transcripts into a session index, then find and render sessions."""
@@ -48,14 +51,21 @@ def sessions(ctx: click.Context, index: Path) -> None:
 @sessions.command("add")
 @click.argument("paths", nargs=-1, required=True, type=click.Path(exists=True, file_okay=False, path_type=Path))
 @click.option("--harness", type=click.Choice(HARNESSES), help="Skip detection and use this harness.")
-@click.option("--format", "source_format", type=click.Choice(["native", "dataclaw"]), default="native",
-              show_default=True)
+@click.option(
+    "--format", "source_format", type=click.Choice(["native", "dataclaw"]), default="native", show_default=True
+)
 @click.option("--source-id", help="Stable ID for the source (one path only); defaults to harness, format and root.")
 @click.option("--no-sync", is_flag=True, help="Register only; synchronize later with `sync`.")
 @click.pass_obj
 @_errors
-def add_command(index: Path, paths: tuple[Path, ...], harness: Harness | None,
-                source_format: Literal["native", "dataclaw"], source_id: str | None, no_sync: bool) -> None:
+def add_command(
+    index: Path,
+    paths: tuple[Path, ...],
+    harness: Harness | None,
+    source_format: Literal["native", "dataclaw"],
+    source_id: str | None,
+    no_sync: bool,
+) -> None:
     """Register transcript directories or collector batches and synchronize them."""
     if source_id and len(paths) > 1:
         raise click.UsageError("--source-id applies to a single path")
@@ -95,17 +105,27 @@ def sync_command(index: Path, source_id: tuple[str, ...]) -> None:
 @click.option("--json", "as_json", is_flag=True, help="One JSON record per line.")
 @click.pass_obj
 @_errors
-def list_command(index: Path, source_id: tuple[str, ...], harness: tuple[str, ...], since: str | None,
-                 until: str | None, limit: int, offset: int, as_json: bool) -> None:
+def list_command(
+    index: Path,
+    source_id: tuple[str, ...],
+    harness: tuple[str, ...],
+    since: str | None,
+    until: str | None,
+    limit: int,
+    offset: int,
+    as_json: bool,
+) -> None:
     """List indexed sessions, newest first, without synchronizing."""
     with Sessions(index) as store:
         records = store.list(harness=harness, source=source_id, since=since, until=until)
-    for record in records[offset:offset + limit]:
+    for record in records[offset : offset + limit]:
         if as_json:
             click.echo(record.model_dump_json())
         else:
-            click.echo(f"{record.id[:12]}  {record.harness:<11} {(record.started_at or '')[:19]:<19}  "
-                       f"{record.event_count:>5} events  {_one_line(record.title or record.cwd, 60)}")
+            click.echo(
+                f"{record.id[:12]}  {record.harness:<11} {(record.started_at or '')[:19]:<19}  "
+                f"{record.event_count:>5} events  {_one_line(record.title or record.cwd, 60)}"
+            )
 
 
 @sessions.command("trajectories", aliases=["t"])
@@ -117,11 +137,15 @@ def trajectories_command(index: Path, session: str | None) -> None:
     with Sessions(index) as store:
         selected = store.get(session)
         split = selected.trajectories
-        click.echo(f"{selected.metadata.native_id}: {len(split)} trajectories, "
-                   f"{len(split.unassigned_events)} unassigned events")
+        click.echo(
+            f"{selected.metadata.native_id}: {len(split)} trajectories, "
+            f"{len(split.unassigned_events)} unassigned events"
+        )
         for number, trajectory in enumerate(split):
-            click.echo(f"{number:>3}  {trajectory.boundary:<15} {len(trajectory.events):>5} events  "
-                       f"{_one_line(trajectory.prompt_text, 70)}")
+            click.echo(
+                f"{number:>3}  {trajectory.boundary:<15} {len(trajectory.events):>5} events  "
+                f"{_one_line(trajectory.prompt_text, 70)}"
+            )
 
 
 @sessions.command("search")
@@ -140,31 +164,58 @@ def trajectories_command(index: Path, session: str | None) -> None:
 @click.option("--json", "as_json", is_flag=True, help="One JSON hit per line.")
 @click.pass_obj
 @_errors
-def search_command(index: Path, text: str | None, mode: str, ignore_case: bool, harness: tuple[str, ...],
-                   session_id: tuple[str, ...], kind: tuple[str, ...], role: tuple[str, ...],
-                   tool_name: tuple[str, ...], action_kind: tuple[str, ...], status: tuple[str, ...],
-                   limit: int, offset: int, as_json: bool) -> None:
+def search_command(
+    index: Path,
+    text: str | None,
+    mode: str,
+    ignore_case: bool,
+    harness: tuple[str, ...],
+    session_id: tuple[str, ...],
+    kind: tuple[str, ...],
+    role: tuple[str, ...],
+    tool_name: tuple[str, ...],
+    action_kind: tuple[str, ...],
+    status: tuple[str, ...],
+    limit: int,
+    offset: int,
+    as_json: bool,
+) -> None:
     """Find events matching TEXT and/or filters, in recorded order."""
-    filters = {name: list(values) for name, values in (
-        ("harnesses", harness), ("session_ids", session_id), ("kinds", kind), ("roles", role),
-        ("tool_names", tool_name), ("action_kinds", action_kind), ("statuses", status)) if values}
+    filters = {
+        name: list(values)
+        for name, values in (
+            ("harnesses", harness),
+            ("session_ids", session_id),
+            ("kinds", kind),
+            ("roles", role),
+            ("tool_names", tool_name),
+            ("action_kinds", action_kind),
+            ("statuses", status),
+        )
+        if values
+    }
     if text is None and not filters:
         raise click.UsageError("give TEXT or at least one filter")
     case_sensitive = False if mode == "lexical" else not ignore_case
     with Sessions(index) as store:
         hits = store.search(text, mode=mode, case_sensitive=case_sensitive, **filters)
-        for hit in hits[offset:offset + limit]:
+        for hit in hits[offset : offset + limit]:
             event = hit.event
             trajectory = hit.trajectory
             if as_json:
-                record = {"session_id": hit.session.id, "native_session_id": hit.session.metadata.native_id,
-                          "trajectory_id": trajectory.id if trajectory else None,
-                          "match_ranges": hit.match_ranges, "event": event.model_dump()}
+                record = {
+                    "session_id": hit.session.id,
+                    "native_session_id": hit.session.metadata.native_id,
+                    "trajectory_id": trajectory.id if trajectory else None,
+                    "match_ranges": hit.match_ranges,
+                    "event": event.model_dump(),
+                }
                 click.echo(json.dumps(record, ensure_ascii=False))
             else:
                 label = event.tool_name or event.role or ""
-                click.echo(f"{event.id[:12]}  {hit.session.id[:12]}  {event.kind:<11} {label:<10} "
-                           f"{_one_line(event.text, 70)}")
+                click.echo(
+                    f"{event.id[:12]}  {hit.session.id[:12]}  {event.kind:<11} {label:<10} {_one_line(event.text, 70)}"
+                )
 
 
 @sessions.command("show")
@@ -200,15 +251,31 @@ def trace_command(index: Path, run_id: str) -> None:
 @click.argument("session", required=False)
 @click.option("--trajectory", type=click.IntRange(min=0), help="Zero-based trajectory number (see `trajectories`).")
 @click.option("--through", is_flag=True, help="Render the session up to and including the selected trajectory.")
-@click.option("--format", "output_format", type=click.Choice(["markdown", *FORMATS, "agy"]),
-              default="markdown", show_default=True, help="agy is short for antigravity.")
+@click.option(
+    "--format",
+    "output_format",
+    type=click.Choice(["markdown", *FORMATS, "agy"]),
+    default="markdown",
+    show_default=True,
+    help="agy is short for antigravity.",
+)
 @click.option("--header/--no-header", default=True, help="Markdown: prefix a session summary.")
-@click.option("--best-effort", is_flag=True,
-              help="Harness formats: keep events the format cannot represent as labelled text; list them on stderr.")
+@click.option(
+    "--best-effort",
+    is_flag=True,
+    help="Harness formats: keep events the format cannot represent as labelled text; list them on stderr.",
+)
 @click.pass_obj
 @_errors
-def render_command(index: Path, session: str | None, trajectory: int | None, through: bool, output_format: str,
-                   header: bool, best_effort: bool) -> None:
+def render_command(
+    index: Path,
+    session: str | None,
+    trajectory: int | None,
+    through: bool,
+    output_format: str,
+    header: bool,
+    best_effort: bool,
+) -> None:
     """Render SESSION (any ID, native ID, run ID or unique prefix; default: latest)."""
     if through and trajectory is None:
         raise click.UsageError("--through requires --trajectory")
@@ -236,33 +303,55 @@ def render_command(index: Path, session: str | None, trajectory: int | None, thr
                     click.echo(f"note: {note}", err=True)
             return
         if header:
-            click.echo(f"# Session {meta.native_id}\n\n"
-                       f"- Harness: {meta.harness}\n- Indexed ID: {meta.id}\n"
-                       f"- Started: {meta.started_at or 'unknown'}\n- Directory: {meta.cwd or 'unknown'}\n"
-                       f"- Showing: {scope} ({len(trajectories)} trajectories in session)\n")
+            click.echo(
+                f"# Session {meta.native_id}\n\n"
+                f"- Harness: {meta.harness}\n- Indexed ID: {meta.id}\n"
+                f"- Started: {meta.started_at or 'unknown'}\n- Directory: {meta.cwd or 'unknown'}\n"
+                f"- Showing: {scope} ({len(trajectories)} trajectories in session)\n"
+            )
         click.echo(rendered.to_markdown(), nl=False)
 
 
 @sessions.command("install")
 @click.argument("references", nargs=-1)
-@click.option("--to", "target", required=True, type=click.Choice(INSTALLABLE),
-              help="Harness that should be able to resume the session.")
+@click.option(
+    "--to",
+    "target",
+    required=True,
+    type=click.Choice(INSTALLABLE),
+    help="Harness that should be able to resume the session.",
+)
 @click.option("--trajectory", type=click.IntRange(min=0), help="Only this trajectory (single session).")
 @click.option("--through", is_flag=True, help="The session up to and including --trajectory.")
 @click.option("--all", "all_sessions", is_flag=True, help="Every indexed session matching the filters below.")
 @click.option("--harness", "source_harness", multiple=True, type=click.Choice(HARNESSES), help="With --all.")
 @click.option("--since", help="With --all: sessions started at or after this ISO date/time.")
 @click.option("--until", help="With --all: sessions started before this ISO date/time.")
-@click.option("--home", type=click.Path(file_okay=False, path_type=Path),
-              help="Harness home to install into (default: the harness's own, e.g. ~/.codex).")
+@click.option(
+    "--home",
+    type=click.Path(file_okay=False, path_type=Path),
+    help="Harness home to install into (default: the harness's own, e.g. ~/.codex).",
+)
 @click.option("--overwrite", is_flag=True, help="Replace a session already installed under the same ID.")
 @click.option("--keep-id", is_flag=True, help="Use the source session's ID instead of a copy ID.")
 @click.option("--best-effort", is_flag=True, help="Keep events the target cannot represent as labelled text.")
 @click.pass_obj
 @_errors
-def install_command(index: Path, references: tuple[str, ...], target: str, trajectory: int | None, through: bool,
-                    all_sessions: bool, source_harness: tuple[str, ...], since: str | None, until: str | None,
-                    home: Path | None, overwrite: bool, keep_id: bool, best_effort: bool) -> None:
+def install_command(
+    index: Path,
+    references: tuple[str, ...],
+    target: str,
+    trajectory: int | None,
+    through: bool,
+    all_sessions: bool,
+    source_harness: tuple[str, ...],
+    since: str | None,
+    until: str | None,
+    home: Path | None,
+    overwrite: bool,
+    keep_id: bool,
+    best_effort: bool,
+) -> None:
     """Install sessions where TARGET finds them, as copies it can resume or fork.
 
     REFERENCES are session IDs, native IDs, run IDs or unique prefixes; with --all,
@@ -285,9 +374,14 @@ def install_command(index: Path, references: tuple[str, ...], target: str, traje
             selection = session.through(chosen) if through else chosen
             results = [(session.metadata, _try(lambda: selection.install(target, **options)))]
         else:
-            results = store.install_all(target, references=list(references) or None,
-                                        source_harness=list(source_harness) or None, since=since, until=until,
-                                        **options)
+            results = store.install_all(
+                target,
+                references=list(references) or None,
+                source_harness=list(source_harness) or None,
+                since=since,
+                until=until,
+                **options,
+            )
     failed = 0
     for record, outcome in results:
         if isinstance(outcome, Exception):

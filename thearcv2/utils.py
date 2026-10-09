@@ -25,6 +25,7 @@ class AliasedGroup(click.Group):
             cmd = decorator(f)
             cmd.aliases = list(aliases)
             return cmd
+
         return wrap
 
     def get_command(self, ctx: click.Context, cmd_name: str) -> click.Command | None:
@@ -36,8 +37,9 @@ class AliasedGroup(click.Group):
                 return cmd
         return None
 
-    def resolve_command(self, ctx: click.Context,
-                        args: list[str]) -> tuple[str | None, click.Command | None, list[str]]:
+    def resolve_command(
+        self, ctx: click.Context, args: list[str]
+    ) -> tuple[str | None, click.Command | None, list[str]]:
         # Report the canonical name so usage and error messages don't show the alias.
         _, cmd, args = super().resolve_command(ctx, args)
         return cmd.name if cmd else None, cmd, args

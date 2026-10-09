@@ -21,8 +21,13 @@ FORMATS = ("thearc", "codex", "claude", "pi", "opencode", "antigravity")
 ALIASES = {"agy": "antigravity"}
 Writer = Callable[[list[Block], Conversion, Identity], tuple[list[dict[str, Any]], list[str]]]
 """Lays blocks out in one format: ``(records, notes)``."""
-_WRITERS: dict[str, Writer] = {"codex": codex.write, "claude": claude.write, "pi": pi.write, "opencode": opencode.write,
-            "antigravity": antigravity.write}
+_WRITERS: dict[str, Writer] = {
+    "codex": codex.write,
+    "claude": claude.write,
+    "pi": pi.write,
+    "opencode": opencode.write,
+    "antigravity": antigravity.write,
+}
 
 
 @dataclass(frozen=True)
@@ -52,8 +57,9 @@ def _jsonl(rows: list[dict[str, Any]]) -> str:
     return "".join(json.dumps(row, ensure_ascii=False) + "\n" for row in rows)
 
 
-def export_events(events: EventLike, format: str = "thearc", *, strict: bool = True,
-                  session_id: str | None = None) -> Export:
+def export_events(
+    events: EventLike, format: str = "thearc", *, strict: bool = True, session_id: str | None = None
+) -> Export:
     """Convert events to one of ``FORMATS`` (``agy`` is short for ``antigravity``).
 
     Strict conversion refuses anything the target cannot represent faithfully; with
@@ -70,13 +76,23 @@ def export_events(events: EventLike, format: str = "thearc", *, strict: bool = T
     # Codex keeps its own runtime records; other metadata has no place in a transcript.
     kept = [e for e in events if not provenance_only(e) or (format == "codex" and codex_control(e))]
     omitted = len(events) - len(kept)
-    notes = [f"{omitted} metadata record(s) without a {format} representation omitted; they remain in the index."
-             ] if omitted else []
+    notes = (
+        [f"{omitted} metadata record(s) without a {format} representation omitted; they remain in the index."]
+        if omitted
+        else []
+    )
     conversion = Conversion(strict)
     target = identity(kept, format, session_id)
     output, written = _WRITERS[format](to_blocks(kept, conversion, format), conversion, target)
-    return Export(format, _jsonl(output), tuple(e["id"] for e in kept), (*notes, *written, *conversion.notes),
-                  target.session_id, target.cwd, target.started)
+    return Export(
+        format,
+        _jsonl(output),
+        tuple(e["id"] for e in kept),
+        (*notes, *written, *conversion.notes),
+        target.session_id,
+        target.cwd,
+        target.started,
+    )
 
 
 __all__ = ["ALIASES", "FORMATS", "Export", "UnsupportedConversion", "export_events"]

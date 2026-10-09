@@ -42,12 +42,17 @@ def evidence_to_markdown(events_or_json: EventLike) -> str:
             continue
         details = [event[k] for k in ("role", "tool_name", "status") if event[k]]
         # JSON quoting keeps embedded line breaks from changing the heading structure.
-        parts.append(f"### Event {json.dumps(event['id'], ensure_ascii=False)} — {event['kind'].replace('_', ' ')}"
-                     + (": " + ", ".join(details) if details else ""))
+        parts.append(
+            f"### Event {json.dumps(event['id'], ensure_ascii=False)} — {event['kind'].replace('_', ' ')}"
+            + (": " + ", ".join(details) if details else "")
+        )
         if event["kind"] == "tool_result" and event["call_id"]:
             call = calls.get((event["run_id"], event["call_id"]))
-            parts.append("Responds to: " + json.dumps(call or event["call_id"])
-                         + (" (call outside selection)" if call is None else ""))
+            parts.append(
+                "Responds to: "
+                + json.dumps(call or event["call_id"])
+                + (" (call outside selection)" if call is None else "")
+            )
         if event["arguments"] is not None:
             parts.append(fenced(json.dumps(event["arguments"], ensure_ascii=False, indent=2), "json"))
         if event["text"] and not _mirrors_arguments(event):
@@ -63,6 +68,7 @@ def evidence_to_markdown(events_or_json: EventLike) -> str:
                 raise UnsupportedConversion(f"No isolated content block for Markdown rendering: {event['id']}")
             parts.append(fenced(json.dumps(content, ensure_ascii=False, indent=2), "json"))
     if omitted:
-        parts.append(f"_{omitted} metadata record(s) without readable content omitted; "
-                     "they remain in the indexed session._")
+        parts.append(
+            f"_{omitted} metadata record(s) without readable content omitted; they remain in the indexed session._"
+        )
     return "\n\n".join(parts) + ("\n" if parts else "")

@@ -32,7 +32,7 @@ def split_frontmatter(text: str) -> tuple[dict[str, Any] | None, str, int]:
                 data = {}
             if not isinstance(data, dict):
                 return None, text, 0
-            return data, "".join(lines[index + 1:]), index + 1
+            return data, "".join(lines[index + 1 :]), index + 1
     return None, text, 0
 
 
@@ -87,8 +87,11 @@ def top_sections(text: str) -> list[tuple[str, str]]:
         return []
     level = min(heading.level for heading in headings)
     lines = text.splitlines(keepends=True)
-    return [(heading.path[-1], "".join(lines[heading.start - 1:heading.end]).rstrip() + "\n")
-            for heading in headings if heading.level == level]
+    return [
+        (heading.path[-1], "".join(lines[heading.start - 1 : heading.end]).rstrip() + "\n")
+        for heading in headings
+        if heading.level == level
+    ]
 
 
 def _find(text: str, title: str) -> Heading | None:
@@ -102,7 +105,7 @@ def section_text(text: str, title: str) -> str | None:
     heading = _find(text, title)
     if heading is None:
         return None
-    return "".join(text.splitlines(keepends=True)[heading.start - 1:heading.end]).rstrip() + "\n"
+    return "".join(text.splitlines(keepends=True)[heading.start - 1 : heading.end]).rstrip() + "\n"
 
 
 def replace_sections(text: str, sections: list[tuple[str, str]], *, remove: tuple[str, ...] = ()) -> str:
@@ -115,15 +118,15 @@ def replace_sections(text: str, sections: list[tuple[str, str]], *, remove: tupl
         heading = _find(text, title)
         if heading is not None:
             lines = text.splitlines(keepends=True)
-            text = "".join(lines[:heading.start - 1] + lines[heading.end:])
+            text = "".join(lines[: heading.start - 1] + lines[heading.end :])
     for title, section in sections:
         heading = _find(text, title)
         if heading is None:
             text = (text.rstrip("\n") + "\n\n" if text.strip() else "") + section
             continue
         lines = text.splitlines(keepends=True)
-        after = lines[heading.end:]
-        text = "".join(lines[:heading.start - 1]) + section + ("\n" if after else "") + "".join(after)
+        after = lines[heading.end :]
+        text = "".join(lines[: heading.start - 1]) + section + ("\n" if after else "") + "".join(after)
     return text
 
 
@@ -139,7 +142,7 @@ def outline(text: str, *, first_line: int = 1) -> list[Heading]:
     headings: list[Heading] = []
     stack: list[Heading] = []
     for position, (start, level, title) in enumerate(found):
-        end = next((line - 1 for line, other, _ in found[position + 1:] if other <= level), last_line)
+        end = next((line - 1 for line, other, _ in found[position + 1 :] if other <= level), last_line)
         while stack and stack[-1].level >= level:
             stack.pop()
         heading = Heading(path=(*(stack[-1].path if stack else ()), title), level=level, start=start, end=end)

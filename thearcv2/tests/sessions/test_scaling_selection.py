@@ -15,8 +15,16 @@ def many_sessions(tmp_path):
             store.connection.executemany(
                 "INSERT INTO sessions (id,source_id,harness,native_id,ended_at,event_count,run_count,metadata) "
                 "VALUES (?,?,?,?,?,0,0,'{}')",
-                [(f"s{i:05d}", "main" if i < 1005 else "other", "pi" if i % 2 else "claude",
-                  f"native-{i}", None if i % 3 else "2026-01-01T00:00:00Z") for i in range(1010)],
+                [
+                    (
+                        f"s{i:05d}",
+                        "main" if i < 1005 else "other",
+                        "pi" if i % 2 else "claude",
+                        f"native-{i}",
+                        None if i % 3 else "2026-01-01T00:00:00Z",
+                    )
+                    for i in range(1010)
+                ],
             )
         yield store
 
@@ -48,30 +56,43 @@ def test_session_iterator_does_not_decode_entire_selection(many_sessions, monkey
     iterator.close()
 
 
-
-
-@pytest.mark.parametrize("timestamps", [
-    [None] * 6,
-    ["2026-01-01T00:00:00Z"] * 6,
-    [f"2026-01-01T00:00:0{i}Z" for i in reversed(range(6))],
-])
+@pytest.mark.parametrize(
+    "timestamps",
+    [
+        [None] * 6,
+        ["2026-01-01T00:00:00Z"] * 6,
+        [f"2026-01-01T00:00:0{i}Z" for i in reversed(range(6))],
+    ],
+)
 def test_native_event_order_and_task_outcome_selection(tmp_path, timestamps):
     with SessionIndex(tmp_path / "events.sqlite") as store:
         events = []
-        for i, (identity, role, text, offset, subrecord) in enumerate([
-            ("z", "user", "Original task", 0, 0),
-            ("y", "assistant", "Investigating", 100, 0),
-            ("x", "assistant", "Tool call", 100, 1),
-            ("w", "tool", "Tool result", 200, 0),
-            ("v", "user", "Follow-up", 300, 0),
-            ("a", "assistant", "Final answer", 400, 0),
-        ]):
-            event = Event(id=identity, source_id="source", harness="pi", session_id="s", run_id="run",
-                          session_native_id="native", role=role, text=text, timestamp=timestamps[i],
-                          kind="tool_call" if i == 2 else "tool_result" if i == 3 else "message",
-                          call_id="call" if i in (2, 3) else None,
-                          reference=SourceReference(path=tmp_path / "session.jsonl", generation=0,
-                                                    byte_offset=offset, byte_length=100, line=i + 1))
+        for i, (identity, role, text, offset, subrecord) in enumerate(
+            [
+                ("z", "user", "Original task", 0, 0),
+                ("y", "assistant", "Investigating", 100, 0),
+                ("x", "assistant", "Tool call", 100, 1),
+                ("w", "tool", "Tool result", 200, 0),
+                ("v", "user", "Follow-up", 300, 0),
+                ("a", "assistant", "Final answer", 400, 0),
+            ]
+        ):
+            event = Event(
+                id=identity,
+                source_id="source",
+                harness="pi",
+                session_id="s",
+                run_id="run",
+                session_native_id="native",
+                role=role,
+                text=text,
+                timestamp=timestamps[i],
+                kind="tool_call" if i == 2 else "tool_result" if i == 3 else "message",
+                call_id="call" if i in (2, 3) else None,
+                reference=SourceReference(
+                    path=tmp_path / "session.jsonl", generation=0, byte_offset=offset, byte_length=100, line=i + 1
+                ),
+            )
             events.append((event, subrecord))
         with store.connection:
             for event, subrecord in reversed(events):
@@ -86,12 +107,26 @@ def test_artifact_order_is_deterministic_and_native_offsets_do_not_interleave(tm
         with store.connection:
             for path in ("b.jsonl", "a.jsonl"):
                 for offset in (100, 0):
-                    store._insert(Event(
-                        id=f"{path}-{offset}", source_id="source", harness="pi", session_id="s", run_id="run",
-                        kind="message", role="assistant", text=path,
-                        reference=SourceReference(path=tmp_path / path, generation=0, byte_offset=offset,
-                                                  byte_length=100, line=offset // 100 + 1),
-                    ), 0)
+                    store._insert(
+                        Event(
+                            id=f"{path}-{offset}",
+                            source_id="source",
+                            harness="pi",
+                            session_id="s",
+                            run_id="run",
+                            kind="message",
+                            role="assistant",
+                            text=path,
+                            reference=SourceReference(
+                                path=tmp_path / path,
+                                generation=0,
+                                byte_offset=offset,
+                                byte_length=100,
+                                line=offset // 100 + 1,
+                            ),
+                        ),
+                        0,
+                    )
         expected = ["a.jsonl-0", "a.jsonl-100", "b.jsonl-0", "b.jsonl-100"]
         assert [e.id for e in store.iter_events()] == expected
         assert [e.id for e in store.iter_events()] == expected

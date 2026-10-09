@@ -111,8 +111,12 @@ def _locate(export: Export, home: Path) -> tuple[Path, list[Path], str, bool]:
         return destination, existing, f"pi --session {shlex.quote(str(destination))}", True
     if export.format == "opencode":
         destination = home / "thearc-imports" / f"{session_id}.json"
-        return destination, [destination] if destination.exists() else [], \
-            f"opencode import {shlex.quote(str(destination))}", False
+        return (
+            destination,
+            [destination] if destination.exists() else [],
+            f"opencode import {shlex.quote(str(destination))}",
+            False,
+        )
     raise ValueError(f"cannot install sessions into {export.format!r}; installable: {', '.join(INSTALLABLE)}")
 
 
@@ -125,8 +129,9 @@ def install_export(export: Export, *, home: str | Path | None = None, overwrite:
     home = Path(home).expanduser() if home else default_home(export.format)
     destination, existing, command, imported = _locate(export, home)
     if existing and not overwrite:
-        raise SessionAlreadyInstalled(f"{export.format} already has session {export.session_id} at {existing[0]}; "
-                                      "use overwrite to replace it")
+        raise SessionAlreadyInstalled(
+            f"{export.format} already has session {export.session_id} at {existing[0]}; use overwrite to replace it"
+        )
     for old in existing:
         if old != destination:
             old.unlink()
@@ -137,8 +142,15 @@ def install_export(export: Export, *, home: str | Path | None = None, overwrite:
     return InstalledSession(export.format, export.session_id, destination, command, imported)
 
 
-def install_events(events: EventLike, harness: str, *, home: str | Path | None = None, overwrite: bool = False,
-                   strict: bool = True, keep_id: bool = False) -> InstalledSession:
+def install_events(
+    events: EventLike,
+    harness: str,
+    *,
+    home: str | Path | None = None,
+    overwrite: bool = False,
+    strict: bool = True,
+    keep_id: bool = False,
+) -> InstalledSession:
     """Export ``events`` to ``harness`` and install the result; a copy ID is used unless ``keep_id``."""
     if harness not in INSTALLABLE:
         raise ValueError(f"cannot install sessions into {harness!r}; installable: {', '.join(INSTALLABLE)}")

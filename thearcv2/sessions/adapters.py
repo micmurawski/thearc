@@ -104,8 +104,15 @@ class BaseAdapter:
             **fields,
         )
 
-    def blocks(self, source: SourceConfig, ref: SourceReference, data: dict, meta: dict, message: dict,
-               pointer: str = "/message/content") -> list[Event]:
+    def blocks(
+        self,
+        source: SourceConfig,
+        ref: SourceReference,
+        data: dict,
+        meta: dict,
+        message: dict,
+        pointer: str = "/message/content",
+    ) -> list[Event]:
         role = message.get("role")
         content = message.get("content", "")
         string_content = isinstance(content, str)
@@ -158,8 +165,17 @@ class OpenCodeAdapter(BaseAdapter):
         if not isinstance(info, dict) or not info.get("id") or not isinstance(data.get("messages"), list):
             raise ValueError("Expected OpenCode export with info and messages")
         metadata.update(session=info["id"], cwd=info.get("location", {}).get("directory", info.get("directory")))
-        result = [self.event(source, ref, info, metadata, kind="metadata", raw_pointer="/info",
-                             timestamp=info.get("time", {}).get("created"))]
+        result = [
+            self.event(
+                source,
+                ref,
+                info,
+                metadata,
+                kind="metadata",
+                raw_pointer="/info",
+                timestamp=info.get("time", {}).get("created"),
+            )
+        ]
         for m, message in enumerate(data["messages"]):
             if not isinstance(message, dict):
                 raise TypeError("Expected OpenCode message with info")
@@ -177,19 +193,28 @@ class OpenCodeAdapter(BaseAdapter):
                 if role == "assistant" or not native:
                     pointer += f"/{content_key}/{p}"
                 part_ref = ref.model_copy(update={"json_pointer": pointer})
-                fields = {"role": role if role in {"assistant", "user", "system"} else None,
-                          "kind": "metadata", "text": "",
-                          "raw_pointer": part_ref.json_pointer,
-                          "timestamp": message_info.get("time", {}).get("created")}
+                fields = {
+                    "role": role if role in {"assistant", "user", "system"} else None,
+                    "kind": "metadata",
+                    "text": "",
+                    "raw_pointer": part_ref.json_pointer,
+                    "timestamp": message_info.get("time", {}).get("created"),
+                }
                 if part.get("type") in {"text", "reasoning", "user", "system"}:
-                    fields.update(kind="thinking" if part["type"] == "reasoning" else "message",
-                                  text=part.get("text", ""))
+                    fields.update(
+                        kind="thinking" if part["type"] == "reasoning" else "message", text=part.get("text", "")
+                    )
                 elif part.get("type") == "tool":
                     state = part.get("state", {})
                     name = part.get("name") if native else part.get("tool")
-                    fields.update(kind="tool_call", tool_name=name,
-                                  action_kind=action(name), call_id=part.get("id") if native else part.get("callID"),
-                                  arguments=state.get("input", {}), text=json.dumps(state.get("input", {})))
+                    fields.update(
+                        kind="tool_call",
+                        tool_name=name,
+                        action_kind=action(name),
+                        call_id=part.get("id") if native else part.get("callID"),
+                        arguments=state.get("input", {}),
+                        text=json.dumps(state.get("input", {})),
+                    )
                     result.append(self.event(source, part_ref, part, metadata, subrecord=len(result), **fields))
                     if state.get("status") not in {"completed", "error"}:
                         continue
@@ -199,9 +224,13 @@ class OpenCodeAdapter(BaseAdapter):
                         error = error.get("message", json.dumps(error))
                     exit_code = state.get("metadata", {}).get("exit")
                     failed = state["status"] == "error" or (type(exit_code) is int and exit_code != 0)
-                    fields.update(kind="tool_result", role="tool", arguments=None,
-                                  status="failure" if failed else "success",
-                                  text=str(error or output))
+                    fields.update(
+                        kind="tool_result",
+                        role="tool",
+                        arguments=None,
+                        status="failure" if failed else "success",
+                        text=str(error or output),
+                    )
                 result.append(self.event(source, part_ref, part, metadata, subrecord=len(result), **fields))
         return result
 
@@ -217,8 +246,17 @@ class PiAdapter(BaseAdapter):
             role = message.get("role")
             if role == "system":
                 # Pi records the system prompt it sent (sections, tools) — configuration, not conversation.
-                return [self.event(source, ref, data, metadata, kind="metadata", role="system",
-                                   text=text_content(message.get("content")))]
+                return [
+                    self.event(
+                        source,
+                        ref,
+                        data,
+                        metadata,
+                        kind="metadata",
+                        role="system",
+                        text=text_content(message.get("content")),
+                    )
+                ]
             if role == "toolResult":
                 return [
                     self.event(
@@ -403,8 +441,9 @@ class AntigravityAdapter(BaseAdapter):
     """
 
     version = "antigravity-2"
-    _NOT_RESULTS = frozenset({"USER_INPUT", "PLANNER_RESPONSE", "SYSTEM_MESSAGE", "CHECKPOINT",
-                              "CONVERSATION_HISTORY", "ERROR_MESSAGE"})
+    _NOT_RESULTS = frozenset(
+        {"USER_INPUT", "PLANNER_RESPONSE", "SYSTEM_MESSAGE", "CHECKPOINT", "CONVERSATION_HISTORY", "ERROR_MESSAGE"}
+    )
 
     def discover(self, source: SourceConfig) -> Iterator[Path]:
         yield from sorted(source.root.rglob("transcript.jsonl"))
@@ -425,32 +464,70 @@ class AntigravityAdapter(BaseAdapter):
 
         if step_type == "USER_INPUT":
             pending.clear()  # A new prompt ends the previous response; unanswered calls stay unanswered.
-            return [self.event(source, ref, data, metadata, kind="message", role="user", text=content,
-                               timestamp=timestamp)]
+            return [
+                self.event(source, ref, data, metadata, kind="message", role="user", text=content, timestamp=timestamp)
+            ]
         if step_type == "SYSTEM_MESSAGE":
-            return [self.event(source, ref, data, metadata, kind="message", role="system", text=content,
-                               timestamp=timestamp)]
+            return [
+                self.event(
+                    source, ref, data, metadata, kind="message", role="system", text=content, timestamp=timestamp
+                )
+            ]
         if step_type == "CHECKPOINT":
             return [self.event(source, ref, data, metadata, kind="compaction", text=content, timestamp=timestamp)]
         if step_type == "PLANNER_RESPONSE":
             pending.clear()
             events = []
             if data.get("thinking"):
-                events.append(self.event(source, ref, data, metadata, kind="thinking", role="assistant",
-                                         text=str(data["thinking"]), timestamp=timestamp, subrecord=0))
+                events.append(
+                    self.event(
+                        source,
+                        ref,
+                        data,
+                        metadata,
+                        kind="thinking",
+                        role="assistant",
+                        text=str(data["thinking"]),
+                        timestamp=timestamp,
+                        subrecord=0,
+                    )
+                )
             if content:
-                events.append(self.event(source, ref, data, metadata, kind="message", role="assistant",
-                                         text=content, timestamp=timestamp, subrecord=1))
+                events.append(
+                    self.event(
+                        source,
+                        ref,
+                        data,
+                        metadata,
+                        kind="message",
+                        role="assistant",
+                        text=content,
+                        timestamp=timestamp,
+                        subrecord=1,
+                    )
+                )
             for index, call in enumerate(data.get("tool_calls") or []):
                 name = call.get("name")
                 args = call.get("args", call.get("arguments", {}))
                 call_id = call.get("id") or f"{metadata['session']}-{data.get('step_index')}-{index}"
                 pending.append([call_id, name])
-                events.append(self.event(
-                    source, ref, data, metadata, kind="tool_call", role="assistant", tool_name=name,
-                    action_kind=action(name), call_id=call_id, arguments=args, timestamp=timestamp,
-                    subrecord=10 + index,
-                    text=json.dumps(args, ensure_ascii=False) if isinstance(args, dict) else str(args)))
+                events.append(
+                    self.event(
+                        source,
+                        ref,
+                        data,
+                        metadata,
+                        kind="tool_call",
+                        role="assistant",
+                        tool_name=name,
+                        action_kind=action(name),
+                        call_id=call_id,
+                        arguments=args,
+                        timestamp=timestamp,
+                        subrecord=10 + index,
+                        text=json.dumps(args, ensure_ascii=False) if isinstance(args, dict) else str(args),
+                    )
+                )
             return events
         if step_type not in self._NOT_RESULTS or (step_type == "ERROR_MESSAGE" and pending):
             call_id, name = pending.pop(0) if pending else (None, None)
@@ -461,11 +538,27 @@ class AntigravityAdapter(BaseAdapter):
                 status = None
             else:
                 status = "success"
-            return [self.event(source, ref, data, metadata, kind="tool_result", role="tool", call_id=call_id,
-                               tool_name=name, action_kind=action(name), status=status,
-                               text=content or str(data.get("error") or ""), timestamp=timestamp)]
-        return [self.event(source, ref, data, metadata, kind="metadata", text=str(data.get("error") or ""),
-                           timestamp=timestamp)]
+            return [
+                self.event(
+                    source,
+                    ref,
+                    data,
+                    metadata,
+                    kind="tool_result",
+                    role="tool",
+                    call_id=call_id,
+                    tool_name=name,
+                    action_kind=action(name),
+                    status=status,
+                    text=content or str(data.get("error") or ""),
+                    timestamp=timestamp,
+                )
+            ]
+        return [
+            self.event(
+                source, ref, data, metadata, kind="metadata", text=str(data.get("error") or ""), timestamp=timestamp
+            )
+        ]
 
 
 ADAPTERS: dict[str, TranscriptAdapter] = {

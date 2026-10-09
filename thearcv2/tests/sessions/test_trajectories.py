@@ -10,23 +10,44 @@ from thearcv2.sessions.trajectories import split_trajectories
 
 
 def event(i, *, kind="message", role="assistant", text="response", raw=None, run="main"):
-    return Event(id=f"e{i}", source_id="source", harness="codex", session_id="session", run_id=run,
-                 kind=kind, role=role, text=text, raw=raw or {},
-                 reference=SourceReference(path="session.jsonl", generation=0, byte_offset=i,
-                                           byte_length=1, line=i + 1))
+    return Event(
+        id=f"e{i}",
+        source_id="source",
+        harness="codex",
+        session_id="session",
+        run_id=run,
+        kind=kind,
+        role=role,
+        text=text,
+        raw=raw or {},
+        reference=SourceReference(path="session.jsonl", generation=0, byte_offset=i, byte_length=1, line=i + 1),
+    )
 
 
 def marker(i, kind, turn):
-    return event(i, kind="metadata", role=None, text="", raw={
-        "type": "turn_context" if kind == "turn_context" else "event_msg",
-        "payload": {"type": kind, "turn_id": turn},
-    })
+    return event(
+        i,
+        kind="metadata",
+        role=None,
+        text="",
+        raw={
+            "type": "turn_context" if kind == "turn_context" else "event_msg",
+            "payload": {"type": kind, "turn_id": turn},
+        },
+    )
 
 
 def test_prompt_trajectory_pairs_preserve_all_event_kinds():
-    events = [event(0, role="system"), event(1, role="user", text="Fix"),
-              event(2, kind="thinking"), event(3, kind="tool_call"), event(4, kind="tool_result", role="tool"),
-              event(5), event(6, role="user", text="Explain"), event(7)]
+    events = [
+        event(0, role="system"),
+        event(1, role="user", text="Fix"),
+        event(2, kind="thinking"),
+        event(3, kind="tool_call"),
+        event(4, kind="tool_result", role="tool"),
+        event(5),
+        event(6, role="user", text="Explain"),
+        event(7),
+    ]
     split = split_trajectories(events)
     assert split.unassigned_events == tuple(events[:1])
     first, second = split.trajectories
@@ -49,11 +70,19 @@ def test_one_prompt_can_have_multiple_native_content_blocks():
     assert split.trajectories[0].prompt_text == "First block\nSecond block"
 
 
-@pytest.mark.parametrize("ending, expected", [("task_complete", "completed"),
-                                               ("task_completed", "completed"), ("turn_aborted", "interrupted")])
+@pytest.mark.parametrize(
+    "ending, expected",
+    [("task_complete", "completed"), ("task_completed", "completed"), ("turn_aborted", "interrupted")],
+)
 def test_explicit_lifecycle_and_unassigned_events(ending, expected):
-    events = [marker(0, "task_started", "t1"), event(1, role="user"),
-              marker(2, "turn_context", "t1"), event(3), marker(4, ending, "t1"), event(5, kind="metadata")]
+    events = [
+        marker(0, "task_started", "t1"),
+        event(1, role="user"),
+        marker(2, "turn_context", "t1"),
+        event(3),
+        marker(4, ending, "t1"),
+        event(5, kind="metadata"),
+    ]
     result = split_trajectories(events)
     assert result.unassigned_events == (events[0], events[-1])
     assert result.trajectories[0].boundary == expected
@@ -72,8 +101,16 @@ def test_separate_runs_are_not_joined_and_orphan_activity_is_retained():
 
 
 def test_two_prompts_within_a_native_turn_cannot_claim_separate_fork_boundaries():
-    result = split_trajectories([marker(0, "task_started", "t1"), event(1, role="user"), event(2),
-                                 event(3, role="user"), event(4), marker(5, "task_complete", "t1")])
+    result = split_trajectories(
+        [
+            marker(0, "task_started", "t1"),
+            event(1, role="user"),
+            event(2),
+            event(3, role="user"),
+            event(4),
+            marker(5, "task_complete", "t1"),
+        ]
+    )
     assert len(result.trajectories) == 2
     assert all(t.native_turn_id is None for t in result.trajectories)
 
@@ -81,16 +118,26 @@ def test_two_prompts_within_a_native_turn_cannot_claim_separate_fork_boundaries(
 def test_sqlite_split_uses_complete_records_and_prepares_native_reference(tmp_path):
     records = [{"type": "session_meta", "payload": {"id": "native"}}]
     for turn in ("t1", "t2"):
-        records.extend([
-            {"type": "event_msg", "payload": {"type": "task_started", "turn_id": turn}},
-            {"type": "turn_context", "payload": {"turn_id": turn}},
-            {"type": "response_item", "payload": {"type": "message", "role": "user",
-             "content": [{"type": "input_text", "text": turn}]}},
-            {"type": "response_item", "payload": {"type": "reasoning", "summary": [{"text": "recorded"}]}},
-            {"type": "response_item", "payload": {"type": "message", "role": "assistant",
-             "content": [{"type": "output_text", "text": "Done"}]}},
-            {"type": "event_msg", "payload": {"type": "task_complete", "turn_id": turn}},
-        ])
+        records.extend(
+            [
+                {"type": "event_msg", "payload": {"type": "task_started", "turn_id": turn}},
+                {"type": "turn_context", "payload": {"turn_id": turn}},
+                {
+                    "type": "response_item",
+                    "payload": {"type": "message", "role": "user", "content": [{"type": "input_text", "text": turn}]},
+                },
+                {"type": "response_item", "payload": {"type": "reasoning", "summary": [{"text": "recorded"}]}},
+                {
+                    "type": "response_item",
+                    "payload": {
+                        "type": "message",
+                        "role": "assistant",
+                        "content": [{"type": "output_text", "text": "Done"}],
+                    },
+                },
+                {"type": "event_msg", "payload": {"type": "task_complete", "turn_id": turn}},
+            ]
+        )
     (tmp_path / "rollout-native.jsonl").write_text("\n".join(map(json.dumps, records)) + "\n")
     with SessionIndex(tmp_path / "index.sqlite") as store:
         store.ingest(SourceConfig(id="source", harness="codex", root=tmp_path))
@@ -103,12 +150,26 @@ def test_sqlite_split_uses_complete_records_and_prepares_native_reference(tmp_pa
 
 
 def test_native_user_markers_distinguish_environment_setup_from_prompts():
-    events = [marker(0, "task_started", "t1"), event(1, role="user", text="environment setup"),
-              marker(2, "turn_context", "t1"), event(3, role="user", text="actual task"),
-              event(4, kind="metadata", raw={"type": "event_msg", "payload": {
-                  "type": "item_completed", "turn_id": "t1",
-                  "item": {"type": "UserMessage", "content": [{"type": "text", "text": "actual task"}]},
-              }}), event(5), marker(6, "task_complete", "t1")]
+    events = [
+        marker(0, "task_started", "t1"),
+        event(1, role="user", text="environment setup"),
+        marker(2, "turn_context", "t1"),
+        event(3, role="user", text="actual task"),
+        event(
+            4,
+            kind="metadata",
+            raw={
+                "type": "event_msg",
+                "payload": {
+                    "type": "item_completed",
+                    "turn_id": "t1",
+                    "item": {"type": "UserMessage", "content": [{"type": "text", "text": "actual task"}]},
+                },
+            },
+        ),
+        event(5),
+        marker(6, "task_complete", "t1"),
+    ]
     split = split_trajectories(events)
     assert len(split.trajectories) == 1
     assert split.trajectories[0].prompt_text == "actual task"

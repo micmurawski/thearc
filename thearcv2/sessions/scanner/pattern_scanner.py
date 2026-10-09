@@ -195,8 +195,9 @@ class PatternScanner:
             segment = list(group)
             for pattern in patterns:
                 for match in pattern.find_matches(segment):
-                    matches.append(replace(match, start_index=match.start_index + offset,
-                                           end_index=match.end_index + offset))
+                    matches.append(
+                        replace(match, start_index=match.start_index + offset, end_index=match.end_index + offset)
+                    )
             offset += len(segment)
         matches.sort(key=lambda match: match.start_index)
         return matches

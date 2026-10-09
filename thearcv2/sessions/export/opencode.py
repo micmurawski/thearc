@@ -19,13 +19,27 @@ def write(blocks: list[Block], conversion: Conversion, identity: Identity) -> tu
 
     def message(role: str, seed: str, ms: int, parts: list[dict[str, Any]], **info: Any) -> dict[str, Any]:
         message_id = opencode_id("msg", ms, seed)
-        fields = _AGENT if role == "user" else {"modelID": "imported", "providerID": "thearc", "mode": "build",
-                                                "agent": "thearc", "path": {"cwd": cwd, "root": cwd}, "cost": 0,
-                                                "tokens": _TOKENS}
+        fields = (
+            _AGENT
+            if role == "user"
+            else {
+                "modelID": "imported",
+                "providerID": "thearc",
+                "mode": "build",
+                "agent": "thearc",
+                "path": {"cwd": cwd, "root": cwd},
+                "cost": 0,
+                "tokens": _TOKENS,
+            }
+        )
         time = {"created": ms} if role == "user" else {"created": ms, "completed": ms}
-        entry = {"info": {"id": message_id, "sessionID": session_id, "role": role, "time": time, **fields, **info},
-                 "parts": [{"id": opencode_id("prt", ms, seed), "sessionID": session_id, "messageID": message_id,
-                            **part} for part in parts]}
+        entry = {
+            "info": {"id": message_id, "sessionID": session_id, "role": role, "time": time, **fields, **info},
+            "parts": [
+                {"id": opencode_id("prt", ms, seed), "sessionID": session_id, "messageID": message_id, **part}
+                for part in parts
+            ],
+        }
         messages.append(entry)
         return entry
 
@@ -39,35 +53,70 @@ def write(blocks: list[Block], conversion: Conversion, identity: Identity) -> tu
             assistant["info"]["time"]["completed"] = ms
             part = {"id": opencode_id("prt", ms, seed), "sessionID": session_id, "messageID": assistant["info"]["id"]}
             if block.kind == "tool_call":
-                part.update(type="tool", callID=block.call_id, tool=block.name,
-                            state={"status": "pending", "input": block.input})
+                part.update(
+                    type="tool",
+                    callID=block.call_id,
+                    tool=block.name,
+                    state={"status": "pending", "input": block.input},
+                )
                 calls[block.call_id] = part
             else:
-                part.update(type="reasoning" if block.kind == "thinking" else "text", text=block.text,
-                            time={"start": ms, "end": ms})
+                part.update(
+                    type="reasoning" if block.kind == "thinking" else "text",
+                    text=block.text,
+                    time={"start": ms, "end": ms},
+                )
             assistant["parts"].append(part)
             continue
         if block.kind == "tool_result" and block.call_id in calls:
             call, timing = calls[block.call_id], {"start": ms, "end": ms}
-            call["state"] = ({"status": "error", "input": call["state"]["input"], "error": block.text, "time": timing}
-                             if block.is_error else
-                             {"status": "completed", "input": call["state"]["input"], "output": block.text,
-                              "title": block.name or "", "metadata": {}, "time": timing})
+            call["state"] = (
+                {"status": "error", "input": call["state"]["input"], "error": block.text, "time": timing}
+                if block.is_error
+                else {
+                    "status": "completed",
+                    "input": call["state"]["input"],
+                    "output": block.text,
+                    "title": block.name or "",
+                    "metadata": {},
+                    "time": timing,
+                }
+            )
             continue
         assistant = None
         if block.kind == "compaction":
             marker = message("user", seed, ms, [{"type": "compaction", "auto": True}])
-            parent = message("assistant", seed + ":summary", ms, [{"type": "text", "text": block.text,
-                                                                   "time": {"start": ms, "end": ms}}],
-                             parentID=marker["info"]["id"], summary=True)["info"]["id"]
+            parent = message(
+                "assistant",
+                seed + ":summary",
+                ms,
+                [{"type": "text", "text": block.text, "time": {"start": ms, "end": ms}}],
+                parentID=marker["info"]["id"],
+                summary=True,
+            )["info"]["id"]
             continue
-        parent = message("user", seed, ms, [{"type": "text", "text": block.text,
-                                             "time": {"start": ms, "end": ms}}])["info"]["id"]
-    title = next((b.text.strip().splitlines()[0][:80] for b in blocks
-                  if b.role == "user" and b.kind == "text" and b.text.strip()), "Imported session")
+        parent = message("user", seed, ms, [{"type": "text", "text": block.text, "time": {"start": ms, "end": ms}}])[
+            "info"
+        ]["id"]
+    title = next(
+        (
+            b.text.strip().splitlines()[0][:80]
+            for b in blocks
+            if b.role == "user" and b.kind == "text" and b.text.strip()
+        ),
+        "Imported session",
+    )
     words = [w for w in "".join(c.lower() if c.isalnum() else "-" for c in title).split("-") if w]
-    info = {"id": session_id, "slug": "-".join(words[:8]) or "imported-session", "projectID": "global",
-            "directory": cwd, "title": title, "version": "thearc", "time": {"created": created, "updated": clock.ms}}
+    info = {
+        "id": session_id,
+        "slug": "-".join(words[:8]) or "imported-session",
+        "projectID": "global",
+        "directory": cwd,
+        "title": title,
+        "version": "thearc",
+        "time": {"created": created, "updated": clock.ms},
+    }
     return [{"info": info, "messages": messages}], [
         "Events mapped to one OpenCode export object; tool results merged into their tool parts.",
-        "Session, message, and part IDs regenerated deterministically."]
+        "Session, message, and part IDs regenerated deterministically.",
+    ]

@@ -9,13 +9,13 @@ from __future__ import annotations
 
 import math
 from abc import ABC, abstractmethod
-from collections.abc import Callable, Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Annotated, Any
 
 if TYPE_CHECKING:
-    from thearcv2.resources.journal import Entry, Rated
+    from thearcv2.resources.journal import Journal, Lineage, Rated
 
 RatingValue = str | float
 
@@ -58,20 +58,28 @@ class NumericSummary:
         return self.total / self.count if self.count else None
 
     def merge(self, other: NumericSummary) -> NumericSummary:
-        return NumericSummary(self.count + other.count, self.total + other.total,
-                              min(self.minimum, other.minimum), max(self.maximum, other.maximum))
+        return NumericSummary(
+            self.count + other.count,
+            self.total + other.total,
+            min(self.minimum, other.minimum),
+            max(self.maximum, other.maximum),
+        )
 
 
 Summary = CountSummary | NumericSummary
 
 
 class RatingScale(ABC):
-    """Defines the values a rating may take and how ratings combine into a summary."""
+    """Defines the values a rating may take and how ratings combine into a summary.
 
-    def __init__(self, name: str):
+    ``description`` says what the scale measures; it reaches reflectors through the JSON Schema.
+    """
+
+    def __init__(self, name: str, *, description: str = ""):
         if not name or name != name.strip():
             raise ValueError("scale name must be a non-blank, trimmed string")
         self.name = name
+        self.description = description
 
     @abstractmethod
     def validate(self, value: Any) -> RatingValue:
@@ -89,6 +97,30 @@ class RatingScale(ABC):
     def render(self, summary: Summary) -> str:
         """Short text shown next to a target, e.g. ``(harmful: 1, neutral: 0, helpful: 3)``."""
 
+    def field(self) -> Any:
+        """``Annotated[Any, scale]``: a rating on this scale in a reflection schema, under any field name.
+
+        Type checkers prefer the spelled-out form, which works the same way::
+
+            class Rated(BaseModel):
+                ref: Ref
+                usefulness: Annotated[str, USEFULNESS]
+        """
+        return Annotated[Any, self]
+
+    def __get_pydantic_core_schema__(self, source: Any, handler: Any) -> Any:
+        """As Pydantic metadata, a scale validates its field's value."""
+        from pydantic_core import core_schema
+
+        return core_schema.no_info_after_validator_function(self.validate, handler(source))
+
+    def __get_pydantic_json_schema__(self, schema: Any, handler: Any) -> dict[str, Any]:
+        """…and describes it: the scale's own JSON Schema, headed by its name."""
+        result = self.json_schema()
+        heading = f"Rating on the {self.name!r} scale."
+        return {**result, "description": f"{heading}\n{result['description']}" if "description" in result
+                else heading}
+
     @abstractmethod
     def json_schema(self) -> dict[str, Any]:
         """JSON Schema of a single rating value."""
@@ -105,12 +137,22 @@ class RatingScale(ABC):
 
 
 class CategoricalScale(RatingScale):
-    """A fixed set of labels, optionally ordered (e.g. ``harmful < neutral < helpful``)."""
+    """A fixed set of labels, optionally ordered (e.g. ``harmful < neutral < helpful``).
 
-    def __init__(self, name: str, labels: Sequence[str], *, ordered: bool = False):
-        super().__init__(name)
-        if not labels or len(set(labels)) != len(labels) or any(not isinstance(label, str) or not label
-                                                                 for label in labels):
+    ``labels`` may map each label to what it means; reflectors see those meanings.
+    """
+
+    def __init__(
+        self, name: str, labels: Sequence[str] | Mapping[str, str], *, ordered: bool = False, description: str = ""
+    ):
+        super().__init__(name, description=description)
+        self.meanings = dict(labels) if isinstance(labels, Mapping) else {}
+        labels = list(labels)
+        if (
+            not labels
+            or len(set(labels)) != len(labels)
+            or any(not isinstance(label, str) or not label for label in labels)
+        ):
             raise ValueError("labels must be distinct, non-empty strings")
         self.labels = tuple(labels)
         self.ordered = ordered
@@ -132,7 +174,12 @@ class CategoricalScale(RatingScale):
         return "(" + ", ".join(f"{label}: {_number(summary.counts.get(label, 0.0))}" for label in self.labels) + ")"
 
     def json_schema(self) -> dict[str, Any]:
-        return {"type": "string", "enum": list(self.labels)}
+        lines = [self.description] if self.description else []
+        if self.ordered:
+            lines.append("Ordered: " + " < ".join(self.labels) + ".")
+        lines += [f"- {label}: {meaning}" for label, meaning in self.meanings.items() if meaning]
+        schema: dict[str, Any] = {"type": "string", "enum": list(self.labels)}
+        return {**schema, "description": "\n".join(lines)} if lines else schema
 
 
 def normalize_label(value: str) -> str:
@@ -143,8 +190,15 @@ def normalize_label(value: str) -> str:
 class LabelScale(RatingScale):
     """Open-ended labels, counted like tags; ``normalize`` keeps one label from counting under two spellings."""
 
-    def __init__(self, name: str, *, normalize: Callable[[str], str] = normalize_label, max_length: int = 100):
-        super().__init__(name)
+    def __init__(
+        self,
+        name: str,
+        *,
+        normalize: Callable[[str], str] = normalize_label,
+        max_length: int = 100,
+        description: str = "",
+    ):
+        super().__init__(name, description=description)
         self.normalize = normalize
         self.max_length = max_length
 
@@ -169,14 +223,17 @@ class LabelScale(RatingScale):
         return "(" + ", ".join(f"{label}: {_number(count)}" for label, count in ordered) + ")"
 
     def json_schema(self) -> dict[str, Any]:
-        return {"type": "string", "minLength": 1, "maxLength": self.max_length}
+        schema = {"type": "string", "minLength": 1, "maxLength": self.max_length}
+        return {**schema, "description": self.description} if self.description else schema
 
 
 class NumericScale(RatingScale):
     """Finite numbers, optionally bounded (inclusive)."""
 
-    def __init__(self, name: str, *, minimum: float | None = None, maximum: float | None = None):
-        super().__init__(name)
+    def __init__(
+        self, name: str, *, minimum: float | None = None, maximum: float | None = None, description: str = ""
+    ):
+        super().__init__(name, description=description)
         if minimum is not None and maximum is not None and minimum > maximum:
             raise ValueError("minimum must not exceed maximum")
         self.minimum = minimum
@@ -207,20 +264,42 @@ class NumericScale(RatingScale):
             schema["minimum"] = self.minimum
         if self.maximum is not None:
             schema["maximum"] = self.maximum
+        if self.description:
+            schema["description"] = self.description
         return schema
 
 
-# A rating policy reads one target's history (oldest first, across moves) and
-# decides which ratings count, and with what weight. Pipelines choose the policy.
-RatingPolicy = Callable[[Sequence["Entry"]], Iterable[tuple["Rated", float]]]
+# A rating policy decides which ratings count for one target, and with what weight. It gets the
+# target's lineage (its history across moves, oldest first) and the journal, so it may look at other
+# targets too. Pipelines choose the policy.
+RatingPolicy = Callable[["Lineage", "Journal"], Iterable[tuple["Rated", float]]]
 
 
-def count_all(history: Sequence[Entry]) -> Iterable[tuple[Rated, float]]:
-    """Every rating counts once."""
-    return ((entry, 1.0) for entry in history if entry.kind == "rated")
+def count_all(lineage: Lineage, journal: Journal) -> Iterable[tuple[Rated, float]]:
+    """Every rating of the target counts once."""
+    return ((entry, 1.0) for entry in lineage.entries if entry.kind == "rated")
 
 
-def since_last_modification(history: Sequence[Entry]) -> Iterable[tuple[Rated, float]]:
+def since_last_modification(lineage: Lineage, journal: Journal) -> Iterable[tuple[Rated, float]]:
     """Only ratings given after the target's content last changed."""
+    history = lineage.entries
     start = max((index for index, entry in enumerate(history) if entry.kind in {"added", "modified"}), default=-1)
-    return ((entry, 1.0) for entry in history[start + 1:] if entry.kind == "rated")
+    return ((entry, 1.0) for entry in history[start + 1 :] if entry.kind == "rated")
+
+
+def including_subsections(policy: RatingPolicy = count_all) -> RatingPolicy:
+    """``policy`` applied to a section and every section under it, so ratings roll up the hierarchy.
+
+    One judgment that covered several of those sections (one reflection item) counts once.
+    """
+
+    def rolled_up(lineage: Lineage, journal: Journal) -> Iterator[tuple[Rated, float]]:
+        counted: set[str] = set()
+        for other in journal.lineages():
+            if not other.removed and lineage.target.contains(other.target):
+                for rated, weight in policy(other, journal):
+                    if rated.item_id not in counted:
+                        counted.add(rated.item_id)
+                        yield rated, weight
+
+    return rolled_up

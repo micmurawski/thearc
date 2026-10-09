@@ -12,8 +12,9 @@ from .test_sessions import claude_session, write_jsonl
 def claude_dir(tmp_path):
     root = tmp_path / "claude"
     write_jsonl(root / "project" / "11111111-aaaa.jsonl", claude_session("11111111-aaaa"))
-    write_jsonl(root / "project" / "22222222-bbbb.jsonl",
-                claude_session("22222222-bbbb", "Second", "2026-10-03T10:00:00Z"))
+    write_jsonl(
+        root / "project" / "22222222-bbbb.jsonl", claude_session("22222222-bbbb", "Second", "2026-10-03T10:00:00Z")
+    )
     return root
 
 
@@ -27,6 +28,7 @@ def cli(tmp_path):
         if ok:
             assert result.exit_code == 0, result.output
         return result
+
     return run
 
 
@@ -35,7 +37,8 @@ def test_add_list_and_render_by_any_reference(cli, claude_dir, tmp_path):
     write_jsonl(batch / "sessions" / "run-1.jsonl", claude_session("33333333-cccc-dddd"))
     (batch / "runs" / "33333333ccccdddd").mkdir(parents=True)
     (batch / "runs" / "33333333ccccdddd" / "manifest.json").write_text(
-        json.dumps({"harness": "claude", "thread_id": "33333333-cccc-dddd"}))
+        json.dumps({"harness": "claude", "thread_id": "33333333-cccc-dddd"})
+    )
 
     added = cli("add", str(claude_dir), str(batch))
     assert [line.split()[0] for line in added.output.splitlines()] == ["claude", "claude"]

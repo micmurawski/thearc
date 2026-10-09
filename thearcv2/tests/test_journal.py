@@ -1,5 +1,5 @@
 import pytest
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from thearcv2.resources import (
     CategoricalScale,
@@ -27,8 +27,17 @@ class Insight(BaseModel):
 
 
 def test_reflection_items_become_rated_entries(agent, human):
-    result = rate(agent, human, {"ref": "skills/retry/SKILL.md#L13-L17", "rating": "harmful",
-                                 "insight": "loops", "root_cause_analysis": "no backoff"}, metadata=Insight)
+    result = rate(
+        agent,
+        human,
+        {
+            "ref": "skills/retry/SKILL.md#L13-L17",
+            "rating": "harmful",
+            "insight": "loops",
+            "root_cause_analysis": "no backoff",
+        },
+        metadata=Insight,
+    )
     assert [entry.target for entry in result.entries] == [EXAMPLES, LIMITS]
     first, second = result.entries
     assert first.item_id == second.item_id
@@ -38,12 +47,15 @@ def test_reflection_items_become_rated_entries(agent, human):
 
 
 def test_invalid_items_are_rejected_not_recorded(agent, human):
-    result = rate(agent, human,
-                  {"ref": "skills/retry/SKILL.md#L13", "rating": "great", "insight": "x"},
-                  {"ref": "skills/retry/SKILL.md#L99", "rating": "helpful", "insight": "x"},
-                  {"ref": "skills/retry/SKILL.md#L13", "rating": "helpful"},
-                  {"ref": "skills/retry/SKILL.md#L13", "rating": "helpful", "insight": "ok"},
-                  metadata=Insight)
+    result = rate(
+        agent,
+        human,
+        {"ref": "skills/retry/SKILL.md#L13", "rating": "great", "insight": "x"},
+        {"ref": "skills/retry/SKILL.md#L99", "rating": "helpful", "insight": "x"},
+        {"ref": "skills/retry/SKILL.md#L13", "rating": "helpful"},
+        {"ref": "skills/retry/SKILL.md#L13", "rating": "helpful", "insight": "ok"},
+        metadata=Insight,
+    )
     assert [rejection.index for rejection in result.rejected] == [0, 1, 2]
     assert len(result.entries) == len(agent.journal) == 1
 
@@ -64,8 +76,12 @@ def test_json_schema_combines_core_and_metadata():
 
 
 def test_summaries_per_scale(agent, human):
-    rate(agent, human, {"ref": "skills/retry/SKILL.md#L13", "rating": "helpful"},
-         {"ref": "skills/retry/SKILL.md#L13-L17", "rating": "harmful"})
+    rate(
+        agent,
+        human,
+        {"ref": "skills/retry/SKILL.md#L13", "rating": "helpful"},
+        {"ref": "skills/retry/SKILL.md#L13-L17", "rating": "harmful"},
+    )
     rate(agent, human, {"ref": "skills/retry/SKILL.md#L13", "rating": "Outdated"}, scale=LabelScale("tags"))
     summaries = agent.journal.summaries(usefulness)
     assert summaries[EXAMPLES].counts == {"harmful": 1, "neutral": 0, "helpful": 1}
@@ -106,13 +122,17 @@ def test_renamed_skill_moves_its_sections_and_files(agent, human):
     entries = detect_changes(agent, edited, **human)
     assert {entry.kind for entry in entries} == {"moved"}
     assert {(entry.previous.name, entry.target.name) for entry in entries} == {
-        ("retry", "backoff"), ("retry/notes.md", "backoff/notes.md"), ("retry/run.sh", "backoff/run.sh")}
+        ("retry", "backoff"),
+        ("retry/notes.md", "backoff/notes.md"),
+        ("retry/run.sh", "backoff/run.sh"),
+    }
 
 
 def test_ambiguous_move_is_removed_plus_added(agent, human):
     edited = agent.model_copy(deep=True)
     edited.skills["retry"].instructions = edited.skills["retry"].instructions.replace(
-        "## Limits\n\nmax 3", "## Bounds\n\nmax 4")
+        "## Limits\n\nmax 3", "## Bounds\n\nmax 4"
+    )
     kinds = sorted(entry.kind for entry in detect_changes(agent, edited, **human))
     assert kinds == ["added", "removed"]
 
@@ -145,3 +165,17 @@ def test_journal_is_append_only(agent, human):
 def test_extra_must_be_json(agent):
     with pytest.raises(ValueError, match="JSON"):
         detect_changes(None, agent, when=object())
+
+
+def test_json_schema_exposes_every_description():
+    class Described(BaseModel):
+        """One judgment."""
+
+        insight: str = Field(description="What to change.")
+
+    scale = CategoricalScale("usefulness", {"harmful": "made it worse", "helpful": "made it better"})
+    item = ReflectionSchema(scale, Described).json_schema()["items"]
+    assert item["description"] == "One judgment."
+    assert item["properties"]["insight"]["description"] == "What to change."
+    assert item["properties"]["rating"]["description"] == (
+        "Rating on the 'usefulness' scale.\n- harmful: made it worse\n- helpful: made it better")

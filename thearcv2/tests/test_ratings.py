@@ -36,12 +36,28 @@ def test_numeric():
             quality.validate(invalid)
 
 
-@pytest.mark.parametrize(("scale", "values"), [
-    (usefulness, ["helpful", "harmful", "neutral", "helpful"]),
-    (LabelScale("tags"), ["a", "b", "a", "c"]),
-    (NumericScale("q"), [0.1, 0.9, 0.4, 0.3]),
-])
+@pytest.mark.parametrize(
+    ("scale", "values"),
+    [
+        (usefulness, ["helpful", "harmful", "neutral", "helpful"]),
+        (LabelScale("tags"), ["a", "b", "a", "c"]),
+        (NumericScale("q"), [0.1, 0.9, 0.4, 0.3]),
+    ],
+)
 def test_summaries_are_mergeable(scale, values):
     left = scale.summarize((value, 1) for value in values[:2])
     right = scale.summarize((value, 1) for value in values[2:])
     assert left.merge(right) == scale.summarize((value, 1) for value in values)
+
+
+def test_scales_describe_themselves_in_json_schema():
+    scale = CategoricalScale("usefulness", {"harmful": "made it worse", "neutral": "", "helpful": "made it better"},
+                             ordered=True, description="Effect on the session.")
+    assert scale.labels == ("harmful", "neutral", "helpful")
+    assert scale.json_schema()["description"] == (
+        "Effect on the session.\nOrdered: harmful < neutral < helpful.\n"
+        "- harmful: made it worse\n- helpful: made it better")
+    assert "description" not in CategoricalScale("plain", ["a", "b"]).json_schema()
+    assert NumericScale("score", maximum=5, description="Higher is better.").json_schema()["description"] == (
+        "Higher is better.")
+    assert LabelScale("tags", description="Free-form tags.").json_schema()["description"] == "Free-form tags."

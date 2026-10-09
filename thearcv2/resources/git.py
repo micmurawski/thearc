@@ -22,7 +22,8 @@ from pydantic import ValidationError
 
 from thearcv2.resources.agent import MetaAgent
 from thearcv2.resources.changes import detect_changes
-from thearcv2.resources.journal import Entry, Journal
+from thearcv2.resources.journal import Entry, Journal, Moved
+from thearcv2.resources.targets import ResourceTarget
 from thearcv2.resources.workspace import JOURNAL_FILE, MANIFEST, parse_workspace
 
 
@@ -35,6 +36,13 @@ def _git(repo: str | Path, *args: str, stdin: bytes | None = None) -> bytes:
     if result.returncode != 0:
         raise GitError(f"git {' '.join(args)}: {result.stderr.decode(errors='replace').strip()}")
     return result.stdout
+
+
+def commit(repo: str | Path, message: str, *, author: str = "thearc", email: str = "thearc@localhost") -> str:
+    """Commit what is staged in ``repo`` under ``author`` (never signed); returns the new commit."""
+    _git(repo, "-c", f"user.name={author}", "-c", f"user.email={email}", "-c", "commit.gpgsign=false",
+         "commit", "-q", "-m", message)
+    return _git(repo, "rev-parse", "HEAD").decode().strip()
 
 
 @dataclass(frozen=True)
@@ -57,8 +65,16 @@ def workspace_commits(repo: str | Path, *, path: str = "", rev: str = "HEAD") ->
     for line in _git(repo, "rev-list", "--first-parent", "--parents", rev).decode().splitlines():
         sha, *rest = line.split()
         parents[sha] = rest[0] if rest else None
-    output = _git(repo, "log", "--first-parent", "--reverse", "--format=%H%x00%cI%x00%an%x00%B%x1e", rev, "--",
-                  _prefix(path) or ".").decode()
+    output = _git(
+        repo,
+        "log",
+        "--first-parent",
+        "--reverse",
+        "--format=%H%x00%cI%x00%an%x00%B%x1e",
+        rev,
+        "--",
+        _prefix(path) or ".",
+    ).decode()
     commits = []
     for record in output.split("\x1e"):
         if not record.strip():
@@ -77,7 +93,7 @@ def agent_at(repo: str | Path, commit: str, *, path: str = "") -> MetaAgent | No
         if not item:
             continue
         meta, name = item.decode().split("\t", 1)
-        relative = name[len(prefix):]
+        relative = name[len(prefix) :]
         if not name.startswith(prefix) or relative.split("/", 1)[0].startswith(".") or relative == JOURNAL_FILE:
             continue
         if meta.split()[0] not in {"100644", "100755"}:
@@ -90,7 +106,7 @@ def agent_at(repo: str | Path, commit: str, *, path: str = "") -> MetaAgent | No
     for _, relative in names:
         header_end = batch.index(b"\n", position)
         size = int(batch[position:header_end].split()[2])
-        texts[relative] = batch[header_end + 1:header_end + 1 + size].decode("utf-8")
+        texts[relative] = batch[header_end + 1 : header_end + 1 + size].decode("utf-8")
         position = header_end + 1 + size + 1
     try:
         return parse_workspace(texts)
@@ -98,8 +114,14 @@ def agent_at(repo: str | Path, commit: str, *, path: str = "") -> MetaAgent | No
         raise GitError(f"{commit}: invalid workspace: {error}") from error
 
 
-def record_commits(repo: str | Path, journal: Journal, *, path: str = "", rev: str = "HEAD",
-                   since: str | None = None, **extra: Any) -> list[Entry]:
+def _before(entry: Entry) -> ResourceTarget:
+    """The address a change's target had before the commit."""
+    return entry.previous if isinstance(entry, Moved) else entry.target
+
+
+def record_commits(
+    repo: str | Path, journal: Journal, *, path: str = "", rev: str = "HEAD", since: str | None = None, **extra: Any
+) -> list[Entry]:
     """Append entries for every workspace commit after the last one ``journal`` has recorded; returns them.
 
     ``since`` marks a commit the journal already reflects although no entry
@@ -126,8 +148,19 @@ def record_commits(repo: str | Path, journal: Journal, *, path: str = "", rev: s
         after = load(commit.sha)
         if after is None or commit.sha in seen:
             continue
-        entries = detect_changes(load(commit.parent), after, reason=commit.message, at=commit.at, commit=commit.sha,
-                                 parent=commit.parent, author=commit.author, **extra)
+        ids = {**after.identities, **journal.ids()}  # Lineage IDs, by the addresses before this commit.
+        entries = detect_changes(
+            load(commit.parent),
+            after,
+            reason=commit.message,
+            at=commit.at,
+            commit=commit.sha,
+            parent=commit.parent,
+            author=commit.author,
+            **extra,
+        )
+        touched = sorted({ids.get(_before(entry), ids.get(entry.target, entry.target.id)) for entry in entries})
+        entries = [entry.model_copy(update={"touched": touched}) for entry in entries]
         journal.record(*entries)
         recorded += entries
     return recorded

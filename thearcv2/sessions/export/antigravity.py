@@ -16,8 +16,14 @@ def write(blocks: list[Block], conversion: Conversion, identity: Identity) -> tu
     planner_record: tuple | None = None
 
     def step(kind: str, source: str, ms: int, **fields: Any) -> dict[str, Any]:
-        record = {"step_index": len(steps), "source": source, "type": kind, "status": "DONE",
-                  "created_at": iso(ms), **fields}
+        record = {
+            "step_index": len(steps),
+            "source": source,
+            "type": kind,
+            "status": "DONE",
+            "created_at": iso(ms),
+            **fields,
+        }
         if identity.cwd and not steps:
             record["cwd"] = identity.cwd
         steps.append(record)
@@ -34,8 +40,12 @@ def write(blocks: list[Block], conversion: Conversion, identity: Identity) -> tu
         if block.role == "assistant":
             # A planner step ends with its tool calls; Antigravity's own steps also keep their boundaries.
             record = (block.event["reference"]["path"], block.event["reference"]["byte_offset"])
-            if planner is not None and (planner.get("tool_calls") and block.kind != "tool_call" or
-                                        block.event["harness"] == "antigravity" and record != planner_record):
+            if planner is not None and (
+                planner.get("tool_calls")
+                and block.kind != "tool_call"
+                or block.event["harness"] == "antigravity"
+                and record != planner_record
+            ):
                 planner = None
             if planner is None:
                 planner, planner_record, waiting = step("PLANNER_RESPONSE", "MODEL", ms), record, []
@@ -54,8 +64,10 @@ def write(blocks: list[Block], conversion: Conversion, identity: Identity) -> tu
             if waiting and waiting[0] == block.call_id:
                 waiting.pop(0)
             elif waiting or block.call_id is not None:
-                conversion.refuse(block.event, "Antigravity pairs tool results with calls by order; "
-                                               "this result does not follow its call")
+                conversion.refuse(
+                    block.event,
+                    "Antigravity pairs tool results with calls by order; this result does not follow its call",
+                )
                 conversion.note(block.event, "tool result out of call order", "kept; it may pair with another call")
             result(block, ms)
         elif block.role == "system":

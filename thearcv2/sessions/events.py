@@ -18,10 +18,20 @@ EventLike = Iterable[Event | Record | EventDict] | str
 class UnsupportedConversion(ValueError):
     """The events cannot be represented faithfully in the requested form."""
 
+
 _CODEX_CONTROL_RECORDS = {"session_meta", "turn_context", "world_state", "token_usage_record"}
 _CODEX_CONTROL_MESSAGES = {
-    "task_started", "task_complete", "task_completed", "turn_aborted", "token_count", "item_started",
-    "item_completed", "user_message", "agent_message", "agent_reasoning", "thread_settings_applied",
+    "task_started",
+    "task_complete",
+    "task_completed",
+    "turn_aborted",
+    "token_count",
+    "item_started",
+    "item_completed",
+    "user_message",
+    "agent_message",
+    "agent_reasoning",
+    "thread_settings_applied",
 }
 
 
@@ -62,15 +72,20 @@ def content_record(event: EventDict) -> Any:
 def has_media(value: Any) -> bool:
     if isinstance(value, dict):
         return value.get("type") in {"image", "image_url", "input_image", "audio", "input_audio"} or any(
-            has_media(child) for child in value.values())
+            has_media(child) for child in value.values()
+        )
     return isinstance(value, list) and any(has_media(child) for child in value)
 
 
 def native_codex_item(event: EventDict) -> bool:
     """A Codex response item kept as is: encrypted reasoning or a custom tool call and its output."""
     raw, payload = event["raw"], event["raw"].get("payload")
-    return (event["harness"] == "codex" and raw.get("type") == "response_item" and isinstance(payload, dict)
-            and payload.get("type") in {"reasoning", "custom_tool_call", "custom_tool_call_output"})
+    return (
+        event["harness"] == "codex"
+        and raw.get("type") == "response_item"
+        and isinstance(payload, dict)
+        and payload.get("type") in {"reasoning", "custom_tool_call", "custom_tool_call_output"}
+    )
 
 
 def provenance_only(event: EventDict) -> bool:
@@ -85,7 +100,8 @@ def codex_control(event: EventDict) -> bool:
         return False
     payload = raw.get("payload")
     return raw.get("type") in _CODEX_CONTROL_RECORDS or (
-        raw.get("type") == "event_msg" and isinstance(payload, dict) and payload.get("type") in _CODEX_CONTROL_MESSAGES)
+        raw.get("type") == "event_msg" and isinstance(payload, dict) and payload.get("type") in _CODEX_CONTROL_MESSAGES
+    )
 
 
 def reasoning_texts(event: EventDict) -> list[str]:
@@ -93,5 +109,8 @@ def reasoning_texts(event: EventDict) -> list[str]:
     payload = event["raw"].get("payload", {})
     if not isinstance(payload, dict) or payload.get("type") != "reasoning":
         return []
-    return [block["text"] for block in [*(payload.get("summary") or []), *(payload.get("content") or [])]
-            if isinstance(block, dict) and isinstance(block.get("text"), str)]
+    return [
+        block["text"]
+        for block in [*(payload.get("summary") or []), *(payload.get("content") or [])]
+        if isinstance(block, dict) and isinstance(block.get("text"), str)
+    ]

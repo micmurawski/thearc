@@ -12,10 +12,14 @@ from dataclasses import dataclass
 from ..events import UnsupportedConversion, codex_control, content_record, has_media, native_codex_item
 
 THINKING = {"reasoning", "thought", "thinking"}
-TARGET_NAMES = {"codex": "Codex rollouts", "claude": "Claude transcripts", "pi": "Pi sessions",
-                "opencode": "OpenCode sessions", "antigravity": "Antigravity transcripts"}
-_MESSAGE_ROLES = {"codex": {"user", "assistant", "system", "developer"},
-                  "antigravity": {"user", "assistant", "system"}}
+TARGET_NAMES = {
+    "codex": "Codex rollouts",
+    "claude": "Claude transcripts",
+    "pi": "Pi sessions",
+    "opencode": "OpenCode sessions",
+    "antigravity": "Antigravity transcripts",
+}
+_MESSAGE_ROLES = {"codex": {"user", "assistant", "system", "developer"}, "antigravity": {"user", "assistant", "system"}}
 
 
 @dataclass
@@ -67,14 +71,24 @@ def to_blocks(events: list[dict], conversion: Conversion, target: str) -> list[B
         block = _block(event, conversion, target)
         if block.kind == "tool_call":
             if block.call_id in calls:
-                block = conversion.labelled(event, "Duplicate tool call ID needs an explicit identity mapping",
-                                            f"[Tool call {block.name}]\n{event['text']}")
+                block = conversion.labelled(
+                    event,
+                    "Duplicate tool call ID needs an explicit identity mapping",
+                    f"[Tool call {block.name}]\n{event['text']}",
+                )
             else:
                 calls.add(block.call_id)
-        elif (block.kind == "tool_result" and block.call_id not in calls
-              and not (target == "antigravity" and block.call_id is None)):
-            block = conversion.labelled(event, "Tool result has no preceding call in the selected events",
-                                        f"[Tool result without its call]\n{event['text']}", role="user")
+        elif (
+            block.kind == "tool_result"
+            and block.call_id not in calls
+            and not (target == "antigravity" and block.call_id is None)
+        ):
+            block = conversion.labelled(
+                event,
+                "Tool result has no preceding call in the selected events",
+                f"[Tool result without its call]\n{event['text']}",
+                role="user",
+            )
         blocks.append(block)
     return blocks
 
@@ -94,10 +108,20 @@ def _block(event: dict, conversion: Conversion, target: str) -> Block:
     if kind == "tool_call" and event["call_id"] and event["tool_name"]:
         return _tool_call(event, conversion, target)
     if kind == "tool_result" and (event["call_id"] or target == "antigravity"):
-        return Block(event, "tool", "tool_result", event["text"], call_id=event["call_id"] or None,
-                     name=event["tool_name"], status=event["status"])
-    return conversion.labelled(event, f"No conversion for {kind!r} events; use canonical JSONL for a faithful copy",
-                               f"[{kind} record]\n{event['text']}".rstrip())
+        return Block(
+            event,
+            "tool",
+            "tool_result",
+            event["text"],
+            call_id=event["call_id"] or None,
+            name=event["tool_name"],
+            status=event["status"],
+        )
+    return conversion.labelled(
+        event,
+        f"No conversion for {kind!r} events; use canonical JSONL for a faithful copy",
+        f"[{kind} record]\n{event['text']}".rstrip(),
+    )
 
 
 def _message(event: dict, conversion: Conversion, target: str) -> Block:
@@ -124,15 +148,23 @@ def _thinking(event: dict, conversion: Conversion, target: str) -> Block:
         conversion.refuse(event, reason)
         conversion.note(event, reason[0].lower() + reason[1:])
     # Codex: foreign thinking is readable evidence, not a native (encrypted) reasoning item.
-    return Block(event, "assistant", "text",
-                 "[Historical thinking record]\n" + (event["text"] or "[No readable thinking text was recorded.]"))
+    return Block(
+        event,
+        "assistant",
+        "text",
+        "[Historical thinking record]\n" + (event["text"] or "[No readable thinking text was recorded.]"),
+    )
 
 
 def _signed_claude_thinking(event: dict) -> dict | None:
     """The original Claude thinking block, if it still carries the signature Claude requires on replay."""
     block = content_record(event) if event["harness"] == "claude" else None
-    if isinstance(block, dict) and (block.get("type") == "thinking" and block.get("signature")
-                                    or block.get("type") == "redacted_thinking" and block.get("data")):
+    if isinstance(block, dict) and (
+        block.get("type") == "thinking"
+        and block.get("signature")
+        or block.get("type") == "redacted_thinking"
+        and block.get("data")
+    ):
         return block
     return None
 
@@ -151,24 +183,46 @@ def _tool_call(event: dict, conversion: Conversion, target: str) -> Block:
 
 def _codex_item(event: dict, conversion: Conversion, target: str) -> Block:
     """Codex encrypted reasoning and custom tool calls: kept as is for Codex, converted for the rest."""
-    item = {k: v for k, v in event["raw"]["payload"].items()
-            if k not in {"id", "internal_chat_message_metadata_passthrough"}}
+    item = {
+        k: v
+        for k, v in event["raw"]["payload"].items()
+        if k not in {"id", "internal_chat_message_metadata_passthrough"}
+    }
     kind, name = item["type"], TARGET_NAMES[target]
     if kind == "custom_tool_call":
         if target != "codex":
             conversion.refuse(event, f"Codex custom tool call {item.get('name')!r} has no {name} equivalent")
             conversion.note(event, "Codex custom tool call", 'input wrapped as {"input": ...}')
-        return Block(event, "assistant", "tool_call", call_id=item.get("call_id"), name=item.get("name"),
-                     input={"input": item.get("input")}, native=item if target == "codex" else None)
+        return Block(
+            event,
+            "assistant",
+            "tool_call",
+            call_id=item.get("call_id"),
+            name=item.get("name"),
+            input={"input": item.get("input")},
+            native=item if target == "codex" else None,
+        )
     if kind == "custom_tool_call_output":
-        return Block(event, "tool", "tool_result", str(item.get("output", "")), call_id=item.get("call_id"),
-                     name=event["tool_name"], status=event["status"], native=item if target == "codex" else None)
+        return Block(
+            event,
+            "tool",
+            "tool_result",
+            str(item.get("output", "")),
+            call_id=item.get("call_id"),
+            name=event["tool_name"],
+            status=event["status"],
+            native=item if target == "codex" else None,
+        )
     if target == "codex":
         return Block(event, "assistant", "native", native=item)
     conversion.refuse(event, f"Codex encrypted reasoning cannot be exported to {name}")
-    summary = "\n".join(part["text"] for part in item.get("summary") or []
-                        if isinstance(part, dict) and isinstance(part.get("text"), str))
-    conversion.note(event, "Codex encrypted reasoning",
-                    "summary kept as labelled text" if summary else "replaced by a placeholder")
+    summary = "\n".join(
+        part["text"]
+        for part in item.get("summary") or []
+        if isinstance(part, dict) and isinstance(part.get("text"), str)
+    )
+    conversion.note(
+        event, "Codex encrypted reasoning", "summary kept as labelled text" if summary else "replaced by a placeholder"
+    )
     text = f"[Codex reasoning summary]\n{summary}" if summary else "[Encrypted Codex reasoning omitted]"
     return Block(event, "assistant", "text" if target == "claude" else "thinking", text)

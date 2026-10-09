@@ -8,7 +8,9 @@ edits, and git diffs:
     skills/<name>/<path>        bundled skill files
     context/<filename>          context documents
     rules|workflows|commands/<path>
+    extensions/<harness>/<path>  files only that harness installs (e.g. Pi extensions)
     hooks.json, mcp.json        one top-level entry per hook / MCP server
+    owned_hooks.json            glob patterns of hook commands the agent owns (installation policy)
 
 Every line is owned by the innermost target containing it: a Markdown section,
 or else the whole resource.
@@ -37,6 +39,7 @@ if TYPE_CHECKING:
 
 HOOKS_FILE = "hooks.json"
 MCP_FILE = "mcp.json"
+OWNED_HOOKS_FILE = "owned_hooks.json"
 _REFERENCE = re.compile(r"(?P<path>[^#\s]+)#L(?P<start>[1-9][0-9]*)(?:-L(?P<end>[1-9][0-9]*))?")
 
 
@@ -112,7 +115,7 @@ class AgentFiles:
         for path, text in self.files.items():
             owners: list[ResourceTarget | None] = [None] * len(text.splitlines())
             for span in sorted((s for s in self.spans if s.path == path), key=lambda s: s.depth):
-                owners[span.start - 1:span.end] = [span.target] * (span.end - span.start + 1)
+                owners[span.start - 1 : span.end] = [span.target] * (span.end - span.start + 1)
             self._owners[path] = owners
         self._by_target = {span.target: span for span in self.spans}
 
@@ -146,14 +149,27 @@ class AgentFiles:
             add(f"context/{filename}", document.content, ResourceTarget(kind="context", name=filename), markdown=True)
         for key, item in sorted(agent.resources.items()):
             add(key, item.content, ResourceTarget(kind=item.kind, name=item.path), markdown=True)
+        for key, extension in sorted(agent.extensions.items()):
+            add(
+                f"extensions/{key}",
+                extension.content,
+                ResourceTarget(kind="extension", name=key),
+                markdown=extension.path.endswith(".md"),
+            )
         structured: list[tuple[str, Kind, dict[str, Any]]] = [
-            (HOOKS_FILE, "hook", dict(agent.hooks)), (MCP_FILE, "mcp", dict(agent.mcps))]
+            (HOOKS_FILE, "hook", dict(agent.hooks)),
+            (MCP_FILE, "mcp", dict(agent.mcps)),
+        ]
         for path, kind, collection in structured:
             if collection:
                 text, entry_spans = _json_entries({name: structured_entry(item) for name, item in collection.items()})
                 files[path] = text
-                spans += [Span(ResourceTarget(kind=kind, name=name), path, start, end, 0)
-                          for name, (start, end) in entry_spans.items()]
+                spans += [
+                    Span(ResourceTarget(kind=kind, name=name), path, start, end, 0)
+                    for name, (start, end) in entry_spans.items()
+                ]
+        if agent.owns_hooks:  # Installation policy, not behaviour: its lines belong to no target.
+            files[OWNED_HOOKS_FILE] = json.dumps(agent.owns_hooks, indent=2, ensure_ascii=False) + "\n"
         for path in files:
             if any(parent.as_posix() in files for parent in PurePosixPath(path).parents):
                 raise ValueError(f"file/directory collision: {path}")
@@ -200,7 +216,7 @@ class AgentFiles:
         total = len(self._lines(reference.path))
         if reference.end > total:
             raise ValueError(f"{reference}: {reference.path} has {total} lines")
-        owners = self._owners[reference.path][reference.start - 1:reference.end]
+        owners = self._owners[reference.path][reference.start - 1 : reference.end]
         targets = tuple(dict.fromkeys(owner for owner in owners if owner is not None))
         if not targets:
             raise ValueError(f"{reference} does not cover any resource")
@@ -210,8 +226,7 @@ class AgentFiles:
         """The lines a target owns, without a section's own heading (its title is its address)."""
         span = self.span(target)
         lines = self._lines(span.path)
-        owned = [line for number, line in enumerate(lines, start=1)
-                 if self._owners[span.path][number - 1] == target]
+        owned = [line for number, line in enumerate(lines, start=1) if self._owners[span.path][number - 1] == target]
         if target.section is not None:
             owned = owned[1:]
         return "\n".join(owned).strip().rstrip(",")
@@ -245,9 +260,15 @@ def diff_files(before: Mapping[str, str], after: Mapping[str, str], *, context_l
         source = f"a/{path}" if path in before else "/dev/null"
         destination = f"b/{path}" if path in after else "/dev/null"
         output.append(f"diff --git a/{path} b/{path}\n")
-        lines = list(unified_diff(before.get(path, "").splitlines(keepends=True),
-                                  after.get(path, "").splitlines(keepends=True),
-                                  fromfile=source, tofile=destination, n=context_lines))
+        lines = list(
+            unified_diff(
+                before.get(path, "").splitlines(keepends=True),
+                after.get(path, "").splitlines(keepends=True),
+                fromfile=source,
+                tofile=destination,
+                n=context_lines,
+            )
+        )
         if not lines:  # Adding or removing an empty file still matters.
             output.append(f"--- {source}\n+++ {destination}\n")
         for line in lines:

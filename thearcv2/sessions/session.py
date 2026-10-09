@@ -45,9 +45,17 @@ def read_only_index(path: str | Path) -> SessionIndex:
 
 def search_filters(options: Mapping[str, Any]) -> SearchFilters:
     """Keyword filters such as ``kind="tool_call"`` or ``status=["failure"]`` as ``SearchFilters``."""
-    aliases = {"kind": "kinds", "role": "roles", "status": "statuses", "tool_name": "tool_names",
-               "action_kind": "action_kinds", "session_id": "session_ids", "source_id": "source_ids",
-               "run_id": "run_ids", "harness": "harnesses"}
+    aliases = {
+        "kind": "kinds",
+        "role": "roles",
+        "status": "statuses",
+        "tool_name": "tool_names",
+        "action_kind": "action_kinds",
+        "session_id": "session_ids",
+        "source_id": "source_ids",
+        "run_id": "run_ids",
+        "harness": "harnesses",
+    }
     data = {}
     for key, value in options.items():
         if key in aliases:
@@ -59,8 +67,14 @@ def search_filters(options: Mapping[str, Any]) -> SearchFilters:
     return SearchFilters(**data)
 
 
-def query_events(index: SessionIndex, text: str | None, filters: SearchFilters, mode: str, sensitive: bool,
-                 ids: list[str] | None = None) -> Iterator[sqlite3.Row]:
+def query_events(
+    index: SessionIndex,
+    text: str | None,
+    filters: SearchFilters,
+    mode: str,
+    sensitive: bool,
+    ids: list[str] | None = None,
+) -> Iterator[sqlite3.Row]:
     """Matching ``(id, session_id)`` rows in recorded order."""
     if mode not in {"literal", "lexical"}:
         raise ValueError("mode must be literal or lexical")
@@ -83,7 +97,8 @@ def query_events(index: SessionIndex, text: str | None, filters: SearchFilters, 
     where = " AND ".join(conditions) or "1"
     cursor = index.connection.execute(
         f"SELECT e.id,e.session_id FROM events e WHERE {where} "
-        "ORDER BY e.source_id,e.session_id,e.path,e.byte_offset,e.subrecord,e.id", params,
+        "ORDER BY e.source_id,e.session_id,e.path,e.byte_offset,e.subrecord,e.id",
+        params,
     )
     try:
         yield from cursor
@@ -147,8 +162,9 @@ class SearchHit:
 
     @property
     def trajectory(self) -> Trajectory | None:
-        return next((t for t in self.session.trajectories if any(e.id == self.event.id for e in t.selected_events)),
-                    None)
+        return next(
+            (t for t in self.session.trajectories if any(e.id == self.event.id for e in t.selected_events)), None
+        )
 
 
 class EventSequence:
@@ -165,13 +181,21 @@ class EventSequence:
         """These events in ``format`` (see ``export.FORMATS``); ``strict=False`` labels what it cannot hold."""
         return export_events(self.selected_events, format, strict=strict, session_id=session_id)
 
-    def install(self, harness: str, *, home: str | Path | None = None, overwrite: bool = False, strict: bool = True,
-                keep_id: bool = False) -> InstalledSession:
+    def install(
+        self,
+        harness: str,
+        *,
+        home: str | Path | None = None,
+        overwrite: bool = False,
+        strict: bool = True,
+        keep_id: bool = False,
+    ) -> InstalledSession:
         """Install these events into ``harness`` as a session it can resume or fork; see ``sessions.install``."""
         from .install import install_events
 
-        return install_events(self.selected_events, harness, home=home, overwrite=overwrite, strict=strict,
-                              keep_id=keep_id)
+        return install_events(
+            self.selected_events, harness, home=home, overwrite=overwrite, strict=strict, keep_id=keep_id
+        )
 
     def _session(self) -> Session:
         session = self if isinstance(self, Session) else getattr(self, "session", None)
@@ -179,8 +203,9 @@ class EventSequence:
             raise ValueError("This trajectory was split from loose events; it has no session to search")
         return session
 
-    def search(self, text: str | None = None, *, mode: str = "literal", case_sensitive: bool | None = None,
-               **filters: Any) -> Results:
+    def search(
+        self, text: str | None = None, *, mode: str = "literal", case_sensitive: bool | None = None, **filters: Any
+    ) -> Results:
         selection = search_filters(filters)
         sensitive = (mode == "literal") if case_sensitive is None else case_sensitive
 
@@ -193,11 +218,13 @@ class EventSequence:
                 for event in self.selected_events:
                     if event.id not in matching:
                         continue
-                    ranges = (SessionIndex._literal_ranges(event.text, text, sensitive)
-                              if text and mode == "literal" else [])
+                    ranges = (
+                        SessionIndex._literal_ranges(event.text, text, sensitive) if text and mode == "literal" else []
+                    )
                     yield SearchHit(event, session, tuple(ranges))
             finally:
                 index.close()
+
         return Results(generate)
 
     def match(self, pattern: BehavioralPattern) -> tuple[PatternMatch, ...]:
@@ -207,9 +234,14 @@ class EventSequence:
         for _, stream in groupby(events, key=_stream):
             group = list(stream)
             for match in pattern.find_matches(group):
-                results.append(replace(match, start_index=match.start_index + offset,
-                                       end_index=match.end_index + offset,
-                                       events=immutable_events(match.events)))
+                results.append(
+                    replace(
+                        match,
+                        start_index=match.start_index + offset,
+                        end_index=match.end_index + offset,
+                        events=immutable_events(match.events),
+                    )
+                )
             offset += len(group)
         return tuple(results)
 
@@ -299,19 +331,27 @@ class Session(EventSequence):
         return f"Session(id={self.id!r}, artifact_id={self.artifact_id!r})"
 
     @classmethod
-    def from_events(cls, events: EventLike, *,
-                    metadata: SessionMetadata | Record | Mapping[str, Any] | None = None) -> Session:
+    def from_events(
+        cls, events: EventLike, *, metadata: SessionMetadata | Record | Mapping[str, Any] | None = None
+    ) -> Session:
         captured = immutable_events(events)
         if metadata is None:
             if not captured:
                 raise ValueError("Empty sessions require explicit session metadata")
             first = captured[0]
-            metadata = SessionMetadata(id=first.session_id, source_id=first.source_id, harness=first.harness,
-                                       native_id=first.session_native_id or first.session_id)
+            metadata = SessionMetadata(
+                id=first.session_id,
+                source_id=first.source_id,
+                harness=first.harness,
+                native_id=first.session_native_id or first.session_id,
+            )
         metadata = SessionMetadata.model_validate(
-            metadata.model_dump() if hasattr(metadata, "model_dump") else metadata)
-        if any(e.session_id != metadata.id or e.source_id != metadata.source_id or e.harness != metadata.harness
-               for e in captured):
+            metadata.model_dump() if hasattr(metadata, "model_dump") else metadata
+        )
+        if any(
+            e.session_id != metadata.id or e.source_id != metadata.source_id or e.harness != metadata.harness
+            for e in captured
+        ):
             raise ValueError("Events must belong to the supplied session")
         if len({e.id for e in captured}) != len(captured):
             raise ValueError("Duplicate event identity")
@@ -333,8 +373,12 @@ class Session(EventSequence):
 
     def save(self, path: str | Path) -> Path:
         detached = Session.from_events(self.events, metadata=self.metadata)
-        data = {"version": 1, "session": detached.metadata.model_dump(),
-                "events": [e.model_dump() for e in detached.events], "sha256": detached.artifact_id}
+        data = {
+            "version": 1,
+            "session": detached.metadata.model_dump(),
+            "events": [e.model_dump() for e in detached.events],
+            "sha256": detached.artifact_id,
+        }
         with Path(path).open("x", encoding="utf-8") as stream:
             json.dump(data, stream, ensure_ascii=False)
         return Path(path)
@@ -373,14 +417,24 @@ class Session(EventSequence):
         split = split_trajectories([Event.model_validate(e.model_dump()) for e in self.events])
         by_id = {e.id: e for e in self.events}
         return TrajectorySplit(
-            tuple(replace(t, session=self, prompt_events=tuple(by_id[e.id] for e in t.prompt_events),
-                          events=tuple(by_id[e.id] for e in t.events)) for t in split),
-            tuple(by_id[e.id] for e in split.unassigned_events))
+            tuple(
+                replace(
+                    t,
+                    session=self,
+                    prompt_events=tuple(by_id[e.id] for e in t.prompt_events),
+                    events=tuple(by_id[e.id] for e in t.events),
+                )
+                for t in split
+            ),
+            tuple(by_id[e.id] for e in split.unassigned_events),
+        )
 
     def through(self, trajectory: Trajectory) -> SessionView:
         """The session up to and including ``trajectory``: what the agent had seen when it finished."""
         if trajectory.session is None or (trajectory.session.artifact_id, trajectory.session.id) != (
-                self.artifact_id, self.id):
+            self.artifact_id,
+            self.id,
+        ):
             raise ValueError("Trajectory belongs to a different session artifact")
         if not any(t.id == trajectory.id for t in self.trajectories):
             raise ValueError("Unknown trajectory")
@@ -403,14 +457,15 @@ class SessionView(EventSequence):
     def __post_init__(self) -> None:
         if type(self.stop) is not int or not 0 < self.stop <= len(self.session.events):
             raise ValueError("A session prefix requires a valid positive endpoint")
-        endings = [t for t in self.session.trajectories
-                   if t.selected_events[-1].id == self.session.events[self.stop - 1].id]
+        endings = [
+            t for t in self.session.trajectories if t.selected_events[-1].id == self.session.events[self.stop - 1].id
+        ]
         if not endings or endings[0].native_turn_id != self.native_turn_id:
             raise ValueError("A prefix must end at a recorded trajectory boundary")
 
     @property
     def selected_events(self) -> tuple:
-        return self.session.events[:self.stop]
+        return self.session.events[: self.stop]
 
     @property
     def events(self) -> tuple:

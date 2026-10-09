@@ -20,8 +20,13 @@ def test_reference_format():
 
 def test_layout(agent):
     assert list(agent.files().files) == [
-        "context/AGENTS.md", "hooks.json", "mcp.json", "rules/style.md",
-        SKILL, "skills/retry/notes.md", "skills/retry/run.sh",
+        "context/AGENTS.md",
+        "hooks.json",
+        "mcp.json",
+        "rules/style.md",
+        SKILL,
+        "skills/retry/notes.md",
+        "skills/retry/run.sh",
     ]
 
 
@@ -84,9 +89,12 @@ def test_headings_in_code_fences_are_ignored():
     assert [h.address for h in outline("# A\n```\n# not a heading\n```\n")] == ["A"]
 
 
-def test_revision_ignores_identity_and_journal(agent, human):
-    renamed = agent.model_copy(update={"name": "other", "version": "2"})
-    assert renamed.revision == agent.revision
+def test_revision_is_version_at_content_hash(agent, human):
+    content = agent.files().revision
+    assert agent.revision == f"1@{content}" and content.startswith("rev_")
+    assert agent.model_copy(update={"name": "other"}).revision == agent.revision  # Name and journal don't count.
+    assert agent.model_copy(update={"version": "2"}).revision == f"2@{content}"
+    assert agent.model_copy(update={"version": None}).revision == content
     edited = agent.model_copy(deep=True)
     edited.context["AGENTS.md"].content += "More.\n"
     assert edited.revision != agent.revision

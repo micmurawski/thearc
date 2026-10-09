@@ -17,11 +17,9 @@ SKILL = "skills/retry/SKILL.md"
 @pytest.fixture
 def rated(agent, human):
     for scale, rating in ((usefulness, "helpful"), (LabelScale("tags"), "outdated")):
-        result = ReflectionSchema(scale).record([{"ref": f"{SKILL}#L13", "rating": rating}], agent,
-                                                **human)
+        result = ReflectionSchema(scale).record([{"ref": f"{SKILL}#L13", "rating": rating}], agent, **human)
         agent.journal.record(*result.entries)
-    result = ReflectionSchema(usefulness).record([{"ref": "hooks.json#L3", "rating": "harmful"}], agent,
-                                                 **human)
+    result = ReflectionSchema(usefulness).record([{"ref": "hooks.json#L3", "rating": "harmful"}], agent, **human)
     agent.journal.record(*result.entries)
     return agent
 

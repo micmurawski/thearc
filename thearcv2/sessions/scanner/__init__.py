@@ -1,5 +1,6 @@
 """Behavioral patterns and the scanner that finds them in indexed sessions."""
 
+from .algebra import AllOf, AnyOf
 from .pattern_scanner import DEFAULT_PATTERNS, PatternScanner
 from .patterns import (
     AbandonedFix,
@@ -12,10 +13,14 @@ from .patterns import (
     SelfOverwrite,
     StubbornToolLoop,
 )
+from .shell import ShellCommand
+from .skills import SkillUsage
 
 __all__ = [
     "DEFAULT_PATTERNS",
     "AbandonedFix",
+    "AllOf",
+    "AnyOf",
     "BehavioralPattern",
     "EmptyToolResult",
     "FrustrationSpike",
@@ -24,5 +29,7 @@ __all__ = [
     "PatternMatch",
     "PatternScanner",
     "SelfOverwrite",
+    "ShellCommand",
+    "SkillUsage",
     "StubbornToolLoop",
 ]

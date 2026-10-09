@@ -63,13 +63,16 @@ def test_keep_id_uses_the_source_identity(tmp_path):
 def test_codex_sessions_keep_their_own_turns_but_take_the_copy_id(tmp_path):
     def codex(n, raw, **fields):
         return ev(n, harness="codex", raw=raw, **fields)
+
     header = {"type": "session_meta", "payload": {"id": "11111111-2222-3333-4444-555555555555", "cwd": "/w"}}
     started = {"type": "event_msg", "payload": {"type": "task_started", "turn_id": "t1"}}
-    session = Session.from_events([
-        codex(0, header, kind="metadata", role=None),
-        codex(1, started, kind="metadata", role=None),
-        codex(2, {}, role="user", text="Go"),
-    ])
+    session = Session.from_events(
+        [
+            codex(0, header, kind="metadata", role=None),
+            codex(1, started, kind="metadata", role=None),
+            codex(2, {}, role="user", text="Go"),
+        ]
+    )
     installed = session.install("codex", home=tmp_path)
     records = [json.loads(line) for line in installed.path.read_text().splitlines()]
     assert records[0]["payload"]["id"] == installed.session_id

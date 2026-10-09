@@ -47,7 +47,8 @@ def test_foreign_prefix_and_stream_boundary(history):
 
 def test_rendering_and_conversion(history, tmp_path):
     assert evidence_to_markdown(history.events) == evidence_to_markdown(
-        json.dumps([e.model_dump() for e in history.events]))
+        json.dumps([e.model_dump() for e in history.events])
+    )
     text = history.to_markdown()
     assert "fixture.jsonl" not in text and "harness" not in text
     assert 'Responds to: "e1"' in text
@@ -55,7 +56,9 @@ def test_rendering_and_conversion(history, tmp_path):
     assert json.loads(history.export("codex").text.splitlines()[0])["type"] == "session_meta"
     items = [json.loads(line)["payload"] for line in history.export("codex").text.splitlines()]
     assert [item["type"] for item in items if item.get("type") in {"function_call", "task_started"}][:2] == [
-        "task_started", "function_call"]
+        "task_started",
+        "function_call",
+    ]
     assert json.loads(history.export("claude").text.splitlines()[2])["message"]["content"][0]["is_error"]
     path = history.export("codex").save(tmp_path / "export.jsonl")
     assert path.is_file()
@@ -108,8 +111,13 @@ def test_sessions_pin_lazy_artifacts_and_result_membership(tmp_path):
     log = source / "session.jsonl"
 
     def write(text):
-        log.write_text(json.dumps({"type": "user", "uuid": "u", "sessionId": "native",
-                                   "message": {"role": "user", "content": text}}) + "\n")
+        log.write_text(
+            json.dumps(
+                {"type": "user", "uuid": "u", "sessionId": "native", "message": {"role": "user", "content": text}}
+            )
+            + "\n"
+        )
+
     write("old SyntaxError")
     store = Sessions(tmp_path / "index.sqlite")
     store.ingest(SourceConfig(id="fixture", harness="claude", root=source))
@@ -139,7 +147,8 @@ def test_input_mutations_do_not_change_history():
 
 
 def test_markdown_prints_tool_arguments_once():
-    call = event(0, kind="tool_call", tool_name="Bash", call_id="c", arguments={"command": "ls"},
-                 text='{"command": "ls"}')
+    call = event(
+        0, kind="tool_call", tool_name="Bash", call_id="c", arguments={"command": "ls"}, text='{"command": "ls"}'
+    )
     text = Session.from_events([call]).to_markdown()
     assert text.count('"command"') == 1

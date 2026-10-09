@@ -84,8 +84,7 @@ def _context_records(events: list[Event]) -> set[tuple]:
             continue
         item = payload.get("item", {})
         text = None
-        if (payload.get("type") == "item_completed" and isinstance(item, dict)
-                and item.get("type") == "UserMessage"):
+        if payload.get("type") == "item_completed" and isinstance(item, dict) and item.get("type") == "UserMessage":
             from .adapters import text_content
 
             text = text_content(item.get("content", []))
@@ -120,8 +119,7 @@ def split_trajectories(events: Sequence[Event]) -> TrajectorySplit:
         for event in segment:
             marker, turn_id = _native_marker(event)
             if _user_prompt(event) and _record(event) not in context_records:
-                if (current is not None and not current.events
-                        and _record(current.prompt_events[-1]) == _record(event)):
+                if current is not None and not current.events and _record(current.prompt_events[-1]) == _record(event):
                     current.prompt_events.append(event)
                     continue
                 if current is not None:
@@ -157,9 +155,12 @@ def split_trajectories(events: Sequence[Event]) -> TrajectorySplit:
     # Several user prompts may be injected within one native turn. Such a turn
     # cannot isolate any individual trajectory, so don't advertise it for handoff.
     counts: Counter[tuple[str, str | None]] = Counter(
-        (d.prompt_events[0].session_id, d.native_turn_id) for d in drafts if d.native_turn_id)
+        (d.prompt_events[0].session_id, d.native_turn_id) for d in drafts if d.native_turn_id
+    )
     for draft in drafts:
         if counts[(draft.prompt_events[0].session_id, draft.native_turn_id)] > 1:
             draft.native_turn_id = None
-    return TrajectorySplit(tuple(Trajectory(tuple(d.prompt_events), tuple(d.events), d.boundary, d.native_turn_id)
-                                 for d in drafts), tuple(unassigned))
+    return TrajectorySplit(
+        tuple(Trajectory(tuple(d.prompt_events), tuple(d.events), d.boundary, d.native_turn_id) for d in drafts),
+        tuple(unassigned),
+    )

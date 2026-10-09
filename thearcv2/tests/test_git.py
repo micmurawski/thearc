@@ -9,13 +9,19 @@ from thearcv2.resources import Journal, ResourceTarget, agent_at, record_commits
 SKILL = Path("skills/retry/SKILL.md")
 EXAMPLES = ResourceTarget(kind="skill", name="retry", section="Retry > Examples")
 LIMITS = ResourceTarget(kind="skill", name="retry", section="Retry > Limits")
-ENV = {**os.environ, "GIT_AUTHOR_NAME": "Curator", "GIT_AUTHOR_EMAIL": "c@example.test",
-       "GIT_COMMITTER_NAME": "Curator", "GIT_COMMITTER_EMAIL": "c@example.test"}
+ENV = {
+    **os.environ,
+    "GIT_AUTHOR_NAME": "Curator",
+    "GIT_AUTHOR_EMAIL": "c@example.test",
+    "GIT_COMMITTER_NAME": "Curator",
+    "GIT_COMMITTER_EMAIL": "c@example.test",
+}
 
 
 def git(repo: Path, *args: str) -> str:
-    return subprocess.run(["git", "-C", str(repo), *args], check=True, capture_output=True, text=True,
-                          env=ENV).stdout.strip()
+    return subprocess.run(
+        ["git", "-C", str(repo), *args], check=True, capture_output=True, text=True, env=ENV
+    ).stdout.strip()
 
 
 def commit(repo: Path, message: str) -> str:
@@ -98,7 +104,10 @@ def test_rename_keeps_the_section_history(repo):
     record_commits(repo, journal)
     bounds = LIMITS.model_copy(update={"section": "Retry > Bounds"})
     assert [(change.kind, change.reason) for change in journal.changes(bounds)] == [
-        ("added", "Initial configuration"), ("modified", "Lower the limit"), ("moved", "Rename Limits to Bounds")]
+        ("added", "Initial configuration"),
+        ("modified", "Lower the limit"),
+        ("moved", "Rename Limits to Bounds"),
+    ]
 
 
 def test_running_again_records_nothing_and_unrelated_commits_are_skipped(repo):
@@ -143,8 +152,9 @@ def test_since_adopts_an_existing_journal(agent, human, repo):
 
     usefulness = CategoricalScale("u", ["bad", "good"])
     agent.journal.record(*detect_changes(None, agent, **human))
-    agent.journal.record(*ReflectionSchema(usefulness).record(
-        [{"ref": f"{SKILL}#L17", "rating": "good"}], agent).entries)
+    agent.journal.record(
+        *ReflectionSchema(usefulness).record([{"ref": f"{SKILL}#L17", "rating": "good"}], agent).entries
+    )
     edit(repo / SKILL, "max 3", "max 2")
     commit(repo, "Lower the limit")
     entries = record_commits(repo, agent.journal, since="HEAD~1")
@@ -157,8 +167,9 @@ def test_adding_a_live_target_again_keeps_its_history(agent, human):
 
     usefulness = CategoricalScale("u", ["bad", "good"])
     agent.journal.record(*detect_changes(None, agent, **human))
-    agent.journal.record(*ReflectionSchema(usefulness).record(
-        [{"ref": f"{SKILL}#L17", "rating": "good"}], agent).entries)
+    agent.journal.record(
+        *ReflectionSchema(usefulness).record([{"ref": f"{SKILL}#L17", "rating": "good"}], agent).entries
+    )
     agent.journal.record(*detect_changes(None, agent, **human))
     assert agent.journal.summaries(usefulness)[LIMITS].counts == {"bad": 0, "good": 1}
 
@@ -195,7 +206,12 @@ def test_modified_entry_diff(repo):
     commit(repo, "Lower the limit")
     (change,) = record_commits(repo, journal)
     assert change.diff().splitlines() == [
-        "--- a/skill:retry#Retry > Limits", "+++ b/skill:retry#Retry > Limits", "@@ -1 +1 @@", "-max 3", "+max 2"]
+        "--- a/skill:retry#Retry > Limits",
+        "+++ b/skill:retry#Retry > Limits",
+        "@@ -1 +1 @@",
+        "-max 3",
+        "+max 2",
+    ]
 
 
 def test_journal_diff_from_a_commit_that_recorded_nothing(agent, repo):
@@ -204,8 +220,14 @@ def test_journal_diff_from_a_commit_that_recorded_nothing(agent, repo):
     commit(repo, "Lower the limit")
     record_commits(repo, agent.journal, since=base)
     assert journal_diff_lines(agent.journal.diff(base[:8])) == [
-        "=== skill:retry#Retry > Limits", "    {sha} Lower the limit",
-        "--- a/skill:retry#Retry > Limits", "+++ b/skill:retry#Retry > Limits", "@@ -1 +1 @@", "-max 3", "+max 2"]
+        "=== skill:retry#Retry > Limits",
+        "    {sha} Lower the limit",
+        "--- a/skill:retry#Retry > Limits",
+        "+++ b/skill:retry#Retry > Limits",
+        "@@ -1 +1 @@",
+        "-max 3",
+        "+max 2",
+    ]
 
 
 def journal_diff_lines(text):

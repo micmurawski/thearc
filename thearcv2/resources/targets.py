@@ -9,24 +9,37 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 
-Kind = Literal["skill", "skill_file", "context", "hook", "mcp", "rule", "workflow", "command"]
-FILE_KINDS = frozenset({"skill_file", "context", "rule", "workflow", "command"})
+from thearcv2.resources.markdown import SECTION_SEPARATOR
+
+Kind = Literal["skill", "skill_file", "context", "hook", "mcp", "rule", "workflow", "command", "extension"]
+FILE_KINDS = frozenset({"skill_file", "context", "rule", "workflow", "command", "extension"})
 STRUCTURED_KINDS = frozenset({"hook", "mcp"})
 
 
 def safe_relative_path(value: str) -> str:
     """Validate a relative POSIX path that cannot escape its directory."""
     parts = value.split("/")
-    if (not value or "\\" in value or "\x00" in value or ":" in value or PurePosixPath(value).is_absolute()
-            or any(part in {"", ".", ".."} for part in parts)):
+    if (
+        not value
+        or "\\" in value
+        or "\x00" in value
+        or ":" in value
+        or PurePosixPath(value).is_absolute()
+        or any(part in {"", ".", ".."} for part in parts)
+    ):
         raise ValueError(f"unsafe relative path: {value!r}")
     return value
 
 
 def safe_name(value: str) -> str:
     """Validate a single, non-blank, single-line path component."""
-    if (not value or value != value.strip() or value in {".", ".."} or any(char in value for char in "/\\:")
-            or any(ord(char) < 32 or ord(char) == 127 for char in value)):
+    if (
+        not value
+        or value != value.strip()
+        or value in {".", ".."}
+        or any(char in value for char in "/\\:")
+        or any(ord(char) < 32 or ord(char) == 127 for char in value)
+    ):
         raise ValueError(f"unsafe name: {value!r}")
     return value
 
@@ -50,11 +63,14 @@ class ResourceTarget(BaseModel):
             raise ValueError("section cannot be blank")
         if self.kind in STRUCTURED_KINDS and self.section is not None:
             raise ValueError("hooks and MCPs have no Markdown sections")
-        if self.kind == "skill_file":
-            skill, separator, path = self.name.partition("/")
+        if self.kind in {"skill_file", "extension"}:
+            owner, separator, path = self.name.partition("/")
             if not separator:
-                raise ValueError("skill file target must be '<skill>/<relative-path>'")
-            safe_name(skill)
+                raise ValueError(
+                    f"{self.kind} target must be '<{'skill' if self.kind == 'skill_file' else 'harness'}>"
+                    "/<relative-path>'"
+                )
+            safe_name(owner)
             safe_relative_path(path)
         elif self.kind in FILE_KINDS:
             safe_relative_path(self.name)
@@ -67,6 +83,27 @@ class ResourceTarget(BaseModel):
         """Derived from the address only; content and ratings never change it."""
         payload = json.dumps(self.model_dump(mode="json"), ensure_ascii=False, sort_keys=True, separators=(",", ":"))
         return "res_" + hashlib.sha256(payload.encode()).hexdigest()[:24]
+
+    def contains(self, other: ResourceTarget) -> bool:
+        """Whether ``other`` is this target or lies under it: a resource holds all its sections, a section its
+        subsections (by heading path)."""
+        if (self.kind, self.name) != (other.kind, other.name):
+            return False
+        return (
+            self.section is None
+            or other.section is not None
+            and (other.section == self.section or other.section.startswith(self.section + SECTION_SEPARATOR))
+        )
+
+    def ancestors(self) -> list[ResourceTarget]:
+        """The enclosing sections, nearest first, then the whole resource."""
+        if self.section is None:
+            return []
+        path = self.section.split(SECTION_SEPARATOR)
+        return [
+            self.model_copy(update={"section": SECTION_SEPARATOR.join(path[:depth]) or None})
+            for depth in range(len(path) - 1, -1, -1)
+        ]
 
     @property
     def resource(self) -> ResourceTarget:

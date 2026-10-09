@@ -84,7 +84,7 @@ def show_journal(journal: Journal, *, last: int | None = None) -> None:
     for entry in entries:
         line = f"  {entry.at:%H:%M:%S} {entry.kind:<8} {entry.target!s:<60} {entry.extra}"
         if entry.kind == "rated":
-            line += f"\n{'':12}{entry.value:<8} {entry.ref}  item={entry.item_id[:13]}  \"{entry.metadata['insight']}\""
+            line += f'\n{"":12}{entry.value:<8} {entry.ref}  item={entry.item_id[:13]}  "{entry.metadata["insight"]}"'
         else:
             reason = (entry.reason or "-").splitlines()[0]
             line += f"\n{'':12}commit {(entry.commit or '-')[:8]}  reason: {reason}"
@@ -108,12 +108,14 @@ def simulate_reflection(agent: MetaAgent, reflector: str, count: int, rng: rando
         start = rng.randint(span.start, max(span.start, span.end))
         end = min(total, max(start, span.end) + rng.choice([0, 0, 0, 3]))
         rating = rng.choice(USEFULNESS.labels)
-        items.append({
-            "ref": f"{span.path}#L{start}" + (f"-L{end}" if end != start else ""),
-            "rating": rating,
-            "insight": f"{reflector} found {span.target.section or span.target.name!r} {rating} in a session.",
-            "root_cause_analysis": "simulated",
-        })
+        items.append(
+            {
+                "ref": f"{span.path}#L{start}" + (f"-L{end}" if end != start else ""),
+                "rating": rating,
+                "insight": f"{reflector} found {span.target.section or span.target.name!r} {rating} in a session.",
+                "root_cause_analysis": "simulated",
+            }
+        )
     items.append({"ref": "skills/missing/SKILL.md#L1", "rating": "helpful", "insight": "points nowhere"})
     return items
 
@@ -182,8 +184,7 @@ def main() -> None:
     rng = random.Random(args.seed)
     out = args.out.resolve()
     # Each run starts from scratch.
-    for generated in ("workspace", "workspace-for-reflection", "views", "claude-project",
-                      "agent-repo"):
+    for generated in ("workspace", "workspace-for-reflection", "views", "claude-project", "agent-repo"):
         shutil.rmtree(out / generated, ignore_errors=True)
     out.mkdir(parents=True, exist_ok=True)
 
@@ -192,8 +193,10 @@ def main() -> None:
     if not agent.files().files:
         print("Nothing installed there; using a small sample agent instead.")
         agent = sample_agent()
-    print(f"skills={list(agent.skills)} context={list(agent.context)} hooks={list(agent.hooks)} "
-          f"mcps={list(agent.mcps)} resources={list(agent.resources)}")
+    print(
+        f"skills={list(agent.skills)} context={list(agent.context)} hooks={list(agent.hooks)} "
+        f"mcps={list(agent.mcps)} resources={list(agent.resources)}"
+    )
     print(f"revision {agent.revision}, {len(agent.files().targets)} targets")
     agent.journal.record(*detect_changes(None, agent, reason=f"Imported from {args.harness}", by="import"))
     show_journal(agent.journal, last=5)
@@ -206,8 +209,10 @@ def main() -> None:
     blind = write_workspace(agent, out / "workspace-for-reflection", journal=False, overwrite=True)
     print(f"{blind}: journal.jsonl exists? {(blind / 'journal.jsonl').exists()}")
     reflection_copy = read_workspace(blind)
-    print(f"read back: same revision? {reflection_copy.revision == agent.revision}; "
-          f"journal entries: {len(reflection_copy.journal)}")
+    print(
+        f"read back: same revision? {reflection_copy.revision == agent.revision}; "
+        f"journal entries: {len(reflection_copy.journal)}"
+    )
 
     banner("4. Reflection #2 on the journal-free copy: its journal holds only the new ratings")
     reflect(reflection_copy, "reflector-b", count=4, rng=rng)
@@ -221,8 +226,12 @@ def main() -> None:
 
     banner("6. Export the full workspace and the four file views")
     print(write_workspace(agent, out / "workspace", overwrite=True))
-    variants: dict[str, dict[str, Any]] = {"plain": {}, "ratings": {"scales": USEFULNESS}, "ids": {"ids": True},
-                                           "ids+ratings": {"scales": USEFULNESS, "ids": True}}
+    variants: dict[str, dict[str, Any]] = {
+        "plain": {},
+        "ratings": {"scales": USEFULNESS},
+        "ids": {"ids": True},
+        "ids+ratings": {"scales": USEFULNESS, "ids": True},
+    }
     for variant, options in variants.items():
         write_files(annotated_files(agent, **options), out / "views" / variant)
         print(out / "views" / variant)
@@ -238,30 +247,40 @@ def main() -> None:
 def install_into_claude(agent: MetaAgent, project: Path) -> None:
     banner("8. Bump the minor version and install into a Claude project")
     release = agent.model_copy(update={"version": bump_minor(agent.version)})
-    print(f"version {agent.version} -> {release.version}; revision unchanged: {release.revision == agent.revision}")
+    print(f"version {agent.version} -> {release.version}; revision {agent.revision} -> {release.revision}")
     project.mkdir(parents=True)
     (project / "CLAUDE.md").write_text(PROJECT_CLAUDE_MD, encoding="utf-8")
     print(f"{project} starts with the project's own CLAUDE.md:\n{PROJECT_CLAUDE_MD}")
 
     installation = release.install("claude", project)
-    print(f"installed {len(installation.files)} files, context {installation.context}, hooks {installation.hooks}, "
-          f"MCP servers {installation.mcps}, skipped {installation.skipped}")
+    print(
+        f"installed {len(installation.files)} files, context {installation.context}, hooks {installation.hooks}, "
+        f"MCP servers {installation.mcps}, skipped {installation.skipped}"
+    )
     show_tree(project)
     print(f"\n{installation.marker}:\n{(project / installation.marker).read_text(encoding='utf-8')}")
     print(f"CLAUDE.md after install (graphify replaced, the rest kept):\n{(project / 'CLAUDE.md').read_text()}")
 
     imported = MetaAgent.from_installation("claude", project)
-    print(f"imported back: {imported.name} {imported.version}, same configuration: "
-          f"{imported.revision == release.revision}")
+    print(
+        f"imported back: {imported.name} {imported.version}, same configuration: "
+        f"{imported.revision == release.revision}"
+    )
 
 
-GIT_ENV = {**os.environ, "GIT_AUTHOR_NAME": "curator-agent", "GIT_AUTHOR_EMAIL": "curator@example.test",
-           "GIT_COMMITTER_NAME": "curator-agent", "GIT_COMMITTER_EMAIL": "curator@example.test"}
+GIT_ENV = {
+    **os.environ,
+    "GIT_AUTHOR_NAME": "curator-agent",
+    "GIT_AUTHOR_EMAIL": "curator@example.test",
+    "GIT_COMMITTER_NAME": "curator-agent",
+    "GIT_COMMITTER_EMAIL": "curator@example.test",
+}
 
 
 def git(repo: Path, *args: str) -> str:
-    return subprocess.run(["git", "-C", str(repo), *args], check=True, capture_output=True, text=True,
-                          env=GIT_ENV).stdout.strip()
+    return subprocess.run(
+        ["git", "-C", str(repo), *args], check=True, capture_output=True, text=True, env=GIT_ENV
+    ).stdout.strip()
 
 
 def commit(repo: Path, message: str) -> str:
@@ -297,6 +316,7 @@ def rename(repo: Path, target: ResourceTarget, title: str) -> None:
     def retitle(lines: list[str], span: Span) -> None:
         hashes = lines[span.start - 1].split(" ", 1)[0]
         lines[span.start - 1] = f"{hashes} {title}\n"
+
     change_lines(repo, target, retitle)
 
 
@@ -309,11 +329,21 @@ def commit_changes(agent: MetaAgent, repo: Path, rng: random.Random) -> None:
 
     files = agent.files()
     texts = Counter(files.owned_text(t) for t in files.targets)
-    nested = {(s.path, s.start) for s in files.spans for o in files.spans
-              if o.path == s.path and o.depth > s.depth and s.start < o.start <= s.end}
+    nested = {
+        (s.path, s.start)
+        for s in files.spans
+        for o in files.spans
+        if o.path == s.path and o.depth > s.depth and s.start < o.start <= s.end
+    }
     # Sections with their own, unique text; leaves can be renamed without moving children along.
-    candidates = sorted((s for s in files.spans if s.target.section and files.owned_text(s.target)
-                         and texts[files.owned_text(s.target)] == 1), key=lambda s: (s.path, s.start))
+    candidates = sorted(
+        (
+            s
+            for s in files.spans
+            if s.target.section and files.owned_text(s.target) and texts[files.owned_text(s.target)] == 1
+        ),
+        key=lambda s: (s.path, s.start),
+    )
     leaves = [s for s in candidates if (s.path, s.start) not in nested]
     renamed = rng.choice(leaves).target
     first, second, third = rng.sample([s.target for s in candidates if s.target != renamed], 3)
@@ -323,8 +353,11 @@ def commit_changes(agent: MetaAgent, repo: Path, rng: random.Random) -> None:
     commit(repo, f"Clarify '{title(first)}'\n\nReflection rated it harmful: the agent ran broad commands first.")
     document = next(iter(sorted(agent.context)), None)
     path = repo / ("context/" + document if document else next(p for p in files.files if p.endswith("SKILL.md")))
-    path.write_text(path.read_text(encoding="utf-8").rstrip("\n") + "\n\n## Troubleshooting\n\n"
-                    "If an expected file is missing, say so instead of guessing.\n", encoding="utf-8")
+    path.write_text(
+        path.read_text(encoding="utf-8").rstrip("\n") + "\n\n## Troubleshooting\n\n"
+        "If an expected file is missing, say so instead of guessing.\n",
+        encoding="utf-8",
+    )
     commit(repo, "Add troubleshooting guidance after sessions that guessed missing files")
     add_note(repo, second, "Check the result before moving on.")
     add_note(repo, third, "Check the result before moving on.")

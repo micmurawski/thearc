@@ -122,12 +122,9 @@ class SessionIndex:
         normalized = self.connection.execute(
             "SELECT value FROM settings WHERE key='projection_timestamps_utc'",
         ).fetchone()
-        if (
-            normalized is None
-            or (
-                self.connection.execute("SELECT 1 FROM events LIMIT 1").fetchone()
-                and not self.connection.execute("SELECT 1 FROM sessions LIMIT 1").fetchone()
-            )
+        if normalized is None or (
+            self.connection.execute("SELECT 1 FROM events LIMIT 1").fetchone()
+            and not self.connection.execute("SELECT 1 FROM sessions LIMIT 1").fetchone()
         ):
             self._refresh_projections()
 
@@ -157,8 +154,10 @@ class SessionIndex:
 
     def list_sources(self) -> list[SourceConfig]:
         """Read registered roots without scanning or modifying the source corpus."""
-        return [SourceConfig.model_validate_json(row[0]) for row in
-                self.connection.execute("SELECT config FROM sources ORDER BY id")]
+        return [
+            SourceConfig.model_validate_json(row[0])
+            for row in self.connection.execute("SELECT config FROM sources ORDER BY id")
+        ]
 
     def ingest(self, source: SourceConfig) -> SyncReport:
         """Register and synchronize only this source, leaving other sources untouched."""
@@ -435,7 +434,8 @@ class SessionIndex:
         """
         where, params = self._session_conditions(filters)
         cursor = self.connection.execute(
-            f"SELECT * FROM sessions WHERE {where} ORDER BY COALESCE(ended_at,''),id", params,
+            f"SELECT * FROM sessions WHERE {where} ORDER BY COALESCE(ended_at,''),id",
+            params,
         )
         try:
             for row in cursor:
@@ -455,7 +455,8 @@ class SessionIndex:
         cursor = self.connection.execute(
             "SELECT * FROM sessions WHERE id IN ("
             f"SELECT e.session_id FROM events e WHERE {where}) "
-            "ORDER BY COALESCE(ended_at,''),id", params,
+            "ORDER BY COALESCE(ended_at,''),id",
+            params,
         )
         try:
             for row in cursor:
@@ -463,8 +464,9 @@ class SessionIndex:
         finally:
             cursor.close()
 
-    def list_sessions(self, filters: SearchFilters | None = None, limit: int = 100,
-                      offset: int = 0) -> list[SessionMetadata]:
+    def list_sessions(
+        self, filters: SearchFilters | None = None, limit: int = 100, offset: int = 0
+    ) -> list[SessionMetadata]:
         if limit < 1 or limit > 1000 or offset < 0:
             raise ValueError("Session pagination must use limit 1..1000 and a non-negative offset")
         where, params = self._session_conditions(filters)
@@ -708,7 +710,6 @@ class SessionIndex:
     def diagnostics(self) -> list[dict]:
         return [dict(r) for r in self.connection.execute("SELECT * FROM diagnostics ORDER BY source_id,path,line")]
 
-
     def iter_events(self, filters: SearchFilters | None = None) -> Iterator[Event]:
         """Yield native stream order, never hash-ID order.
 
@@ -720,7 +721,8 @@ class SessionIndex:
         where = " AND ".join(conditions) or "1"
         cursor = self.connection.execute(
             f"SELECT e.data FROM events e WHERE {where} "
-            "ORDER BY e.source_id,e.session_id,e.path,e.byte_offset,e.subrecord,e.id", params,
+            "ORDER BY e.source_id,e.session_id,e.path,e.byte_offset,e.subrecord,e.id",
+            params,
         )
         try:
             for row in cursor:

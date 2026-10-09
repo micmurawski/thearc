@@ -109,8 +109,9 @@ class Sessions:
     def __init__(self, index_path: str | Path = DEFAULT_INDEX, *, artifact_dir: str | Path | None = None):
         self.path = Path(index_path).expanduser().resolve()
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.artifact_dir = (Path(artifact_dir).expanduser().resolve() if artifact_dir
-                             else self.path.with_suffix(".artifacts"))
+        self.artifact_dir = (
+            Path(artifact_dir).expanduser().resolve() if artifact_dir else self.path.with_suffix(".artifacts")
+        )
         self.index = SessionIndex(self.path)
         self._snapshot: Path | None = None
         self._revision: tuple | None = None
@@ -121,14 +122,22 @@ class Sessions:
     def __enter__(self) -> Self:
         return self
 
-    def __exit__(self, kind: type[BaseException] | None, error: BaseException | None,
-                 trace: TracebackType | None) -> None:
+    def __exit__(
+        self, kind: type[BaseException] | None, error: BaseException | None, trace: TracebackType | None
+    ) -> None:
         self.close()
 
     # --- sources ------------------------------------------------------------------------------------------------
 
-    def add(self, path: str | Path, *, harness: Harness | None = None, source_id: str | None = None,
-            format: Literal["native", "dataclaw"] = "native", sync: bool = True) -> SourceConfig:
+    def add(
+        self,
+        path: str | Path,
+        *,
+        harness: Harness | None = None,
+        source_id: str | None = None,
+        format: Literal["native", "dataclaw"] = "native",
+        sync: bool = True,
+    ) -> SourceConfig:
         """Register a transcript directory or collector batch, and synchronize it unless ``sync=False``."""
         root = Path(path).expanduser().resolve()
         if not root.is_dir():
@@ -144,8 +153,7 @@ class Sessions:
             harness = "claude" if format == "dataclaw" else detect_harness(root)
         if root in self.path.parents:
             raise ValueError("Keep the index outside the source directory")
-        source = SourceConfig(id=source_id or f"{harness}:{format}:{root}", harness=harness, root=root,
-                              format=format)
+        source = SourceConfig(id=source_id or f"{harness}:{format}:{root}", harness=harness, root=root, format=format)
         known = next((s for s in self.sources() if s.root == source.root and s.format == source.format), None)
         if known is not None and source_id is None:
             if known.harness != source.harness:
@@ -169,11 +177,21 @@ class Sessions:
 
     # --- finding sessions ---------------------------------------------------------------------------------------
 
-    def list(self, *, harness: str | Iterable[str] | None = None, source: str | Iterable[str] | None = None,
-             since: Moment = None, until: Moment = None) -> builtins.list[SessionMetadata]:
+    def list(
+        self,
+        *,
+        harness: str | Iterable[str] | None = None,
+        source: str | Iterable[str] | None = None,
+        since: Moment = None,
+        until: Moment = None,
+    ) -> builtins.list[SessionMetadata]:
         """Session records, newest first."""
-        filters = SearchFilters(harnesses=cast("list[Harness]", _names(harness)), source_ids=_names(source),
-                                started_after=_moment(since), started_before=_moment(until))
+        filters = SearchFilters(
+            harnesses=cast("list[Harness]", _names(harness)),
+            source_ids=_names(source),
+            started_after=_moment(since),
+            started_before=_moment(until),
+        )
         return sorted(self.index.iter_sessions(filters), key=lambda s: (s.started_at or "", s.id), reverse=True)
 
     def resolve(self, reference: str | None = None) -> str:
@@ -188,8 +206,13 @@ class Sessions:
         if len(exact) == 1:
             return exact[0]
         compact, native = _compact(reference), self._run_native_id(reference)
-        matches = {r["id"] for r in rows if r["id"].startswith(reference)
-                   or _compact(r["native_id"]).startswith(compact) or (native and r["native_id"] == native)}
+        matches = {
+            r["id"]
+            for r in rows
+            if r["id"].startswith(reference)
+            or _compact(r["native_id"]).startswith(compact)
+            or (native and r["native_id"] == native)
+        }
         if len(matches) != 1:
             problem = "matches no indexed session" if not matches else f"is ambiguous ({len(matches)} sessions)"
             raise LookupError(f"Session reference {reference!r} {problem}")
@@ -199,8 +222,9 @@ class Sessions:
         """The immutable Session for any reference; None selects the most recent session."""
         return self._get(self._capture(), self.resolve(reference))
 
-    def search(self, text: str | None = None, *, mode: str = "literal", case_sensitive: bool | None = None,
-               **filters: Any) -> Results:
+    def search(
+        self, text: str | None = None, *, mode: str = "literal", case_sensitive: bool | None = None, **filters: Any
+    ) -> Results:
         """Events matching ``text`` and/or filters (``kind=``, ``status=``, ``tool_name=``, …), in recorded order."""
         selection = search_filters(filters)
         sensitive = (mode == "literal") if case_sensitive is None else case_sensitive
@@ -214,11 +238,13 @@ class Sessions:
                     if row["session_id"] not in sessions:
                         sessions[row["session_id"]] = self._get(path, row["session_id"])
                     event = Record(index.get_event(row["id"]).model_dump(mode="json"))
-                    ranges = (SessionIndex._literal_ranges(event.text, text, sensitive)
-                              if text and mode == "literal" else [])
+                    ranges = (
+                        SessionIndex._literal_ranges(event.text, text, sensitive) if text and mode == "literal" else []
+                    )
                     yield SearchHit(event, sessions[row["session_id"]], tuple(ranges))
             finally:
                 index.close()
+
         return Results(generate)
 
     def match(self, pattern: Any, **filters: Any) -> Results:
@@ -233,6 +259,7 @@ class Sessions:
                     yield from self._get(path, record.id).match(pattern)
             finally:
                 index.close()
+
         return Results(generate)
 
     # --- collector batches and installation ---------------------------------------------------------------------
@@ -243,26 +270,50 @@ class Sessions:
         source = next((s for s in self.sources() if s.id == session.metadata.source_id), None)
         if source is None or source.root.name != "sessions":
             return None
-        return next(((directory, manifest) for directory, manifest in _batch_runs(source.root.parent)
-                     if manifest.get("thread_id") == session.metadata.native_id), None)
+        return next(
+            (
+                (directory, manifest)
+                for directory, manifest in _batch_runs(source.root.parent)
+                if manifest.get("thread_id") == session.metadata.native_id
+            ),
+            None,
+        )
 
-    def install_all(self, harness: str, *, references: Iterable[str] | None = None,
-                    source_harness: str | Iterable[str] | None = None, source: str | Iterable[str] | None = None,
-                    since: Moment = None, until: Moment = None, home: str | Path | None = None,
-                    overwrite: bool = False, strict: bool = True,
-                    keep_id: bool = False) -> builtins.list[tuple[Any, InstalledSession | Exception]]:
+    def install_all(
+        self,
+        harness: str,
+        *,
+        references: Iterable[str] | None = None,
+        source_harness: str | Iterable[str] | None = None,
+        source: str | Iterable[str] | None = None,
+        since: Moment = None,
+        until: Moment = None,
+        home: str | Path | None = None,
+        overwrite: bool = False,
+        strict: bool = True,
+        keep_id: bool = False,
+    ) -> builtins.list[tuple[Any, InstalledSession | Exception]]:
         """Install the given sessions, or every one matching the filters, into ``harness``.
 
         Returns ``(session metadata, InstalledSession or the exception)`` per session;
         one failure does not stop the others.
         """
-        records = ([self.get(reference).metadata for reference in references] if references
-                   else self.list(harness=source_harness, source=source, since=since, until=until))
+        records = (
+            [self.get(reference).metadata for reference in references]
+            if references
+            else self.list(harness=source_harness, source=source, since=since, until=until)
+        )
         results: builtins.list[tuple[Any, InstalledSession | Exception]] = []
         for record in records:
             try:
-                results.append((record, self.get(record.id).install(
-                    harness, home=home, overwrite=overwrite, strict=strict, keep_id=keep_id)))
+                results.append(
+                    (
+                        record,
+                        self.get(record.id).install(
+                            harness, home=home, overwrite=overwrite, strict=strict, keep_id=keep_id
+                        ),
+                    )
+                )
             except (ValueError, OSError) as exc:
                 results.append((record, exc))
         return results
@@ -278,8 +329,11 @@ class Sessions:
 
     def _capture(self) -> Path:
         """A read-only copy of the index, refreshed when it changed (also by another connection)."""
-        revision = (self.index.revision, self.index.connection.total_changes,
-                    self.index.connection.execute("PRAGMA data_version").fetchone()[0])
+        revision = (
+            self.index.revision,
+            self.index.connection.total_changes,
+            self.index.connection.execute("PRAGMA data_version").fetchone()[0],
+        )
         if self._snapshot is None or revision != self._revision:
             self.artifact_dir.mkdir(parents=True, exist_ok=True)
             with NamedTemporaryFile(dir=self.artifact_dir, suffix=".sqlite", delete=False) as stream:

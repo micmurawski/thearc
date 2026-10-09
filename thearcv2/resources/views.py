@@ -10,6 +10,7 @@ from collections import defaultdict
 from collections.abc import Sequence
 
 from thearcv2.resources.agent import MetaAgent
+from thearcv2.resources.markers import code_comment as _code_comment
 from thearcv2.resources.ratings import RatingPolicy, RatingScale, Summary, count_all
 from thearcv2.resources.targets import ResourceTarget
 
@@ -23,51 +24,66 @@ def _scales(scales: Scales) -> tuple[RatingScale, ...]:
     return scales
 
 
-def _labels(agent: MetaAgent, scales: tuple[RatingScale, ...], policy: RatingPolicy,
-            ids: bool) -> dict[ResourceTarget, str]:
+def _labels(
+    agent: MetaAgent, scales: tuple[RatingScale, ...], policy: RatingPolicy, ids: bool
+) -> dict[ResourceTarget, str]:
     """Suffix per target: ``[res_…]`` when ``ids``, then each scale's summary (named when there are several)."""
     summaries: list[tuple[RatingScale, dict[ResourceTarget, Summary]]] = [
-        (scale, agent.journal.summaries(scale, policy)) for scale in scales]
+        (scale, agent.journal.summaries(scale, policy)) for scale in scales
+    ]
     labels: dict[ResourceTarget, str] = {}
     for target in agent.files().targets:
         parts = [f"[{target.id}]"] if ids else []
-        parts += [scale.render(by_target[target]) if len(scales) == 1 else f"{scale.name}: "
-                  f"{scale.render(by_target[target])}" for scale, by_target in summaries if target in by_target]
+        parts += [
+            scale.render(by_target[target]) if len(scales) == 1 else f"{scale.name}: {scale.render(by_target[target])}"
+            for scale, by_target in summaries
+            if target in by_target
+        ]
         if parts:
             labels[target] = " ".join(parts)
     return labels
 
 
-def annotated_files(agent: MetaAgent, scales: Scales = (), *, ids: bool = False,
-                    policy: RatingPolicy = count_all) -> dict[str, str]:
-    """Agent files with each section heading suffixed by its ID and/or rating summaries.
+def annotated_files(
+    agent: MetaAgent, scales: Scales = (), *, ids: bool = False, policy: RatingPolicy = count_all
+) -> dict[str, str]:
+    """Agent files with IDs and/or rating summaries added to the lines that name a target.
 
-    Only heading lines change, so line numbers and file references stay valid.
-    Whole resources have no heading to carry a suffix; see ``agent_outline``.
+    A Markdown section's label follows its heading. A code file (``.sh``, ``.py``, ``.ts``, …) has one label for
+    the whole file, as a comment at the end of its first line (after a shebang, the second). Only those lines
+    change, so line numbers and file references stay valid. Other whole resources appear in ``agent_outline``.
     """
     files = agent.files()
-    headings: dict[str, dict[int, str]] = defaultdict(dict)
+    additions: dict[str, dict[int, str]] = defaultdict(dict)  # path -> line index -> text to append
     for target, label in _labels(agent, _scales(scales), policy, ids).items():
+        span = files.span(target)
         if target.section is not None:
-            span = files.span(target)
-            headings[span.path][span.start] = label
+            additions[span.path][span.start - 1] = f" {label}"
+        elif span.depth == 0 and (comment := _code_comment(span.path)) and span.end >= 1:
+            shebang = files.files[span.path].startswith("#!")
+            if not shebang or span.end >= 2:
+                additions[span.path][1 if shebang else 0] = f"  {comment} rating: {label}"
     result = dict(files.files)
-    for path, suffixes in headings.items():
+    for path, suffixes in additions.items():
         lines = result[path].splitlines(keepends=True)
-        for number, label in suffixes.items():
-            text = lines[number - 1].rstrip("\r\n")
-            lines[number - 1] = f"{text} {label}{lines[number - 1][len(text):]}"
+        for index, suffix in suffixes.items():
+            text = lines[index].rstrip("\r\n")
+            line = f"{text}{suffix}" if text.strip() else suffix.lstrip()
+            lines[index] = line + lines[index][len(text) :]
         result[path] = "".join(lines)
     return result
 
 
-def agent_outline(agent: MetaAgent, scales: Scales = (), *, ids: bool = False,
-                  policy: RatingPolicy = count_all) -> str:
+def agent_outline(agent: MetaAgent, scales: Scales = (), *, ids: bool = False, policy: RatingPolicy = count_all) -> str:
     """Markdown outline of every resource and section with its file reference, and optionally IDs and summaries."""
     files = agent.files()
     labels = _labels(agent, _scales(scales), policy, ids)
-    lines = [f"# {agent.name}" + (f" {agent.version}" if agent.version else ""), "",
-             f"Revision `{files.revision}`.", ""]
+    lines = [
+        f"# {agent.name}" + (f" {agent.version}" if agent.version else ""),
+        "",
+        f"Revision `{agent.revision}`.",
+        "",
+    ]
     for target in files.targets:
         span = files.span(target)
         depth = span.depth if target.section is not None else 0
