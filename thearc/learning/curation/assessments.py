@@ -39,8 +39,11 @@ class Assessment(BaseModel):
     counted: bool
     overlaps: list[str] = Field(default_factory=list)
     reference: str | None = Field(default=None, exclude_if=lambda value: value is None)
-    target_id: str | None = Field(default=None, exclude_if=lambda value: value is None,
-                                  description="SectionId/ResourceId of target, e.g. res_90c7…")
+    target_id: str | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+        description="SectionId/ResourceId of target, e.g. res_90c7…",
+    )
 
 
 class AssessmentLedger(BaseModel):
@@ -145,16 +148,30 @@ def propagate_ranks(
                 history.baselines.append(RankBaseline(target=target, revision=revision, ranks=initial))
                 known.add(target)
             pairs = _pairs(item.evidence)
-            overlaps = [entry.id for entry in history.assessments
-                        if entry.target == target and entry.revision == revision and pairs & _pairs(entry.evidence)]
-            history.assessments.append(Assessment(
-                id=content_hash({"reflection": reflection.id, "index": index}),
-                reflection_id=reflection.id, item_index=index, epoch_id=epoch_id,
-                target=target, revision=revision, rating=item.rating, reason=item.reason,
-                evidence=item.evidence, limitations=item.limitations,
-                configuration_provenance=provenance or "unknown; historical configuration loading is unverified",
-                counted=not overlaps, overlaps=overlaps, reference=item.reference, target_id=target.id,
-            ))
+            overlaps = [
+                entry.id
+                for entry in history.assessments
+                if entry.target == target and entry.revision == revision and pairs & _pairs(entry.evidence)
+            ]
+            history.assessments.append(
+                Assessment(
+                    id=content_hash({"reflection": reflection.id, "index": index}),
+                    reflection_id=reflection.id,
+                    item_index=index,
+                    epoch_id=epoch_id,
+                    target=target,
+                    revision=revision,
+                    rating=item.rating,
+                    reason=item.reason,
+                    evidence=item.evidence,
+                    limitations=item.limitations,
+                    configuration_provenance=provenance or "unknown; historical configuration loading is unverified",
+                    counted=not overlaps,
+                    overlaps=overlaps,
+                    reference=item.reference,
+                    target_id=target.id,
+                )
+            )
         history.reflection_hashes[reflection.id] = digest
 
     # Recompute rather than incrementing the caller's counters. Retries are

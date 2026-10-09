@@ -43,6 +43,7 @@ from .models import (
 
 try:
     import orjson as _orjson  # type: ignore[import-untyped]
+
     _HAS_ORJSON = True
 except ImportError:
     _HAS_ORJSON = False
@@ -65,6 +66,7 @@ def _json_dumps(obj: object) -> str:
 # ---------------------------------------------------------------------------
 # JSONL helpers
 # ---------------------------------------------------------------------------
+
 
 def _read_jsonl(path: Path) -> list[JsonObject]:
     records: list[JsonObject] = []
@@ -101,6 +103,7 @@ def _write_json(path: Path, obj: object, *, overwrite: bool = False) -> None:
 # ---------------------------------------------------------------------------
 # Codex store
 # ---------------------------------------------------------------------------
+
 
 class CodexStore:
     """Read/write OpenAI Codex CLI session JSONL files.
@@ -173,11 +176,7 @@ class CodexStore:
 
     def _find_path(self, session_id: str) -> Path | None:
         if self._id_index is None:
-            self._id_index = {
-                sid: p
-                for p in self._session_paths()
-                if (sid := self._id_from_filename(p))
-            }
+            self._id_index = {sid: p for p in self._session_paths() if (sid := self._id_from_filename(p))}
         if session_id in self._id_index:
             return self._id_index[session_id]
         for p in self._session_paths():
@@ -196,6 +195,7 @@ class CodexStore:
         try:
             mtime = path.stat().st_mtime
             from datetime import datetime
+
             return datetime.fromtimestamp(mtime, UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
         except OSError:
             return now_iso()
@@ -257,6 +257,7 @@ class CodexStore:
 # ---------------------------------------------------------------------------
 # Pi store
 # ---------------------------------------------------------------------------
+
 
 class PiStore:
     """Read/write Pi coding agent session JSONL files.
@@ -340,6 +341,7 @@ class PiStore:
         try:
             mtime = path.stat().st_mtime
             from datetime import datetime
+
             return datetime.fromtimestamp(mtime, UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
         except OSError:
             return now_iso()
@@ -348,6 +350,7 @@ class PiStore:
 # ---------------------------------------------------------------------------
 # Claude store
 # ---------------------------------------------------------------------------
+
 
 class ClaudeStore:
     """Read/write Claude Code / Anthropic CLI session JSONL files.
@@ -360,9 +363,7 @@ class ClaudeStore:
     provider_name = "claude"
 
     def __init__(self, claude_home: Path | None = None) -> None:
-        self._home = claude_home or Path(
-            os.environ.get("CLAUDE_CONFIG_DIR", str(Path.home() / ".claude"))
-        )
+        self._home = claude_home or Path(os.environ.get("CLAUDE_CONFIG_DIR", str(Path.home() / ".claude")))
         self._projects_dir = self._home / "projects"
 
     @property
@@ -427,6 +428,7 @@ class ClaudeStore:
         try:
             mtime = path.stat().st_mtime
             from datetime import datetime
+
             return datetime.fromtimestamp(mtime, UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
         except OSError:
             return now_iso()
@@ -435,6 +437,7 @@ class ClaudeStore:
 # ---------------------------------------------------------------------------
 # OpenCode store
 # ---------------------------------------------------------------------------
+
 
 class OpenCodeStore:
     """Read/write OpenCode (SST) session export JSON files.
@@ -514,6 +517,7 @@ class OpenCodeStore:
 # ---------------------------------------------------------------------------
 # Antigravity (agy) store
 # ---------------------------------------------------------------------------
+
 
 class AntigravityStore:
     """Read Antigravity (agy / Google Deepmind CLI) session transcript files.
@@ -599,6 +603,7 @@ class AntigravityStore:
         try:
             mtime = path.stat().st_mtime
             from datetime import datetime
+
             return datetime.fromtimestamp(mtime, UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
         except OSError:
             return now_iso()
@@ -608,9 +613,10 @@ class AntigravityStore:
 # Markdown export store
 # ---------------------------------------------------------------------------
 
+
 class MarkdownStore:
     """Write sessions as readable Markdown files.
-    
+
     This store is write-only. Default output is ``~/.gemini/antigravity-cli/session-exports/``.
     """
 
@@ -640,4 +646,3 @@ class MarkdownStore:
         mode = "w" if overwrite else "x"
         with path.open(mode, encoding="utf-8") as fh:
             fh.write(records[0]["markdown"])
-

@@ -25,21 +25,44 @@ def snapshot_agent(args, worktree: Path) -> MetaAgent:
         for path in sorted(root.glob("*/SKILL.md")):
             skill = Skill.from_dir(path.parent)
             skills[skill.name] = skill
-    return MetaAgent(name="opencode-project", skills=skills, context=[
-        ContextDocument.from_file(worktree / name) for name in ("AGENTS.md", "CLAUDE.md")
-        if (worktree / name).is_file()
-    ])
+    return MetaAgent(
+        name="opencode-project",
+        skills=skills,
+        context=[
+            ContextDocument.from_file(worktree / name)
+            for name in ("AGENTS.md", "CLAUDE.md")
+            if (worktree / name).is_file()
+        ],
+    )
 
 
 def command_for(args, run_dir: Path) -> list[str]:
     if args.harness == "codex":
-        command = [args.agent_bin, "--sandbox", "workspace-write", "--ask-for-approval", "never",
-                   "exec", "--json", "--color", "never", "--output-last-message", str(run_dir / "response.md")]
+        command = [
+            args.agent_bin,
+            "--sandbox",
+            "workspace-write",
+            "--ask-for-approval",
+            "never",
+            "exec",
+            "--json",
+            "--color",
+            "never",
+            "--output-last-message",
+            str(run_dir / "response.md"),
+        ]
     elif args.harness == "pi":
         command = [args.agent_bin, "--print", "--mode", "json", "--session-dir", str(run_dir / "native")]
     elif args.harness == "claude":
-        command = [args.agent_bin, "--print", "--verbose", "--output-format", "stream-json",
-                   "--session-id", str(UUID(run_dir.name))]
+        command = [
+            args.agent_bin,
+            "--print",
+            "--verbose",
+            "--output-format",
+            "stream-json",
+            "--session-id",
+            str(UUID(run_dir.name)),
+        ]
     else:
         # A private server keeps timeout termination scoped to this run.
         command = [args.agent_bin, "run", "--standalone", "--format", "json"]
@@ -78,8 +101,9 @@ def inspect_output(harness: str, run_dir: Path) -> dict:
             if harness == "pi" and kind in {"agent_end", "agent_settled"}:
                 completed = not event.get("willRetry", False)
             message = event.get("message", {})
-            if ((harness == "claude" and kind == "assistant") or
-                    (harness == "pi" and kind == "message_end" and message.get("role") == "assistant")):
+            if (harness == "claude" and kind == "assistant") or (
+                harness == "pi" and kind == "message_end" and message.get("role") == "assistant"
+            ):
                 # The last assistant message decides whether Pi recovered from an earlier provider error.
                 if harness == "pi":
                     failed = message.get("stopReason") in {"error", "aborted"}
@@ -100,9 +124,15 @@ def inspect_output(harness: str, run_dir: Path) -> dict:
         except (ValueError, TypeError, AttributeError):
             malformed = True
     (run_dir / "response.md").write_text("\n\n".join(messages), encoding="utf-8")
-    return {"thread_id": next(iter(sessions)) if len(sessions) == 1 else None,
-            "turn_completed": completed, "turn_failed": failed, "malformed_stream": malformed,
-            "tool_items": len(tools), "assistant_messages": len(messages), "errors": errors}
+    return {
+        "thread_id": next(iter(sessions)) if len(sessions) == 1 else None,
+        "turn_completed": completed,
+        "turn_failed": failed,
+        "malformed_stream": malformed,
+        "tool_items": len(tools),
+        "assistant_messages": len(messages),
+        "errors": errors,
+    }
 
 
 def capture_session(args, session_id: str | None, worktree: Path, run_dir: Path) -> Path | None:
@@ -111,16 +141,24 @@ def capture_session(args, session_id: str | None, worktree: Path, run_dir: Path)
     if args.harness == "opencode":
         path = run_dir / "session.json"
         with path.open("w") as stdout, (run_dir / "export-stderr.log").open("w") as stderr:
-            subprocess.run([args.agent_bin, "session", "export", "--standalone", session_id], cwd=worktree,
-                           env={**os.environ, "PWD": str(worktree)},
-                           pass_fds=(args.lock_fd,),
-                           stdin=subprocess.DEVNULL, stdout=stdout, stderr=stderr, check=True, timeout=60)
+            subprocess.run(
+                [args.agent_bin, "session", "export", "--standalone", session_id],
+                cwd=worktree,
+                env={**os.environ, "PWD": str(worktree)},
+                pass_fds=(args.lock_fd,),
+                stdin=subprocess.DEVNULL,
+                stdout=stdout,
+                stderr=stderr,
+                check=True,
+                timeout=60,
+            )
         data = json.loads(path.read_text())
         info = data.get("info", {})
         directory = info.get("location", {}).get("directory", info.get("directory"))
         if info.get("id") != session_id or not directory or Path(directory).resolve() != worktree.resolve():
             raise ValueError(
-                f"Exported session does not match requested session/worktree: {info.get('id')}, {directory}")
+                f"Exported session does not match requested session/worktree: {info.get('id')}, {directory}"
+            )
         # Keep the original export and a lossless single-record JSONL copy for the index.
         transcript = run_dir / f"{session_id}.jsonl"
         transcript.write_text(json.dumps(data, ensure_ascii=False) + "\n", encoding="utf-8")
@@ -137,8 +175,7 @@ def capture_session(args, session_id: str | None, worktree: Path, run_dir: Path)
                 except ValueError:
                     continue
                 identity = record.get("id") if args.harness == "pi" else record.get("sessionId")
-                if (identity == session_id and record.get("cwd") and
-                        Path(record["cwd"]).resolve() == worktree.resolve()):
+                if identity == session_id and record.get("cwd") and Path(record["cwd"]).resolve() == worktree.resolve():
                     matches.append(path)
                     break
     return matches[0] if len(matches) == 1 else None
@@ -147,11 +184,17 @@ def capture_session(args, session_id: str | None, worktree: Path, run_dir: Path)
 def opencode_completed(transcript: Path) -> bool:
     """Require a completed final assistant message, not a completed tool step."""
     data = json.loads(transcript.read_text())
-    assistants = [m.get("info", m) for m in data.get("messages", [])
-                  if m.get("info", {}).get("role", m.get("type")) == "assistant"]
+    assistants = [
+        m.get("info", m)
+        for m in data.get("messages", [])
+        if m.get("info", {}).get("role", m.get("type")) == "assistant"
+    ]
     if not assistants:
         return False
     last = assistants[-1]
-    return bool(data.get("info", {}).get("outcome", "succeeded") == "succeeded" and
-                last.get("time", {}).get("completed") and not last.get("error") and
-                last.get("finish") not in {None, "tool-calls", "unknown", "length", "error"})
+    return bool(
+        data.get("info", {}).get("outcome", "succeeded") == "succeeded"
+        and last.get("time", {}).get("completed")
+        and not last.get("error")
+        and last.get("finish") not in {None, "tool-calls", "unknown", "length", "error"}
+    )

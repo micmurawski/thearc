@@ -10,14 +10,23 @@ from thearc.models import Ranks
 def config():
     return MetaAgent(
         name="graphify-test",
-        skills=[Skill(name="graphify", description="Graph tool", instructions="# Guide\r\n\r\nαβ\n",
-                      ranks=Ranks(helpful=2), metadata={"custom": ["retained"]},
-                      files={"references/query.md": "# Query\nDetails\n", "scripts/query.py": "print('query')\n"})],
+        skills=[
+            Skill(
+                name="graphify",
+                description="Graph tool",
+                instructions="# Guide\r\n\r\nαβ\n",
+                ranks=Ranks(helpful=2),
+                metadata={"custom": ["retained"]},
+                files={"references/query.md": "# Query\nDetails\n", "scripts/query.py": "print('query')\n"},
+            )
+        ],
         hooks=[Hook(name="guard", script="exit 1", extra={"custom": True})],
         mcps=[MCP(name="local", command="never-execute", env={"TOKEN": "local-secret"})],
         context=[ContextDocument(filename="AGENTS.md", content="# Rules\nContent", description="context")],
-        resources=[AgentResource(location=kind, path="nested/item.md", content=f"# {kind}\n")
-                   for kind in ["rules", "commands", "workflows"]],
+        resources=[
+            AgentResource(location=kind, path="nested/item.md", content=f"# {kind}\n")
+            for kind in ["rules", "commands", "workflows"]
+        ],
     )
 
 
@@ -29,8 +38,10 @@ def test_lossless_roundtrip_and_edit_nested_reference(tmp_path):
     reference.write_text("# Query\nImproved guidance\n")
     restored = MetaAgent.from_workspace(path)
     assert restored.skills["graphify"].files["references/query.md"] == "# Query\nImproved guidance\n"
-    assert original.skills["graphify"].files["references/query.md"] != restored.skills["graphify"].files[
-        "references/query.md"]
+    assert (
+        original.skills["graphify"].files["references/query.md"]
+        != restored.skills["graphify"].files["references/query.md"]
+    )
     with pytest.raises(FileExistsError):
         original.to_workspace(path)
 

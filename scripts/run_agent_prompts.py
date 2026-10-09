@@ -95,9 +95,15 @@ def inspect_stream(path: Path) -> dict:
                 tools.add(identity)
             if item.get("type") == "agent_message" and str(item.get("text") or "").strip():
                 messages.add(identity)
-    return {"thread_id": next(iter(threads)) if len(threads) == 1 else None,
-            "turn_completed": completed, "turn_failed": failed, "malformed_stream": malformed,
-            "tool_items": len(tools), "assistant_messages": len(messages), "errors": errors}
+    return {
+        "thread_id": next(iter(threads)) if len(threads) == 1 else None,
+        "turn_completed": completed,
+        "turn_failed": failed,
+        "malformed_stream": malformed,
+        "tool_items": len(tools),
+        "assistant_messages": len(messages),
+        "errors": errors,
+    }
 
 
 def find_session(sessions: Path, thread_id: str | None, cwd: Path) -> Path | None:
@@ -112,8 +118,11 @@ def find_session(sessions: Path, thread_id: str | None, cwd: Path) -> Path | Non
             except (ValueError, StopIteration):
                 continue
         payload = header.get("payload", {})
-        if (header.get("type") == "session_meta" and payload.get("id") == thread_id
-                and Path(payload.get("cwd", "")).resolve() == cwd.resolve()):
+        if (
+            header.get("type") == "session_meta"
+            and payload.get("id") == thread_id
+            and Path(payload.get("cwd", "")).resolve() == cwd.resolve()
+        ):
             matches.append(path)
     return matches[0] if len(matches) == 1 else None
 
@@ -131,20 +140,35 @@ def collect(prompt: str, label: str, args: argparse.Namespace, output: Path) -> 
     (run_dir / "prompt.txt").write_text(prompt, encoding="utf-8")
     save(run_dir / "agent-before.json", snapshot_agent(args, worktree).model_dump(mode="json"))
     command = command_for(args, run_dir)
-    result = {"harness": args.harness, "prompt": label, "prompt_index": args.prompt_index,
-              "cwd": str(worktree), "source_checkout": str(args.cwd),
-              "base_commit": args.base_commit, "run_dir": str(run_dir),
-              "started_at": datetime.now(UTC).isoformat(), "command": command,
-              "git_head": git(worktree, "rev-parse", "HEAD"),
-              "git_status_before": git(worktree, "status", "--porcelain"), "status": "running"}
+    result = {
+        "harness": args.harness,
+        "prompt": label,
+        "prompt_index": args.prompt_index,
+        "cwd": str(worktree),
+        "source_checkout": str(args.cwd),
+        "base_commit": args.base_commit,
+        "run_dir": str(run_dir),
+        "started_at": datetime.now(UTC).isoformat(),
+        "command": command,
+        "git_head": git(worktree, "rev-parse", "HEAD"),
+        "git_status_before": git(worktree, "status", "--porcelain"),
+        "status": "running",
+    }
     save(run_dir / "manifest.json", result)
     interrupted = None
     with (run_dir / "events.jsonl").open("w") as stdout, (run_dir / "stderr.log").open("w") as stderr:
         try:
-            with subprocess.Popen(command, cwd=worktree, stdin=subprocess.PIPE, stdout=stdout, stderr=stderr,
-                                  env={**os.environ, "PWD": str(worktree)},
-                                  pass_fds=(args.lock_fd,),
-                                  text=True, start_new_session=True) as process:
+            with subprocess.Popen(
+                command,
+                cwd=worktree,
+                stdin=subprocess.PIPE,
+                stdout=stdout,
+                stderr=stderr,
+                env={**os.environ, "PWD": str(worktree)},
+                pass_fds=(args.lock_fd,),
+                text=True,
+                start_new_session=True,
+            ) as process:
                 try:
                     process.communicate(prompt, timeout=args.timeout)
                 except (subprocess.TimeoutExpired, KeyboardInterrupt) as exc:
@@ -159,11 +183,15 @@ def collect(prompt: str, label: str, args: argparse.Namespace, output: Path) -> 
         except OSError as exc:
             interrupted = f"launch_error: {exc}"
             result["exit_code"] = None
-    result.update(inspect_stream(run_dir / "events.jsonl") if args.harness == "codex"
-                  else inspect_output(args.harness, run_dir))
+    result.update(
+        inspect_stream(run_dir / "events.jsonl") if args.harness == "codex" else inspect_output(args.harness, run_dir)
+    )
     try:
-        transcript = (find_session(args.sessions_dir, result["thread_id"], worktree)
-                      if args.harness == "codex" else capture_session(args, result["thread_id"], worktree, run_dir))
+        transcript = (
+            find_session(args.sessions_dir, result["thread_id"], worktree)
+            if args.harness == "codex"
+            else capture_session(args, result["thread_id"], worktree, run_dir)
+        )
         if transcript and args.harness == "opencode":
             result["turn_completed"] = opencode_completed(transcript)
     except (OSError, ValueError, TypeError, AttributeError, KeyError, subprocess.SubprocessError) as exc:
@@ -179,8 +207,9 @@ def collect(prompt: str, label: str, args: argparse.Namespace, output: Path) -> 
             shutil.copyfileobj(source, target)
         result["transcript"] = str(destination)
         with SessionStore(output / "index.sqlite") as history:
-            history.register_source(SourceConfig(
-                id=f"{args.harness}-prompts", harness=args.harness, root=output / "sessions"))
+            history.register_source(
+                SourceConfig(id=f"{args.harness}-prompts", harness=args.harness, root=output / "sessions")
+            )
             history.sync()
             with closing(history.iter_sessions(SearchFilters(source_ids=[f"{args.harness}-prompts"]))) as sessions:
                 session = next((s for s in sessions if s.native_id == result["thread_id"]), None)
@@ -188,8 +217,9 @@ def collect(prompt: str, label: str, args: argparse.Namespace, output: Path) -> 
                 events = list(history.iter_events(SearchFilters(session_ids=[session.id])))
                 result["indexed_tool_events"] = sum(e.kind in {"tool_call", "tool_result"} for e in events)
                 result["indexed_activity_events"] = sum(
-                    e.kind in {"tool_call", "tool_result"} or
-                    (e.kind == "message" and e.role == "assistant" and bool(e.text.strip())) for e in events
+                    e.kind in {"tool_call", "tool_result"}
+                    or (e.kind == "message" and e.role == "assistant" and bool(e.text.strip()))
+                    for e in events
                 )
     activity = result["tool_items"] > 0 or result["assistant_messages"] > 0
     reason = interrupted
@@ -206,13 +236,18 @@ def collect(prompt: str, label: str, args: argparse.Namespace, output: Path) -> 
             reason = "no_indexed_activity"
         elif not args.allow_response_only and (not result["tool_items"] or not result["indexed_tool_events"]):
             reason = "no_tool_activity"
-    result.update(status="failed" if reason else "completed", failure_reason=reason,
-                  has_activity=activity, finished_at=datetime.now(UTC).isoformat(),
-                  git_status_after=git(worktree, "status", "--porcelain"))
+    result.update(
+        status="failed" if reason else "completed",
+        failure_reason=reason,
+        has_activity=activity,
+        finished_at=datetime.now(UTC).isoformat(),
+        git_status_after=git(worktree, "status", "--porcelain"),
+    )
     # Include staged and committed tracked edits relative to the pinned baseline.
     # Untracked outputs remain available in the retained worktree itself.
-    patch = subprocess.run(["git", "diff", "--binary", args.base_commit], cwd=worktree,
-                           check=True, capture_output=True).stdout
+    patch = subprocess.run(
+        ["git", "diff", "--binary", args.base_commit], cwd=worktree, check=True, capture_output=True
+    ).stdout
     (run_dir / "changes.patch").write_bytes(patch)
     save(run_dir / "manifest.json", result)
     return result
@@ -272,12 +307,20 @@ def resume_batch(output: Path, args, prompts: list[str]) -> dict:
 
 def main(argv: list[str] | None = None, *, default_harness: str | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--harness", choices=["codex", "pi", "claude", "opencode"],
-                        default=default_harness, required=default_harness is None)
+    parser.add_argument(
+        "--harness",
+        choices=["codex", "pi", "claude", "opencode"],
+        default=default_harness,
+        required=default_harness is None,
+    )
     parser.add_argument("--bin", dest="agent_bin", help="Agent executable path")
     parser.add_argument("--agent-snapshot", type=Path, help="Optional canonical MetaAgent JSON for this producer")
-    parser.add_argument("--agent-arg", action="append", default=[],
-                        help="Extra CLI argument; repeat as --agent-arg=VALUE (for permissions, provider, etc.)")
+    parser.add_argument(
+        "--agent-arg",
+        action="append",
+        default=[],
+        help="Extra CLI argument; repeat as --agent-arg=VALUE (for permissions, provider, etc.)",
+    )
     parser.add_argument("prompts", nargs="+", help="Prompt files or quoted task text, executed sequentially")
     parser.add_argument("-C", "--cwd", type=Path, default=REPO_ROOT / "tests" / "fastapi")
     parser.add_argument("--base", help="Commit for worktrees (default: source HEAD, or original commit on resume)")
@@ -291,19 +334,27 @@ def main(argv: list[str] | None = None, *, default_harness: str | None = None) -
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args(argv)
     args.cwd = args.cwd.expanduser().resolve()
-    args.agent_bin = args.agent_bin or args.codex_bin or shutil.which(args.harness) or (
-        str(Path.home() / ".opencode/bin/opencode") if args.harness == "opencode" else args.harness)
-    default_sessions = (Path(os.environ.get("CLAUDE_CONFIG_DIR", str(Path.home() / ".claude"))) / "projects"
-                        if args.harness == "claude" else
-                        Path(os.environ.get("CODEX_HOME", str(Path.home() / ".codex"))) / "sessions")
+    args.agent_bin = (
+        args.agent_bin
+        or args.codex_bin
+        or shutil.which(args.harness)
+        or (str(Path.home() / ".opencode/bin/opencode") if args.harness == "opencode" else args.harness)
+    )
+    default_sessions = (
+        Path(os.environ.get("CLAUDE_CONFIG_DIR", str(Path.home() / ".claude"))) / "projects"
+        if args.harness == "claude"
+        else Path(os.environ.get("CODEX_HOME", str(Path.home() / ".codex"))) / "sessions"
+    )
     args.sessions_dir = (args.sessions_dir or default_sessions).expanduser().resolve()
     lock = None
     try:
         if args.resume and not args.output:
             raise ValueError("--resume requires --output pointing to an existing batch")
         if args.harness == "opencode" and not args.model:
-            raise ValueError("OpenCode collection requires --model provider/model[#variant]; "
-                             "headless defaults can differ from the interactive model selection")
+            raise ValueError(
+                "OpenCode collection requires --model provider/model[#variant]; "
+                "headless defaults can differ from the interactive model selection"
+            )
         prompts = [extract_prompt(target) for target in args.prompts]
         if not all(prompts):
             raise ValueError("Prompts must not be empty")
@@ -312,30 +363,52 @@ def main(argv: list[str] | None = None, *, default_harness: str | None = None) -
         if Path(git(args.cwd, "rev-parse", "--show-toplevel")).resolve() != args.cwd:
             raise ValueError("--cwd must be a checkout root; initialize tests/fastapi with git submodule update --init")
         args.base_commit = git(
-            args.cwd, "rev-parse", "--verify", "--end-of-options", f"{args.base or 'HEAD'}^{{commit}}")
+            args.cwd, "rev-parse", "--verify", "--end-of-options", f"{args.base or 'HEAD'}^{{commit}}"
+        )
         output = (args.output or REPO_ROOT / "logs" / f"{args.harness}-prompts" / uuid4().hex).expanduser().resolve()
         if output == args.cwd or args.cwd in output.parents:
             raise ValueError("Output must be outside the target checkout")
         if output == args.sessions_dir or args.sessions_dir in output.parents:
             raise ValueError("Output must be outside the live session directory")
-        summary = resume_batch(output, args, prompts) if args.resume else {
-            "requested_prompts": args.prompts, "runs": [], "status": "running",
-            "source_checkout": str(args.cwd), "base_commit": args.base_commit}
+        summary = (
+            resume_batch(output, args, prompts)
+            if args.resume
+            else {
+                "requested_prompts": args.prompts,
+                "runs": [],
+                "status": "running",
+                "source_checkout": str(args.cwd),
+                "base_commit": args.base_commit,
+            }
+        )
         completed = refresh_summary(summary)
         if args.dry_run:
-            print(json.dumps({"harness": args.harness, "cwd": str(args.cwd),
-                              "prompts": args.prompts, "output": str(output),
-                              "base_commit": args.base_commit,
-                              "pending_prompts": [p for i, p in enumerate(summary["requested_prompts"])
-                                                  if p in args.prompts and i not in completed],
-                              "completed_prompts": len(completed),
-                              "mode": "isolated detached worktree per prompt; stop on first failure"}, indent=2))
+            print(
+                json.dumps(
+                    {
+                        "harness": args.harness,
+                        "cwd": str(args.cwd),
+                        "prompts": args.prompts,
+                        "output": str(output),
+                        "base_commit": args.base_commit,
+                        "pending_prompts": [
+                            p
+                            for i, p in enumerate(summary["requested_prompts"])
+                            if p in args.prompts and i not in completed
+                        ],
+                        "completed_prompts": len(completed),
+                        "mode": "isolated detached worktree per prompt; stop on first failure",
+                    },
+                    indent=2,
+                )
+            )
             return 0
         if not shutil.which(args.agent_bin):
             raise ValueError(f"Agent executable not found: {args.agent_bin}")
         if output.exists() and not args.resume:
-            raise ValueError(f"Output already exists: {output}. Use --resume to retry unfinished prompts, "
-                             "or choose a new --output")
+            raise ValueError(
+                f"Output already exists: {output}. Use --resume to retry unfinished prompts, or choose a new --output"
+            )
         output.mkdir(parents=True, exist_ok=args.resume)
         lock = (output / ".collector.lock").open("a")
         try:
@@ -347,8 +420,11 @@ def main(argv: list[str] | None = None, *, default_harness: str | None = None) -
             summary = resume_batch(output, args, prompts)  # Re-read under the lock.
             for run in summary["runs"]:
                 if run["status"] == "running":
-                    run.update(status="interrupted", failure_reason="collector_interrupted",
-                               interruption_recorded_at=datetime.now(UTC).isoformat())
+                    run.update(
+                        status="interrupted",
+                        failure_reason="collector_interrupted",
+                        interruption_recorded_at=datetime.now(UTC).isoformat(),
+                    )
                     save(Path(run["run_dir"]) / "manifest.json", run)
         (output / "sessions").mkdir(exist_ok=args.resume)
         completed = refresh_summary(summary)

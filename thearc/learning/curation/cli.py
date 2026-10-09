@@ -18,12 +18,18 @@ def curation():
 
 
 def _summary(epoch):
-    return {"epoch_id": epoch["epoch_id"], "parent": epoch["parent"], "created_at": epoch["created_at"],
-            "name": epoch["agent"]["name"], "version": epoch["agent"].get("version"),
-            "summary": epoch["summary"], "changes": [
-                {key: change[key] for key in ("id", "target", "operation", "rationale", "reflection_ids")}
-                for change in epoch["changes"]
-            ]}
+    return {
+        "epoch_id": epoch["epoch_id"],
+        "parent": epoch["parent"],
+        "created_at": epoch["created_at"],
+        "name": epoch["agent"]["name"],
+        "version": epoch["agent"].get("version"),
+        "summary": epoch["summary"],
+        "changes": [
+            {key: change[key] for key in ("id", "target", "operation", "rationale", "reflection_ids")}
+            for change in epoch["changes"]
+        ],
+    }
 
 
 @curation.command("run")
@@ -36,22 +42,31 @@ def _summary(epoch):
 @click.option("--runner", help="Custom implementation: trusted package.module:function.")
 @click.option("--result-version")
 @click.option("--timeout", type=click.FloatRange(min=1), default=300)
-def run_command(agent_path, reflections, prompt_file, output, model, implementation, runner,
-                result_version, timeout):
+def run_command(agent_path, reflections, prompt_file, output, model, implementation, runner, result_version, timeout):
     """Curate saved Reflection artifacts and commit a validated epoch. Uses model quota."""
     try:
-        if any(source.resolve() == output.resolve() or
-               (source.is_dir() and source.resolve() in output.resolve().parents)
-               for source in (agent_path, reflections, prompt_file)):
+        if any(
+            source.resolve() == output.resolve() or (source.is_dir() and source.resolve() in output.resolve().parents)
+            for source in (agent_path, reflections, prompt_file)
+        ):
             raise ValueError("Output must be outside input paths")
         paths = sorted(reflections.rglob("reflection.json")) if reflections.is_dir() else [reflections]
         if not paths:
             raise ValueError("No reflection.json artifacts found")
         findings = [Reflection.load(path) for path in paths]
-        curator = Curator(implementation=implementation, model=model, timeout_seconds=timeout,
-                          runner=runner_for(implementation, runner))
-        result = curator.curate(prompt_file.read_text(), findings, agent=load_agent(agent_path),
-                                output=output, result_version=result_version)
+        curator = Curator(
+            implementation=implementation,
+            model=model,
+            timeout_seconds=timeout,
+            runner=runner_for(implementation, runner),
+        )
+        result = curator.curate(
+            prompt_file.read_text(),
+            findings,
+            agent=load_agent(agent_path),
+            output=output,
+            result_version=result_version,
+        )
         from thearc.resources.immutable import thaw
 
         click.echo(json.dumps(_summary(thaw(result.epoch)), indent=2))
@@ -100,8 +115,9 @@ def diff_command(directory, epoch_id, include_ranks, no_version, context_lines):
             raise ValueError("No committed epoch")
         before = MetaAgent.model_validate(epoch["baseline"])
         after = MetaAgent.model_validate(epoch["agent"])
-        diff = before.diff(after, include_ranks=include_ranks,
-                           include_version=not no_version, context_lines=context_lines)
+        diff = before.diff(
+            after, include_ranks=include_ranks, include_version=not no_version, context_lines=context_lines
+        )
         click.echo(diff, nl=False) if diff else click.echo("No differences with selected options.")
     except (ValueError, OSError, KeyError) as exc:
         raise click.ClickException(str(exc)) from exc

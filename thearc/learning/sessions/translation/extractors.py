@@ -119,11 +119,7 @@ class MessageExtractor:
             text = self._content_text(message.get("content"))
             if not text:
                 continue
-            timestamp = (
-                _string_value(record, "timestamp")
-                or _string_value(message, "timestamp")
-                or session.timestamp
-            )
+            timestamp = _string_value(record, "timestamp") or _string_value(message, "timestamp") or session.timestamp
             mapped_role = self._ROLE_MAP.get(role, role)
             messages.append(
                 TextMessage(
@@ -290,6 +286,7 @@ class MessageExtractor:
         ms = info.get("time")
         if isinstance(ms, (int, float)):
             from .models import epoch_ms_to_iso
+
             return epoch_ms_to_iso(int(ms))
         return _string_value(info, "createdAt")
 

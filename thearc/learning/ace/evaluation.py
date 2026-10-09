@@ -37,8 +37,7 @@ class EvaluationResult(BaseModel):
             }
 
         before, after = summarize(self.baseline), summarize(self.candidate)
-        return {"baseline": before, "candidate": after,
-                "delta": {key: after[key] - before[key] for key in before}}
+        return {"baseline": before, "candidate": after, "delta": {key: after[key] - before[key] for key in before}}
 
 
 def compare_agents(

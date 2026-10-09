@@ -17,23 +17,22 @@ a final assistant message is not a submission.
 ```python
 from thearc.resources import ReflectionTools, Reflector, TaggedReflection
 
+
 # One reflection schema. Extend it with domain-specific fields if needed.
 class ReflectionSchema(TaggedReflection):
     pass
+
 
 tools = ReflectionTools(
     agent=agent,
     evidence=trajectory,
     reflection_schema=ReflectionSchema,
 )
-reflector = Reflector(implementation="codex", model="YOUR_MODEL_ID",
-                      artifact_dir="artifacts/reflections")
-reflections = reflector.handoff("Evaluate the agent's contribution to this task.",
-                                trajectory, tools=tools)
+reflector = Reflector(implementation="codex", model="YOUR_MODEL_ID", artifact_dir="artifacts/reflections")
+reflections = reflector.handoff("Evaluate the agent's contribution to this task.", trajectory, tools=tools)
 
 # Accepted tags become evidence-checked assessments for the existing rank ledger.
-candidate = curator.curate("Improve the agent from these findings.",
-                           tools.assessments, agent=agent)
+candidate = curator.curate("Improve the agent from these findings.", tools.assessments, agent=agent)
 ```
 
 `TaggedReflection` has `reasoning` (a concise evidence-based explanation),
@@ -225,7 +224,9 @@ from thearc.resources import Reflector, ResourceAssessmentReport
 reflector = Reflector(implementation="codex", model="YOUR_MODEL_ID", artifact_dir="artifacts/reflections")
 reflection = reflector.reflect(
     "Assess the configuration's contribution. Cite supplied event IDs.\n\n" + trajectory.to_markdown(),
-    agent=agent, output_schema=ResourceAssessmentReport, validate_resources=True,
+    agent=agent,
+    output_schema=ResourceAssessmentReport,
+    validate_resources=True,
 )
 print(reflection.text)
 ```

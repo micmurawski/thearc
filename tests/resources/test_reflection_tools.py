@@ -19,10 +19,16 @@ from thearc.resources.schemas import _validator
 
 def finding(tools, **changes):
     target = ResourceTarget(kind="skill", name="debug", section="Retry")
-    return {"reasoning": "The unchanged retry repeated the error.", "error_identification": "Invalid tool inputs",
-            "root_cause_analysis": "Error feedback was ignored", "correct_approach": "Inspect the error",
-            "key_insight": "Change invalid inputs before retrying", "event_ids": ["e2"],
-            "bullet_tags": [{"id": tools.resources.id_for(target), "tag": "harmful"}], **changes}
+    return {
+        "reasoning": "The unchanged retry repeated the error.",
+        "error_identification": "Invalid tool inputs",
+        "root_cause_analysis": "Error feedback was ignored",
+        "correct_approach": "Inspect the error",
+        "key_insight": "Change invalid inputs before retrying",
+        "event_ids": ["e2"],
+        "bullet_tags": [{"id": tools.resources.id_for(target), "tag": "harmful"}],
+        **changes,
+    }
 
 
 def test_repair_is_atomic_and_repeated_submission_is_idempotent(agent, history, tmp_path):
@@ -55,12 +61,15 @@ def test_repair_is_atomic_and_repeated_submission_is_idempotent(agent, history, 
     assert tools.reflections[0].output.key_insight == "Change invalid inputs before retrying"
 
 
-@pytest.mark.parametrize("changes,code", [
-    ({"event_ids": ["outside"]}, "unknown_event"),
-    ({"event_ids": ["e2", "e2"]}, "invalid_evidence"),
-    ({"bullet_tags": [{"id": "unknown", "tag": "invalid"}]}, "schema"),
-    ({"event_ids": []}, "schema"),
-])
+@pytest.mark.parametrize(
+    "changes,code",
+    [
+        ({"event_ids": ["outside"]}, "unknown_event"),
+        ({"event_ids": ["e2", "e2"]}, "invalid_evidence"),
+        ({"bullet_tags": [{"id": "unknown", "tag": "invalid"}]}, "schema"),
+        ({"event_ids": []}, "schema"),
+    ],
+)
 def test_invalid_evidence_and_tags_are_recoverable(agent, history, changes, code):
     tools = ReflectionTools(agent=agent, evidence=history)
     result = tools.call("submit_reflections", {"reflections": [finding(tools, **changes)]})
@@ -171,7 +180,9 @@ def test_curator_receives_section_ids_and_ranks(agent, history):
         return {"status": "completed", "final_response": '{"summary":"Retain guidance", "changes":[]}'}
 
     result = Curator(implementation="custom", model="fixture", runner=curate).curate(
-        "Improve the agent", tools.assessments, agent=agent,
+        "Improve the agent",
+        tools.assessments,
+        agent=agent,
     )
     assert result.agent.rank_for(ResourceTarget(kind="skill", name="debug", section="Retry")).harmful == 1
 
@@ -217,9 +228,13 @@ def test_tool_reflector_uses_submission_not_final_text(agent, history, tmp_path,
 
 def test_final_text_without_submission_fails(agent, history, monkeypatch):
     tools = ReflectionTools(agent=agent, evidence=history)
-    monkeypatch.setattr("thearc.learning.reflection.providers.codex._run_isolated_sdk", lambda *a, **k: {
-        "status": "completed", "final_response": '{"reflections": []}',
-    })
+    monkeypatch.setattr(
+        "thearc.learning.reflection.providers.codex._run_isolated_sdk",
+        lambda *a, **k: {
+            "status": "completed",
+            "final_response": '{"reflections": []}',
+        },
+    )
     with pytest.raises(ReflectionError, match="No reflection list"):
         Reflector(implementation="codex", model="fixture").reflect("Reflect", tools=tools)
 
@@ -269,10 +284,15 @@ def test_resource_view_uses_model_ids_and_ledger_ranks(agent):
 
 
 def referenced(**changes):
-    return {"reasoning": "Retried without reading the error.", "error_identification": "Blind retry",
-            "root_cause_analysis": "The skill does not say to read errors first", "correct_approach": "Read errors",
-            "key_insight": "Inspect errors before retrying",
-            "resource_refs": [{"ref": "skills/debug/SKILL.md#L1-L3", "tag": "harmful"}], **changes}
+    return {
+        "reasoning": "Retried without reading the error.",
+        "error_identification": "Blind retry",
+        "root_cause_analysis": "The skill does not say to read errors first",
+        "correct_approach": "Read errors",
+        "key_insight": "Inspect errors before retrying",
+        "resource_refs": [{"ref": "skills/debug/SKILL.md#L1-L3", "tag": "harmful"}],
+        **changes,
+    }
 
 
 def test_file_references_rate_sections_without_event_ids(agent, history):
@@ -284,15 +304,21 @@ def test_file_references_rate_sections_without_event_ids(agent, history):
     retry = ResourceTarget(kind="skill", name="debug", section="Retry")
     assert "skills/debug/SKILL.md (3 lines)" in tools.instructions
     assert f"L1-L3 Retry [SectionId: {retry.id}]" in tools.instructions
-    assert tools.call("read_file", {"path": "skills/debug/SKILL.md", "start_line": 1, "end_line": 1})[
-        "content"] == "1 | # Retry"
+    assert (
+        tools.call("read_file", {"path": "skills/debug/SKILL.md", "start_line": 1, "end_line": 1})["content"]
+        == "1 | # Retry"
+    )
     crossing = referenced(resource_refs=[{"ref": "skills/debug/SKILL.md#L9", "tag": "harmful"}])
     rejected = tools.call("submit_reflections", {"reflections": [crossing]})
     assert rejected["errors"][0]["path"] == "reflections[0].resource_refs[0].ref"
     receipt = tools.call("submit_reflections", {"reflections": [referenced()]})
     assert receipt["ranked"][0] | {"reflection_id": None} == {
-        "reflection_id": None, "ref": "skills/debug/SKILL.md#L1-L3", "tag": "harmful",
-        "section_id": retry.id, "section": "Retry"}
+        "reflection_id": None,
+        "ref": "skills/debug/SKILL.md#L1-L3",
+        "tag": "harmful",
+        "section_id": retry.id,
+        "section": "Retry",
+    }
     item = tools.assessments[0].items[0]
     assert item.target == ResourceTarget(kind="skill", name="debug", section="Retry")
     assert item.reference == "skills/debug/SKILL.md#L1-L3"

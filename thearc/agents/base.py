@@ -12,6 +12,7 @@ from thearc.models.strategies import get_strategy
 
 logger = logging.getLogger("thearc")
 
+
 def merge_markdown_documents(existing_text: str, new_text: str) -> str:
     """
     Merge new markdown content into existing markdown content when replace=False.
@@ -81,7 +82,7 @@ class BaseAgentInstaller(ABC):
         source_dir: Path,
         target_scope: str = "project",
         project_dir: Path = Path("."),
-        force: bool = False
+        force: bool = False,
     ) -> list[Path]:
         """Install a skill (directory or SKILL.md file) into the target agent location."""
         paths = self.get_local_paths(project_dir) if target_scope == "project" else self.get_global_paths()
@@ -134,7 +135,7 @@ class BaseAgentInstaller(ABC):
         source_file: Path,
         target_scope: str = "project",
         project_dir: Path = Path("."),
-        force: bool = False
+        force: bool = False,
     ) -> Path:
         """Install a slash command prompt definition into the target agent location."""
         paths = self.get_local_paths(project_dir) if target_scope == "project" else self.get_global_paths()
@@ -154,10 +155,7 @@ class BaseAgentInstaller(ABC):
         return dest_file
 
     def ensure_config_file(
-        self,
-        target_scope: str = "project",
-        project_dir: Path = Path("."),
-        force: bool = False
+        self, target_scope: str = "project", project_dir: Path = Path("."), force: bool = False
     ) -> Path:
         """Create default .thearc.toml configuration file in the agent target base directory."""
         paths = self.get_local_paths(project_dir) if target_scope == "project" else self.get_global_paths()
@@ -168,23 +166,19 @@ class BaseAgentInstaller(ABC):
         if not config_file.exists() or force:
             content = (
                 f"# thearc configuration file for {self.name} agent\n"
-                f"version = \"0.1.0\"\n\n"
+                f'version = "0.1.0"\n\n'
                 f"[agent]\n"
-                f"name = \"{self.name}\"\n\n"
+                f'name = "{self.name}"\n\n'
                 f"[cli]\n"
-                f"default_scope = \"{target_scope}\"\n"
-                f"default_agent = \"{self.name}\"\n"
+                f'default_scope = "{target_scope}"\n'
+                f'default_agent = "{self.name}"\n'
             )
             config_file.write_text(content, encoding="utf-8")
 
         return config_file
 
     def install_skill_object(
-        self,
-        skill: Any,
-        target_scope: str = "project",
-        project_dir: Path = Path("."),
-        force: bool = False
+        self, skill: Any, target_scope: str = "project", project_dir: Path = Path("."), force: bool = False
     ) -> list[Path]:
         """
         Install a Skill model object into the target agent location.
@@ -235,11 +229,7 @@ class BaseAgentInstaller(ABC):
         return installed_files
 
     def install_hooks(
-        self,
-        hooks: Any,
-        target_scope: str = "project",
-        project_dir: Path = Path("."),
-        force: bool = False
+        self, hooks: Any, target_scope: str = "project", project_dir: Path = Path("."), force: bool = False
     ) -> list[Path]:
         """
         Install hooks into the target agent location.
@@ -254,6 +244,7 @@ class BaseAgentInstaller(ABC):
         hooks_json_file = paths["base"] / "hooks.json"
 
         import json
+
         if self.name == "codex":
             existing_hooks = {"hooks": {}}
             if not force and hooks_json_file.exists():
@@ -310,11 +301,7 @@ class BaseAgentInstaller(ABC):
         return installed_files
 
     def install_mcps(
-        self,
-        mcps: Any,
-        target_scope: str = "project",
-        project_dir: Path = Path("."),
-        force: bool = False
+        self, mcps: Any, target_scope: str = "project", project_dir: Path = Path("."), force: bool = False
     ) -> list[Path]:
         """
         Install MCP server configurations into the target agent location.
@@ -328,6 +315,7 @@ class BaseAgentInstaller(ABC):
         mcp_file.parent.mkdir(parents=True, exist_ok=True)
 
         import json
+
         existing_data = {"mcpServers": {}}
         if mcp_file.exists():
             try:
@@ -347,11 +335,7 @@ class BaseAgentInstaller(ABC):
         return [mcp_file]
 
     def install_context_doc(
-        self,
-        doc: Any,
-        target_scope: str = "project",
-        project_dir: Path = Path("."),
-        force: bool = False
+        self, doc: Any, target_scope: str = "project", project_dir: Path = Path("."), force: bool = False
     ) -> list[Path]:
         """
         Install context document (AGENTS.md, CLAUDE.md, etc.) into project or agent directory.

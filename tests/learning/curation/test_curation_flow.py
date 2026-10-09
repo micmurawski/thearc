@@ -12,29 +12,50 @@ from thearc.models import Ranks
 
 @pytest.fixture
 def agent():
-    return MetaAgent(name="graphify", version="1.0.0", skills=[
-        Skill(name="graphify", instructions="# Query\n\nQuery the graph.",
-              files={"references/query.md": "# Query\n\nBroad query.",
-                     ".graphify_version": "0.9.68"}, ranks=Ranks(helpful=2)),
-    ])
+    return MetaAgent(
+        name="graphify",
+        version="1.0.0",
+        skills=[
+            Skill(
+                name="graphify",
+                instructions="# Query\n\nQuery the graph.",
+                files={"references/query.md": "# Query\n\nBroad query.", ".graphify_version": "0.9.68"},
+                ranks=Ranks(helpful=2),
+            ),
+        ],
+    )
 
 
 def reflection(agent, identity="reflection", event="event"):
-    return AssessmentReport(id=identity, session_ids=["session"], items=[
-        ReflectionItem(target=ResourceTarget(kind="skill_file", name="graphify/references/query.md"),
-                       rating="harmful", reason="Broad queries wasted time", limitations=[],
-                       evidence=[{"session_id": "session", "event_id": event}]),
-    ], raw={"manifest": {"config_sha256": content_hash(agent.without_ranks().model_dump(mode="json"))}})
+    return AssessmentReport(
+        id=identity,
+        session_ids=["session"],
+        items=[
+            ReflectionItem(
+                target=ResourceTarget(kind="skill_file", name="graphify/references/query.md"),
+                rating="harmful",
+                reason="Broad queries wasted time",
+                limitations=[],
+                evidence=[{"session_id": "session", "event_id": event}],
+            ),
+        ],
+        raw={"manifest": {"config_sha256": content_hash(agent.without_ranks().model_dump(mode="json"))}},
+    )
 
 
 def edit(tools, *, target=None, value="# Query\n\nUse a focused query.", ids=None):
-    return tools.call("arc_change", {
-        "target_json": (target or ResourceTarget(kind="skill_file",
-                                                name="graphify/references/query.md")).model_dump_json(),
-        "operation": "EDIT", "value_json": json.dumps(value),
-        "reason": "Narrow queries to avoid the observed broad scan.",
-        "reflection_ids": ids or ["reflection"],
-    })
+    return tools.call(
+        "arc_change",
+        {
+            "target_json": (
+                target or ResourceTarget(kind="skill_file", name="graphify/references/query.md")
+            ).model_dump_json(),
+            "operation": "EDIT",
+            "value_json": json.dumps(value),
+            "reason": "Narrow queries to avoid the observed broad scan.",
+            "reflection_ids": ids or ["reflection"],
+        },
+    )
 
 
 def runner(prompt, schema, tools):
@@ -56,8 +77,9 @@ def no_change(prompt, schema, tools):
 
 def test_edit_import_commit_and_revision_history(agent, tmp_path):
     before = agent.model_dump()
-    epoch = run_curation(agent, [reflection(agent)], AgentCurator(runner), output=tmp_path,
-                         epoch_id="first", result_version="1.0.1")
+    epoch = run_curation(
+        agent, [reflection(agent)], AgentCurator(runner), output=tmp_path, epoch_id="first", result_version="1.0.1"
+    )
     assert agent.model_dump() == before
     assert load_epoch(tmp_path) == epoch
     assert len(epoch["changes"]) == 1
@@ -87,8 +109,9 @@ def test_failed_edit_never_publishes_head(agent, tmp_path, failure):
         elif failure == "ranks":
             edit(tools, value="---\nranks: {helpful: 999}\n---\n# Query")
         elif failure == "script":
-            edit(tools, target=ResourceTarget(kind="skill", name="graphify"),
-                 value={"files": {"script.py": "malicious"}})
+            edit(
+                tools, target=ResourceTarget(kind="skill", name="graphify"), value={"files": {"script.py": "malicious"}}
+            )
         elif failure == "out_of_scope":
             tools.call("shell", {"command": "touch outside"})
         elif failure == "tamper":
@@ -97,6 +120,7 @@ def test_failed_edit_never_publishes_head(agent, tmp_path, failure):
             edit(tools)
             return {"status": "failed"}
         return {"status": "completed", "final_response": '{"summary":"Changes"}'}
+
     with pytest.raises(ValueError):
         run_curation(agent, [reflection(agent)], AgentCurator(bad), output=tmp_path, epoch_id="bad")
     assert load_epoch(tmp_path) is None
@@ -106,8 +130,9 @@ def test_failed_edit_never_publishes_head(agent, tmp_path, failure):
 def test_stale_baseline_rejected_before_model_call(agent, tmp_path):
     run_curation(agent, [reflection(agent)], AgentCurator(runner), output=tmp_path, epoch_id="first")
     with pytest.raises(ValueError, match="differs from HEAD"):
-        run_curation(agent, [], AgentCurator(lambda *a: pytest.fail("must not invoke")),
-                     output=tmp_path, epoch_id="stale")
+        run_curation(
+            agent, [], AgentCurator(lambda *a: pytest.fail("must not invoke")), output=tmp_path, epoch_id="stale"
+        )
 
 
 def test_atomic_head_failure_leaves_previous_epoch(agent, tmp_path, monkeypatch):
@@ -117,8 +142,18 @@ def test_atomic_head_failure_leaves_previous_epoch(agent, tmp_path, monkeypatch)
     candidate = MetaAgent.model_validate(original["agent"])
     monkeypatch.setattr(epochs.os, "replace", lambda *a: (_ for _ in ()).throw(OSError("injected failure")))
     with pytest.raises(OSError):
-        commit_epoch(tmp_path, epoch_id="orphan", expected_head="first", baseline=candidate, agent=candidate,
-                     ledger=original["ledger"], reflections=[], changes=[], actor={}, summary="No change")
+        commit_epoch(
+            tmp_path,
+            epoch_id="orphan",
+            expected_head="first",
+            baseline=candidate,
+            agent=candidate,
+            ledger=original["ledger"],
+            reflections=[],
+            changes=[],
+            actor={},
+            summary="No change",
+        )
     assert load_epoch(tmp_path) == original
     assert len(epoch_history(tmp_path)) == 1
     assert not (tmp_path / ".commit-lock").exists()
@@ -130,8 +165,18 @@ def test_lock_and_hash_validation(agent, tmp_path):
     candidate = MetaAgent.model_validate(current["agent"])
     (tmp_path / ".commit-lock").mkdir()
     with pytest.raises(ValueError, match="writer"):
-        commit_epoch(tmp_path, epoch_id="second", expected_head="first", baseline=candidate, agent=candidate,
-                     ledger=current["ledger"], reflections=[], changes=[], actor={}, summary="No change")
+        commit_epoch(
+            tmp_path,
+            epoch_id="second",
+            expected_head="first",
+            baseline=candidate,
+            agent=candidate,
+            ledger=current["ledger"],
+            reflections=[],
+            changes=[],
+            actor={},
+            summary="No change",
+        )
     path = tmp_path / "epochs/first.json"
     data = json.loads(path.read_text())
     data["epoch"]["agent"]["version"] = "tampered"
@@ -142,9 +187,11 @@ def test_lock_and_hash_validation(agent, tmp_path):
 
 def test_tools_closed_after_runner_finishes(agent, tmp_path):
     captured = []
+
     def capture(prompt, schema, tools):
         captured.append(tools)
         return no_change(prompt, schema, tools)
+
     run_curation(agent, [], AgentCurator(capture), output=tmp_path, epoch_id="noop")
     with pytest.raises(ValueError, match="closed"):
         captured[0].call("arc_list", {})
@@ -152,9 +199,18 @@ def test_tools_closed_after_runner_finishes(agent, tmp_path):
 
 def test_no_tools_is_failure_not_successful_noop(agent, tmp_path):
     with pytest.raises(ValueError, match="must successfully inspect"):
-        run_curation(agent, [], AgentCurator(lambda *a: {
-            "status": "completed", "final_response": '{"summary":"Tools unavailable, no change."}',
-        }), output=tmp_path, epoch_id="unavailable")
+        run_curation(
+            agent,
+            [],
+            AgentCurator(
+                lambda *a: {
+                    "status": "completed",
+                    "final_response": '{"summary":"Tools unavailable, no change."}',
+                }
+            ),
+            output=tmp_path,
+            epoch_id="unavailable",
+        )
     assert load_epoch(tmp_path) is None
 
 

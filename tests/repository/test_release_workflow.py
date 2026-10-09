@@ -1,6 +1,5 @@
 """Release publishing is isolated from builds and only happens for explicit releases."""
 
-
 import yaml
 
 from tests.paths import REPOSITORY_ROOT

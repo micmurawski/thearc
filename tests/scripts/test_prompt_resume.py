@@ -33,8 +33,17 @@ def test_resume_keeps_completed_and_retries_orphan_at_original_commit(setup):
     first_bytes = first_manifest.read_bytes()
     last_events = Path(last["run_dir"]) / "events.jsonl"
     last_bytes = last_events.read_bytes()
-    collector.git(repo, "-c", "user.name=Test", "-c", "user.email=test@example.com",
-                  "commit", "--allow-empty", "-m", "new HEAD after interruption")
+    collector.git(
+        repo,
+        "-c",
+        "user.name=Test",
+        "-c",
+        "user.email=test@example.com",
+        "commit",
+        "--allow-empty",
+        "-m",
+        "new HEAD after interruption",
+    )
 
     assert collector.main([*args, "--resume", "Second"]) == 0
     summary = json.loads((output / "summary.json").read_text())

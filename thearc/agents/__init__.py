@@ -14,12 +14,14 @@ _INSTALLER_REGISTRY: dict[str, type[BaseAgentInstaller]] = {
     "pi": PiInstaller,
 }
 
+
 def get_installer(agent_name: str) -> BaseAgentInstaller:
     """Retrieve an agent installer instance by name."""
     norm_name = normalize_agent_name(agent_name)
     if norm_name not in _INSTALLER_REGISTRY:
         raise ValueError(f"Unsupported agent '{agent_name}'. Supported agents: {', '.join(SUPPORTED_AGENTS)}")
     return _INSTALLER_REGISTRY[norm_name]()
+
 
 def get_all_installers() -> list[BaseAgentInstaller]:
     """Retrieve all supported agent installer instances."""

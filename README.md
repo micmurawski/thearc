@@ -27,8 +27,9 @@ trajectory = session.split_into_trajectories()[0]
 reflector = Reflector(implementation="codex", model="YOUR_MODEL_ID")
 reflection = reflector.handoff("Reflect on the task and suggest improvements.", trajectory, agent=agent)
 curator = Curator(implementation="codex", model="YOUR_MODEL_ID")
-result = curator.curate("Improve the guidance using these findings.", [reflection], agent=agent,
-                        output="artifacts/curation")
+result = curator.curate(
+    "Improve the guidance using these findings.", [reflection], agent=agent, output="artifacts/curation"
+)
 adapted = result.agent
 print(agent.diff(adapted))
 ```

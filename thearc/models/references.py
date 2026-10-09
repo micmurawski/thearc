@@ -78,8 +78,9 @@ class AgentFiles:
         for name, document in sorted(agent.context.items()):
             add_document(f"context/{name}", ResourceTarget(kind="context", name=name), document.content)
         for item in sorted(agent.resources.values(), key=lambda r: (r.location, r.path)):
-            add_document(f"{item.location}/{item.path}",
-                         ResourceTarget(kind=item.location[:-1], name=item.path), item.content)
+            add_document(
+                f"{item.location}/{item.path}", ResourceTarget(kind=item.location[:-1], name=item.path), item.content
+            )
         for path, kind, entries in (
             ("hooks.json", "hook", {name: hook.to_dict(include_ranks=False) for name, hook in agent.hooks.items()}),
             ("mcp.json", "mcp", {name: server.to_dict() for name, server in agent.mcps.items()}),
@@ -87,8 +88,10 @@ class AgentFiles:
             if entries:
                 text, entry_spans = _json_entries(entries)
                 files[path] = text
-                spans += [FileSpan(path, start, end, ResourceTarget(kind=kind, name=name), 0)
-                          for name, (start, end) in entry_spans.items()]
+                spans += [
+                    FileSpan(path, start, end, ResourceTarget(kind=kind, name=name), 0)
+                    for name, (start, end) in entry_spans.items()
+                ]
         return cls(files, tuple(spans))
 
     def line_count(self, path: str) -> int:
@@ -130,13 +133,21 @@ class AgentFiles:
         if end < start or end > total:
             raise ValueError(f"{reference}: {path} has {total} lines; use a range within L1-L{total}")
         spans = self.outline(path)
-        partial = [s for s in spans if s.start <= end and start <= s.end
-                   and not (s.start <= start and end <= s.end) and not (start <= s.start and s.end <= end)]
+        partial = [
+            s
+            for s in spans
+            if s.start <= end
+            and start <= s.end
+            and not (s.start <= start and end <= s.end)
+            and not (start <= s.start and s.end <= end)
+        ]
         if partial:
             span = partial[0]
             name = span.target.section or span.target.name
-            raise ValueError(f"{reference} crosses the boundary of {name!r} ({span.reference}); "
-                             "cite lines within one section or the whole enclosing section")
+            raise ValueError(
+                f"{reference} crosses the boundary of {name!r} ({span.reference}); "
+                "cite lines within one section or the whole enclosing section"
+            )
         containing = [s for s in spans if s.start <= start and end <= s.end]
         if not containing:
             raise ValueError(f"{reference} is not inside one resource; cite lines of a single entry")

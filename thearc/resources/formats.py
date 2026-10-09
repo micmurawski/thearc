@@ -54,18 +54,17 @@ def _content_record(event):
 
 def _has_media(value):
     if isinstance(value, dict):
-        return (isinstance(value.get("type"), str) and
-                value["type"] in {"image", "image_url", "input_image", "audio", "input_audio"}) or any(
-            _has_media(child) for child in value.values()
-        )
+        return (
+            isinstance(value.get("type"), str)
+            and value["type"] in {"image", "image_url", "input_image", "audio", "input_audio"}
+        ) or any(_has_media(child) for child in value.values())
     return isinstance(value, list) and any(_has_media(child) for child in value)
 
 
 def evidence_to_markdown(events_or_json) -> str:
     """Render canonical events/JSON in supplied order; never select or truncate."""
     events = records(events_or_json)
-    calls = {(e["run_id"], e["call_id"]): e["id"] for e in events
-             if e["kind"] == "tool_call" and e["call_id"]}
+    calls = {(e["run_id"], e["call_id"]): e["id"] for e in events if e["kind"] == "tool_call" and e["call_id"]}
     parts = []
     omitted = 0
     for event in events:
@@ -79,8 +78,11 @@ def evidence_to_markdown(events_or_json) -> str:
         parts.append(f"### Event {title} — {label}" + (": " + ", ".join(details) if details else ""))
         if event["kind"] == "tool_result" and event["call_id"]:
             ref = calls.get((event["run_id"], event["call_id"]))
-            parts.append("Responds to: " + json.dumps(ref or event["call_id"]) +
-                         (" (call outside selection)" if ref is None else ""))
+            parts.append(
+                "Responds to: "
+                + json.dumps(ref or event["call_id"])
+                + (" (call outside selection)" if ref is None else "")
+            )
         if event["arguments"] is not None:
             parts.append(fenced(json.dumps(event["arguments"], ensure_ascii=False, indent=2), "json"))
         if event["text"] and not _mirrors_arguments(event):
@@ -96,8 +98,9 @@ def evidence_to_markdown(events_or_json) -> str:
                 raise UnsupportedConversion(f"No isolated content block for Markdown rendering: {event['id']}")
             parts.append(fenced(json.dumps(content, ensure_ascii=False, indent=2), "json"))
     if omitted:
-        parts.append(f"_{omitted} metadata record(s) without readable content omitted; "
-                     "they remain in the canonical history._")
+        parts.append(
+            f"_{omitted} metadata record(s) without readable content omitted; they remain in the canonical history._"
+        )
     return "\n\n".join(parts) + ("\n" if parts else "")
 
 
@@ -113,8 +116,11 @@ def _reasoning_blocks(event):
     payload = event["raw"].get("payload", {})
     if event["kind"] != "metadata" or not isinstance(payload, dict) or payload.get("type") != "reasoning":
         return []
-    return [block["text"] for block in [*(payload.get("summary") or []), *(payload.get("content") or [])]
-            if isinstance(block, dict) and isinstance(block.get("text"), str)]
+    return [
+        block["text"]
+        for block in [*(payload.get("summary") or []), *(payload.get("content") or [])]
+        if isinstance(block, dict) and isinstance(block.get("text"), str)
+    ]
 
 
 def _event_item(event):
@@ -122,19 +128,25 @@ def _event_item(event):
     kind = event["kind"]
     raw = event["raw"]
     if _native_codex_item(event):
-        return {key: value for key, value in raw["payload"].items()
-                if key not in {"id", "internal_chat_message_metadata_passthrough"}}
+        return {
+            key: value
+            for key, value in raw["payload"].items()
+            if key not in {"id", "internal_chat_message_metadata_passthrough"}
+        }
     if kind == "message" and event["role"] in {"user", "assistant", "system", "developer"}:
         # Native multimodal blocks require their own conversion, not text extraction.
         if _has_media(_content_record(event)):
             raise UnsupportedConversion(f"Multimodal conversion is unsupported: {event['id']}")
         content_type = "output_text" if event["role"] == "assistant" else "input_text"
-        return {"type": "message", "role": event["role"],
-                "content": [{"type": content_type, "text": event["text"]}]}
+        return {"type": "message", "role": event["role"], "content": [{"type": content_type, "text": event["text"]}]}
     if kind == "tool_call" and event["call_id"] and event["tool_name"]:
         args = event["arguments"]
-        return {"type": "function_call", "call_id": event["call_id"], "name": event["tool_name"],
-                "arguments": args if isinstance(args, str) else json.dumps(args, ensure_ascii=False)}
+        return {
+            "type": "function_call",
+            "call_id": event["call_id"],
+            "name": event["tool_name"],
+            "arguments": args if isinstance(args, str) else json.dumps(args, ensure_ascii=False),
+        }
     if kind == "tool_result" and event["call_id"]:
         output = event["text"]
         if event["status"] is not None:
@@ -144,17 +156,25 @@ def _event_item(event):
         # Foreign thinking is readable evidence, not a signed native Responses
         # reasoning item. Synthetic reasoning IDs cannot be resolved on later turns.
         text = event["text"] or "[No readable thinking text was recorded.]"
-        return {"type": "message", "role": "assistant", "content": [
-            {"type": "output_text", "text": "[Historical thinking record]\n" + text},
-        ]}
+        return {
+            "type": "message",
+            "role": "assistant",
+            "content": [
+                {"type": "output_text", "text": "[Historical thinking record]\n" + text},
+            ],
+        }
     raise UnsupportedConversion(f"Cannot translate {kind!r} event {event['id']}; use canonical JSONL")
 
 
 def _native_codex_item(event):
     raw = event["raw"]
     payload = raw.get("payload")
-    return (event["harness"] == "codex" and raw.get("type") == "response_item" and isinstance(payload, dict)
-            and payload.get("type") in {"reasoning", "custom_tool_call", "custom_tool_call_output"})
+    return (
+        event["harness"] == "codex"
+        and raw.get("type") == "response_item"
+        and isinstance(payload, dict)
+        and payload.get("type") in {"reasoning", "custom_tool_call", "custom_tool_call_output"}
+    )
 
 
 def provenance_only(event):
@@ -174,11 +194,24 @@ def native_control(event):
     if raw.get("type") in {"session_meta", "turn_context", "world_state", "token_usage_record"}:
         return True
     payload = raw.get("payload")
-    return raw.get("type") == "event_msg" and isinstance(payload, dict) and payload.get("type") in {
-        "task_started", "task_complete", "task_completed", "turn_aborted", "token_count",
-        "item_started", "item_completed", "user_message", "agent_message", "agent_reasoning",
-        "thread_settings_applied",
-    }
+    return (
+        raw.get("type") == "event_msg"
+        and isinstance(payload, dict)
+        and payload.get("type")
+        in {
+            "task_started",
+            "task_complete",
+            "task_completed",
+            "turn_aborted",
+            "token_count",
+            "item_started",
+            "item_completed",
+            "user_message",
+            "agent_message",
+            "agent_reasoning",
+            "thread_settings_applied",
+        }
+    )
 
 
 def codex_items(events):
@@ -220,8 +253,10 @@ def export_events(events, format="thearc"):
         kept = [e for e in events if not provenance_only(e) or (format == "codex" and native_control(e))]
         if len(kept) < len(events):
             omitted = len(events) - len(kept)
-            note = (f"{omitted} metadata record(s) without a {format} representation omitted; "
-                    "they remain in the canonical history.")
+            note = (
+                f"{omitted} metadata record(s) without a {format} representation omitted; "
+                "they remain in the canonical history."
+            )
             transformations += (note,)
         events = kept
     ids = tuple(e["id"] for e in events)
@@ -229,11 +264,17 @@ def export_events(events, format="thearc"):
         output = events
     elif format == "codex":
         items = iter(codex_items(events))
-        output = [e["raw"] if native_control(e) else
-                  {"type": "response_item", "timestamp": e["timestamp"], "payload": next(items)} for e in events]
-        transformations += ("Events mapped to Responses items; source identities retained by export event_ids.",
-                            "Tool results with a status use a JSON object containing status and original text.",
-                            "Foreign thinking records become labeled assistant text, not native reasoning items.")
+        output = [
+            e["raw"]
+            if native_control(e)
+            else {"type": "response_item", "timestamp": e["timestamp"], "payload": next(items)}
+            for e in events
+        ]
+        transformations += (
+            "Events mapped to Responses items; source identities retained by export event_ids.",
+            "Tool results with a status use a JSON object containing status and original text.",
+            "Foreign thinking records become labeled assistant text, not native reasoning items.",
+        )
     elif format == "claude":
         output = []
         previous = None
@@ -255,14 +296,27 @@ def export_events(events, format="thearc"):
                 content = [{"type": "tool_use", "id": item["call_id"], "name": item["name"], "input": args}]
             elif kind == "function_call_output":
                 role = "user"
-                content = [{"type": "tool_result", "tool_use_id": item["call_id"],
-                            "content": event["text"], "is_error": event["status"] in {"failure", "error"}}]
+                content = [
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": item["call_id"],
+                        "content": event["text"],
+                        "is_error": event["status"] in {"failure", "error"},
+                    }
+                ]
             else:
                 raise UnsupportedConversion("Claude reasoning import requires native signed content")
             identifier = str(uuid5(NAMESPACE_URL, event["id"]))
-            output.append({"type": role, "uuid": identifier, "parentUuid": previous,
-                           "sessionId": event["session_id"], "timestamp": event["timestamp"],
-                           "message": {"role": role, "content": content}})
+            output.append(
+                {
+                    "type": role,
+                    "uuid": identifier,
+                    "parentUuid": previous,
+                    "sessionId": event["session_id"],
+                    "timestamp": event["timestamp"],
+                    "message": {"role": role, "content": content},
+                }
+            )
             previous = identifier
         transformations += ("Normalized events mapped to Claude content blocks; native message IDs regenerated.",)
     else:

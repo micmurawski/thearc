@@ -23,11 +23,18 @@ class ToolRetryAfterFailure(BehavioralPattern):
                 if failed is not None:
                     start, call = failed
                     if call.tool_name == event.tool_name and index - start + 1 <= self.max_span:
-                        matches.append(PatternMatch(
-                            pattern_name=self.name, description=self.description, session_id=event.session_id,
-                            start_index=start, end_index=index, events=tuple(events[start:index + 1]),
-                            context={"tool": call.tool_name, "max_span": self.max_span}, severity="info",
-                        ))
+                        matches.append(
+                            PatternMatch(
+                                pattern_name=self.name,
+                                description=self.description,
+                                session_id=event.session_id,
+                                start_index=start,
+                                end_index=index,
+                                events=tuple(events[start : index + 1]),
+                                context={"tool": call.tool_name, "max_span": self.max_span},
+                                severity="info",
+                            )
+                        )
                 failed = None  # Only the next tool call can complete this sequence.
                 if event.call_id and event.tool_name:
                     calls[event.call_id] = (index, event)

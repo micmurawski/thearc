@@ -69,10 +69,12 @@ with Sessions.open() as sessions:
     agent = sessions.agent(session)
 history = session.trajectories[0]
 
-tools = ReflectionTools(agent=agent, evidence=history, reflection_schema=ReflectionSchema,
-                        output=output / "submission.json")
-reflector = Reflector(implementation="codex", model=model, tool_transport="mcp",
-                      artifact_dir=output / "reflection-runs")
+tools = ReflectionTools(
+    agent=agent, evidence=history, reflection_schema=ReflectionSchema, output=output / "submission.json"
+)
+reflector = Reflector(
+    implementation="codex", model=model, tool_transport="mcp", artifact_dir=output / "reflection-runs"
+)
 reflections = reflector.handoff(PROMPT, history, tools=tools)
 ```
 

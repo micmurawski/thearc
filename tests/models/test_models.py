@@ -33,6 +33,7 @@ Always write unit tests for new features.
 Instructions for deployment to staging and production.
 """
 
+
 def test_markdown_document_parsing():
     doc = MarkdownDocument.parse(SAMPLE_MARKDOWN)
     assert doc.frontmatter["name"] == "sample_doc"
@@ -60,7 +61,7 @@ def test_markdown_document_parsing():
 
 def test_markdown_document_add_and_remove(tmp_path):
     doc = MarkdownDocument.parse(SAMPLE_MARKDOWN)
-    
+
     # Add new section
     doc.add_section("New Custom Section", content="Custom content text.", level=1)
     new_sec = doc.get_header("New Custom Section")
@@ -70,7 +71,7 @@ def test_markdown_document_add_and_remove(tmp_path):
     # Write to disk & re-read
     file_path = tmp_path / "AGENTS.md"
     doc.write(file_path)
-    
+
     reloaded_doc = MarkdownDocument.read(file_path)
     assert reloaded_doc.get_header("New Custom Section") is not None
 
@@ -87,7 +88,7 @@ def test_pydantic_skill_models():
     assert "description: Testing skill model" in yaml_out
 
     skill = SkillDefinition(metadata=meta, instructions="Execute test script.")
-    
+
     # Test Antigravity Strategy
     ag_strat = get_strategy("antigravity")
     ag_md = ag_strat.skill_to_markdown(skill)

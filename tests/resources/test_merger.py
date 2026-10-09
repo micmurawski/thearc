@@ -341,47 +341,60 @@ def test_selected_changes_do_not_cite_rejected_branch(base):
     branches = conflicted(base)
     conflict = Merger().merge(base=base, candidates=branches).conflicts[0]
     proposal = conflict.proposals[0]
-    accepted = next(b for b in branches if b.epoch['epoch_id'] == proposal['candidate_id'])
+    accepted = next(b for b in branches if b.epoch["epoch_id"] == proposal["candidate_id"])
     result = Merger().merge(base=base, candidates=branches, resolutions=report(conflict))
-    expected = {r['id'] for r in accepted.epoch['reflections']}
+    expected = {r["id"] for r in accepted.epoch["reflections"]}
     assert set(result.changes[0].reflection_ids) == expected
-    assert all(identity.startswith(proposal['candidate_id'] + ':')
-               for identity in result.changes[0].raw['source_change_ids'])
+    assert all(
+        identity.startswith(proposal["candidate_id"] + ":") for identity in result.changes[0].raw["source_change_ids"]
+    )
 
 
 def test_unresolved_artifact_loads_but_exposes_no_agent(base, tmp_path):
     from thearc.resources import MergeResult
-    Merger().merge(base=base, candidates=conflicted(base), output=tmp_path / 'merge')
-    loaded = MergeResult.load(tmp_path / 'merge')
+
+    Merger().merge(base=base, candidates=conflicted(base), output=tmp_path / "merge")
+    loaded = MergeResult.load(tmp_path / "merge")
     assert loaded.unresolved
-    with pytest.raises(ValueError, match='unresolved'):
+    with pytest.raises(ValueError, match="unresolved"):
         _ = loaded.agent
 
 
 def test_combination_cannot_edit_executable_files(base):
     branches = conflicted(base)
     conflict = Merger().merge(base=base, candidates=branches).conflicts[0]
-    change = {'id': 'bad', 'target': {'kind': 'skill', 'name': 'debug'}, 'operation': 'EDIT',
-              'value': {'description': 'Synthesis', 'files': {'run.py': 'modified'}},
-              'reflection_ids': [branches[0].epoch['reflections'][0]['id']], 'rationale': 'Unallowed'}
-    with pytest.raises(ValueError, match='read-only'):
-        Merger().merge(base=base, candidates=branches,
-                       resolutions=report(conflict, 'combine', selected=[], changes=[change]))
+    change = {
+        "id": "bad",
+        "target": {"kind": "skill", "name": "debug"},
+        "operation": "EDIT",
+        "value": {"description": "Synthesis", "files": {"run.py": "modified"}},
+        "reflection_ids": [branches[0].epoch["reflections"][0]["id"]],
+        "rationale": "Unallowed",
+    }
+    with pytest.raises(ValueError, match="read-only"):
+        Merger().merge(
+            base=base, candidates=branches, resolutions=report(conflict, "combine", selected=[], changes=[change])
+        )
 
 
-@pytest.mark.parametrize('tamper', ['provenance', 'ranks'])
+@pytest.mark.parametrize("tamper", ["provenance", "ranks"])
 def test_candidate_audit_cannot_disagree_with_content(base, tamper):
     from thearc.models import Ranks
     from thearc.resources.immutable import Record
-    candidate = edit(base, {'description': 'New'})
+
+    candidate = edit(base, {"description": "New"})
     epoch = thaw(candidate.epoch)
     agent = candidate.agent
-    if tamper == 'provenance':
-        epoch['changes'][0]['before']['description'] = 'Invented baseline'
+    if tamper == "provenance":
+        epoch["changes"][0]["before"]["description"] = "Invented baseline"
     else:
-        agent.skills['debug'].ranks = Ranks(helpful=99)
-        epoch['agent'] = agent.model_dump(mode='json')
-    candidate = replace(candidate, _agent_json=agent.model_dump_json(), epoch=freeze(epoch),
-                        changes=tuple(Record(c) for c in epoch['changes']))
+        agent.skills["debug"].ranks = Ranks(helpful=99)
+        epoch["agent"] = agent.model_dump(mode="json")
+    candidate = replace(
+        candidate,
+        _agent_json=agent.model_dump_json(),
+        epoch=freeze(epoch),
+        changes=tuple(Record(c) for c in epoch["changes"]),
+    )
     with pytest.raises(ValueError):
         Merger().merge(base=base, candidates=[candidate])

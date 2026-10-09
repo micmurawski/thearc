@@ -44,28 +44,45 @@ def _sdk_config(config: AntigravityRuntimeConfig, schema: dict, workspace: Path,
     )
 
     dist = distribution("google-antigravity")
-    binaries = [entry.locate() for entry in dist.files or []
-                if str(entry).replace("\\", "/").endswith("google/antigravity/bin/localharness")]
+    binaries = [
+        entry.locate()
+        for entry in dist.files or []
+        if str(entry).replace("\\", "/").endswith("google/antigravity/bin/localharness")
+    ]
     if len(binaries) != 1 or not binaries[0].is_file():
         raise ReflectionError("missing_runtime", "The pinned Antigravity wheel must include its localharness binary")
     return LocalAgentConfig(
-        model=ModelTarget(name=config.model, endpoint=GeminiAPIEndpoint(
-            options=GeminiModelOptions(thinking_level=ThinkingLevel(config.reasoning_effort)))),
+        model=ModelTarget(
+            name=config.model,
+            endpoint=GeminiAPIEndpoint(
+                options=GeminiModelOptions(thinking_level=ThinkingLevel(config.reasoning_effort))
+            ),
+        ),
         vertex=False,  # Explicit Gemini API route; never silently switch billing/authentication providers.
         system_instructions=CustomSystemInstructions(text=instructions),
         capabilities=CapabilitiesConfig(enabled_tools=[BuiltinTools.FINISH], enable_subagents=False),
-        policies=[deny("*"), allow("finish")], tools=[], hooks=[], triggers=[], mcp_servers=[],
-        skills_paths=[], subagents=[], workspaces=[str(workspace)],
-        app_data_dir=str(workspace / "app-data"), save_dir=str(workspace / "sessions"),
-        response_schema=schema, env={"ANTIGRAVITY_HARNESS_PATH": str(binaries[0])},
+        policies=[deny("*"), allow("finish")],
+        tools=[],
+        hooks=[],
+        triggers=[],
+        mcp_servers=[],
+        skills_paths=[],
+        subagents=[],
+        workspaces=[str(workspace)],
+        app_data_dir=str(workspace / "app-data"),
+        save_dir=str(workspace / "sessions"),
+        response_schema=schema,
+        env={"ANTIGRAVITY_HARNESS_PATH": str(binaries[0])},
         budget_config=BudgetConfig(max_model_calls=config.max_model_calls),
-        retry_config=RetryConfig(api_retry=ModelAPIRetryConfig(max_retries=0),
-                                 model_output_retry=ModelOutputRetryConfig(max_retries=0)),
+        retry_config=RetryConfig(
+            api_retry=ModelAPIRetryConfig(max_retries=0), model_output_retry=ModelOutputRetryConfig(max_retries=0)
+        ),
     )
 
 
-async def _inspect(prompt: str, schema: dict, config: AntigravityRuntimeConfig, workspace: Path,
-                   *, instructions=INSTRUCTIONS) -> dict:
+async def _inspect(
+    prompt: str, schema: dict, config: AntigravityRuntimeConfig, workspace: Path, *, instructions=INSTRUCTIONS
+) -> dict:
     from google.antigravity import Agent
     from google.antigravity.types import StopReason, ToolCall, ToolResult
 
@@ -85,13 +102,17 @@ async def _inspect(prompt: str, schema: dict, config: AntigravityRuntimeConfig, 
         if not isinstance(output, dict):
             raise ReflectionError("invalid_output", "Antigravity did not return structured reflection output")
         usage = response.usage_metadata
-        return {"status": "completed", "final_response": json.dumps(output),
-                "thread_id": agent.conversation_id, "turn_id": None, "sdk_version": SDK_VERSION,
-                "usage": usage.model_dump(mode="json") if usage else None}
+        return {
+            "status": "completed",
+            "final_response": json.dumps(output),
+            "thread_id": agent.conversation_id,
+            "turn_id": None,
+            "sdk_version": SDK_VERSION,
+            "usage": usage.model_dump(mode="json") if usage else None,
+        }
 
 
-def _run_antigravity(prompt: str, schema: dict, config: AntigravityRuntimeConfig,
-                     *, instructions=INSTRUCTIONS) -> dict:
+def _run_antigravity(prompt: str, schema: dict, config: AntigravityRuntimeConfig, *, instructions=INSTRUCTIONS) -> dict:
     _check_sdk()
     try:
         asyncio.get_running_loop()
@@ -100,9 +121,11 @@ def _run_antigravity(prompt: str, schema: dict, config: AntigravityRuntimeConfig
     else:
         raise ReflectionError("async_context", "Call synchronous reflection using asyncio.to_thread in async apps")
     with tempfile.TemporaryDirectory(prefix="thearc-antigravity-reflector-") as temporary:
+
         async def run():
             return await asyncio.wait_for(
-                _inspect(prompt, schema, config, Path(temporary), instructions=instructions), config.timeout_seconds,
+                _inspect(prompt, schema, config, Path(temporary), instructions=instructions),
+                config.timeout_seconds,
             )
 
         try:

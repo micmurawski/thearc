@@ -21,12 +21,26 @@ def main(argv=None):
         evidence = store.snapshot(session_ids=args.session_id)
     path = write_files(evidence, args.output, format="markdown")
     context = render_context(evidence)
-    write_json_exclusive(path / "context.json", {
-        "text": context.text, "included_event_ids": context.included_event_ids,
-        "omitted_event_ids": context.omitted_event_ids, "snapshot_sha256": evidence.sha256,
-    })
-    print(json.dumps({"snapshot": str(path), "sha256": evidence.sha256,
-                      "sessions": len(evidence.sessions), "events": evidence.manifest["event_count"]}, indent=2))
+    write_json_exclusive(
+        path / "context.json",
+        {
+            "text": context.text,
+            "included_event_ids": context.included_event_ids,
+            "omitted_event_ids": context.omitted_event_ids,
+            "snapshot_sha256": evidence.sha256,
+        },
+    )
+    print(
+        json.dumps(
+            {
+                "snapshot": str(path),
+                "sha256": evidence.sha256,
+                "sessions": len(evidence.sessions),
+                "events": evidence.manifest["event_count"],
+            },
+            indent=2,
+        )
+    )
 
 
 if __name__ == "__main__":

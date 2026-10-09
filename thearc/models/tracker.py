@@ -11,6 +11,7 @@ from thearc.models.ranks import Ranks
 
 class SectionChange(BaseModel):
     """Represents a detected modification between two versions of a section."""
+
     section_id: str
     title: str
     old_content: str
@@ -38,16 +39,14 @@ class SectionChange(BaseModel):
         old_lines = self.old_content.splitlines(keepends=True)
         new_lines = self.new_content.splitlines(keepends=True)
         diff = difflib.unified_diff(
-            old_lines,
-            new_lines,
-            fromfile=f"a/{self.section_id}",
-            tofile=f"b/{self.section_id}"
+            old_lines, new_lines, fromfile=f"a/{self.section_id}", tofile=f"b/{self.section_id}"
         )
         return "".join(diff)
 
 
 class SectionDiffResult(BaseModel):
     """Container for comparison results between two MDFile versions."""
+
     added_sections: list[IndexedSection] = Field(default_factory=list)
     removed_sections: list[IndexedSection] = Field(default_factory=list)
     modified_sections: list[SectionChange] = Field(default_factory=list)
@@ -70,6 +69,7 @@ class IndexedSection(BaseModel):
     """
     Representation of an indexed section with a unique ID and hierarchy tracking.
     """
+
     id: str
     title: str
     level: int = 1
@@ -102,6 +102,7 @@ class MDFile(BaseModel):
     """
     Class to track, modify, compare, and index Markdown files.
     """
+
     file_path: Path | None = None
     document: MarkdownDocument = Field(default_factory=MarkdownDocument)
     indexed_sections: dict[str, IndexedSection] = Field(default_factory=dict)
@@ -143,7 +144,7 @@ class MDFile(BaseModel):
                 ranks=section.ranks,
                 level=section.level,
                 content=section.content,
-                parent_id=parent_path or None
+                parent_id=parent_path or None,
             )
 
             for sub in section.subsections:
@@ -168,11 +169,7 @@ class MDFile(BaseModel):
         return None
 
     def update_section(
-        self,
-        id_or_title: str,
-        content: str | None = None,
-        title: str | None = None,
-        level: int | None = None
+        self, id_or_title: str, content: str | None = None, title: str | None = None, level: int | None = None
     ) -> bool:
         """Modify an existing section's content, title, or level."""
         target = self.get_section(id_or_title)
@@ -196,11 +193,7 @@ class MDFile(BaseModel):
         return False
 
     def add_section(
-        self,
-        title: str,
-        content: str = "",
-        level: int = 1,
-        parent_id_or_title: str | None = None
+        self, title: str, content: str = "", level: int = 1, parent_id_or_title: str | None = None
     ) -> IndexedSection:
         """Add a new section to the document and index it."""
         parent_title = None
@@ -265,8 +258,11 @@ class MDFile(BaseModel):
             old_sec = self.indexed_sections[cid]
             new_sec = other_md.indexed_sections[cid]
 
-            if (old_sec.content.strip() != new_sec.content.strip()
-                    or old_sec.level != new_sec.level or old_sec.ranks != new_sec.ranks):
+            if (
+                old_sec.content.strip() != new_sec.content.strip()
+                or old_sec.level != new_sec.level
+                or old_sec.ranks != new_sec.ranks
+            ):
                 change = SectionChange(
                     section_id=cid,
                     title=new_sec.title,
@@ -275,7 +271,7 @@ class MDFile(BaseModel):
                     old_ranks=old_sec.ranks,
                     new_ranks=new_sec.ranks,
                     old_level=old_sec.level,
-                    new_level=new_sec.level
+                    new_level=new_sec.level,
                 )
                 result.modified_sections.append(change)
             else:

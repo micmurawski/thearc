@@ -32,6 +32,7 @@ Content of 1A.
 Brand new section three.
 """
 
+
 def test_mdfile_initialization_and_indexing(tmp_path):
     file_path = tmp_path / "test_doc.md"
     file_path.write_text(BEFORE_MD, encoding="utf-8")
@@ -55,7 +56,7 @@ def test_mdfile_compare():
     diff: SectionDiffResult = md_before.compare(md_after)
 
     assert diff.has_changes is True
-    
+
     # Verify Added Sections
     assert len(diff.added_sections) == 1
     assert diff.added_sections[0].id == "section-three"

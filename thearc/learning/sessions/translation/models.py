@@ -49,6 +49,7 @@ _BASE62_CHARS = string.digits + string.ascii_lowercase + string.ascii_uppercase
 
 def _random_base62(length: int) -> str:
     import secrets
+
     return "".join(secrets.choice(_BASE62_CHARS) for _ in range(length))
 
 
@@ -74,11 +75,7 @@ def iso_to_epoch_ms(timestamp: str) -> int:
 
 def epoch_ms_to_iso(value: int) -> str:
     """Convert epoch milliseconds to a UTC ISO-8601 string (e.g. ``2024-01-01T12:00:00.000Z``)."""
-    return (
-        datetime.fromtimestamp(value / 1000, UTC)
-        .isoformat(timespec="milliseconds")
-        .replace("+00:00", "Z")
-    )
+    return datetime.fromtimestamp(value / 1000, UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
 
 def opencode_id(prefix: Literal["ses", "msg", "prt"], timestamp: str) -> str:
@@ -141,9 +138,11 @@ def now_iso() -> str:
 # Core session data models
 # ---------------------------------------------------------------------------
 
+
 @dataclass(frozen=True, slots=True)
 class SessionSummary:
     """Lightweight listing summary – no full record payload loaded."""
+
     provider: str
     session_id: str
     cwd: str
@@ -155,19 +154,21 @@ class SessionSummary:
 @dataclass(frozen=True, slots=True)
 class TextMessage:
     """Provider-neutral message extracted from a native session."""
-    role: str           # "user" | "assistant"
+
+    role: str  # "user" | "assistant"
     text: str
     timestamp: str
     model: str | None = None
     provider: str | None = None
     api: str | None = None
-    is_compaction: bool = False   # True for compaction/summary boundaries
-    is_contextual: bool = False   # True for injected system context messages
+    is_compaction: bool = False  # True for compaction/summary boundaries
+    is_contextual: bool = False  # True for injected system context messages
 
 
 @dataclass(frozen=True, slots=True)
 class NativeSession:
     """Raw provider session with unparsed JSONL/JSON records."""
+
     provider: str
     session_id: str
     cwd: str
@@ -189,6 +190,7 @@ class NativeSession:
 @dataclass(frozen=True, slots=True)
 class ConversionPlan:
     """Holds the translated records ready to write, without side-effects."""
+
     source: NativeSession
     destination: Path
     records: list[JsonObject] = field(repr=False)

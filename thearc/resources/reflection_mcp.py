@@ -50,8 +50,7 @@ def reflection_mcp_transport(tools):
     app = Starlette(routes=[Route("/mcp", Endpoint())], lifespan=lifespan)
     with socket.socket() as listener:
         listener.bind(("127.0.0.1", 0))
-        server = uvicorn.Server(uvicorn.Config(app, log_config=None, access_log=False,
-                                              timeout_graceful_shutdown=2))
+        server = uvicorn.Server(uvicorn.Config(app, log_config=None, access_log=False, timeout_graceful_shutdown=2))
         worker = Thread(target=server.run, kwargs={"sockets": [listener]}, daemon=True)
         worker.start()
         try:
@@ -61,13 +60,17 @@ def reflection_mcp_transport(tools):
                     raise RuntimeError("Reflection MCP server did not start")
                 time.sleep(0.01)
             names = [definition["name"] for definition in tools.definitions]
-            yield {"thearc_reflection_" + uuid4().hex[:12]: {
-                "url": f"http://127.0.0.1:{listener.getsockname()[1]}/mcp",
-                "http_headers": {"Authorization": f"Bearer {token}"},
-                "enabled": True, "required": True, "startup_timeout_sec": 30,
-                "enabled_tools": names,
-                "tools": {name: {"approval_mode": "approve"} for name in names},
-            }}
+            yield {
+                "thearc_reflection_" + uuid4().hex[:12]: {
+                    "url": f"http://127.0.0.1:{listener.getsockname()[1]}/mcp",
+                    "http_headers": {"Authorization": f"Bearer {token}"},
+                    "enabled": True,
+                    "required": True,
+                    "startup_timeout_sec": 30,
+                    "enabled_tools": names,
+                    "tools": {name: {"approval_mode": "approve"} for name in names},
+                }
+            }
         finally:
             server.should_exit = True
             worker.join(timeout=5)
@@ -82,20 +85,36 @@ def create_reflection_server(tools):
         raise ImportError("Install thearc[mcp] to serve reflection tools") from exc
 
     async def list_tools(context, params):
-        return ListToolsResult(tools=[Tool(name=item["name"], description=item["description"],
-                                           input_schema=item["inputSchema"]) for item in tools.definitions])
+        return ListToolsResult(
+            tools=[
+                Tool(name=item["name"], description=item["description"], input_schema=item["inputSchema"])
+                for item in tools.definitions
+            ]
+        )
 
     async def call_tool(context, params):
         try:
             result = tools.call(params.name, params.arguments or {})
         except OSError:
-            result = {"accepted": False, "errors": [{"path": "", "code": "storage_error",
-                       "message": "Could not save the submission; no batch was accepted. Check server storage."}]}
-        return CallToolResult(content=[TextContent(type="text", text=json.dumps(result, ensure_ascii=False))],
-                              structured_content=result, is_error=result.get("accepted") is False)
+            result = {
+                "accepted": False,
+                "errors": [
+                    {
+                        "path": "",
+                        "code": "storage_error",
+                        "message": "Could not save the submission; no batch was accepted. Check server storage.",
+                    }
+                ],
+            }
+        return CallToolResult(
+            content=[TextContent(type="text", text=json.dumps(result, ensure_ascii=False))],
+            structured_content=result,
+            is_error=result.get("accepted") is False,
+        )
 
-    return Server("thearc-reflection", instructions=tools.instructions,
-                  on_list_tools=list_tools, on_call_tool=call_tool)
+    return Server(
+        "thearc-reflection", instructions=tools.instructions, on_list_tools=list_tools, on_call_tool=call_tool
+    )
 
 
 def serve_reflections(tools):
@@ -107,6 +126,7 @@ def serve_reflections(tools):
 
         async with stdio_server() as (read, write):
             await server.run(read, write, server.create_initialization_options())
+
     try:
         asyncio.run(run())
     finally:

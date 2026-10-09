@@ -83,8 +83,7 @@ thearc sessions --index artifacts/sessions.sqlite render SESSION_ID --trajectory
 ```python
 from thearc.resources import Reflector, evidence_to_markdown
 
-reflector = Reflector(implementation="codex", model="YOUR_MODEL_ID",
-                      artifact_dir="artifacts/reflections")
+reflector = Reflector(implementation="codex", model="YOUR_MODEL_ID", artifact_dir="artifacts/reflections")
 evidence_prompt = evidence_to_markdown(selected_events)
 # Also accepts canonical JSON records or their JSON array encoding.
 reflection = reflector.reflect(PROMPT + "\n\n" + evidence_prompt, agent=agent)
@@ -104,18 +103,23 @@ from pydantic import Field
 from thearc import ResourceTarget
 from thearc.resources import ReflectionBaseModel
 
+
 class Finding(ReflectionBaseModel):
     resource: ResourceTarget
     observation: str = Field(description="Observed behavior and the resource's contribution.")
+
 
 class Report(ReflectionBaseModel):
     summary: str
     findings: list[Finding]
 
+
 print(Report.to_json_schema())
 reflection = reflector.reflect(
     PROMPT + "\n\n" + trajectory.to_markdown(),
-    agent=agent, output_schema=Report, validate_resources=True,
+    agent=agent,
+    output_schema=Report,
+    validate_resources=True,
 )
 report = reflection.output  # Report instance
 ```
@@ -194,7 +198,9 @@ from thearc.resources import Curator
 
 curator = Curator(implementation="codex", model="YOUR_MODEL_ID")
 result = curator.curate(
-    CURATION_PROMPT, [reflection], agent=agent,
+    CURATION_PROMPT,
+    [reflection],
+    agent=agent,
     output="artifacts/curation",  # Omit for a detached result without a saved epoch.
 )
 updated_agent = result.agent

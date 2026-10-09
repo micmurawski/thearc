@@ -49,8 +49,11 @@ class ResourceView:
 
     def catalog_markdown(self, *, include_ranks=False, include_content=False, title=None):
         """An outline of every ID, or with include_content the agent's Markdown with labelled headings."""
-        return redact(self._agent.to_labeled_markdown(include_ranks=include_ranks, outline=not include_content,
-                                                      ranks=self._current_ranks, title=title))
+        return redact(
+            self._agent.to_labeled_markdown(
+                include_ranks=include_ranks, outline=not include_content, ranks=self._current_ranks, title=title
+            )
+        )
 
     def _entry(self, resource_id, include_ranks):
         target = self.resolve(resource_id)
@@ -64,11 +67,17 @@ class ResourceView:
     def list(self, *, query="", offset=0, limit=20, include_ranks=False):
         if type(offset) is not int or offset < 0 or type(limit) is not int or not 1 <= limit <= 50:
             raise ValueError("offset must be nonnegative; limit must be between 1 and 50")
-        ids = [key for key, target in self._targets.items()
-               if query.casefold() in f"{target.kind} {target.name} {target.section or ''}".casefold()]
+        ids = [
+            key
+            for key, target in self._targets.items()
+            if query.casefold() in f"{target.kind} {target.name} {target.section or ''}".casefold()
+        ]
         end = offset + limit
-        return {"resources": [self._entry(key, include_ranks) for key in ids[offset:end]],
-                "total": len(ids), "next_offset": end if end < len(ids) else None}
+        return {
+            "resources": [self._entry(key, include_ranks) for key in ids[offset:end]],
+            "total": len(ids),
+            "next_offset": end if end < len(ids) else None,
+        }
 
     def read(self, resource_id, *, offset=0, max_chars=8000, include_ranks=False):
         if type(max_chars) is not int or max_chars < 1:
@@ -79,8 +88,12 @@ class ResourceView:
         if type(offset) is not int or offset < 0 or offset > len(text):
             raise ValueError("offset is outside the resource")
         end = offset + max_chars
-        return {**self._entry(resource_id, include_ranks), "content": text[offset:end],
-                "total_chars": len(text), "next_offset": end if end < len(text) else None}
+        return {
+            **self._entry(resource_id, include_ranks),
+            "content": text[offset:end],
+            "total_chars": len(text),
+            "next_offset": end if end < len(text) else None,
+        }
 
     def to_markdown(self, resource_id, *, offset=0, max_chars=8000, include_ranks=False):
         # Page the rendered Markdown, so offsets always refer to this format.
@@ -95,8 +108,7 @@ class ResourceView:
             from .formats import fenced
 
             content = fenced(json.dumps(value, ensure_ascii=False, indent=2), "json")
-        if (type(offset) is not int or not 0 <= offset <= len(content)
-                or type(max_chars) is not int or max_chars < 1):
+        if type(offset) is not int or not 0 <= offset <= len(content) or type(max_chars) is not int or max_chars < 1:
             raise ValueError("Invalid Markdown page")
         page = self._entry(resource_id, include_ranks)
         target = page["target"]

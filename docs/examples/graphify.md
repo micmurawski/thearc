@@ -18,19 +18,19 @@ from thearc.learning.sessions.models import SearchFilters, SourceConfig
 from thearc.resources import Curator, Reflector, SessionStore
 
 batch = Path("logs/codex-prompts/fastapi-worktrees-20260927-live")
-agent = MetaAgent.model_validate_json(
-    (batch / "runs/06babf7d18ca4332bb93cc0028995502/agent-before.json").read_text()
-)
+agent = MetaAgent.model_validate_json((batch / "runs/06babf7d18ca4332bb93cc0028995502/agent-before.json").read_text())
 reflector = Reflector(implementation="claude", model="YOUR_CLAUDE_MODEL")
 curator = Curator(implementation="claude", model="YOUR_CLAUDE_MODEL")
 
 with SessionStore("artifacts/graphify.sqlite") as store:
     store.ingest(SourceConfig(id="graphify", harness="codex", root=batch / "sessions"))
     result = adapt(
-        agent, store,
+        agent,
+        store,
         filters=SearchFilters(source_ids=["graphify"], statuses=["failure"]),
         pattern=ToolRetryAfterFailure(),
-        reflector=reflector, curator=curator,
+        reflector=reflector,
+        curator=curator,
         output="artifacts/graphify-curation",
     )
 if result is not None:
@@ -97,7 +97,9 @@ with SessionStore("artifacts/graphify.sqlite") as store:
 trajectory = session.split_into_trajectories()[0]
 
 reflection = reflect(
-    agent, trajectory, model="YOUR_CODEX_MODEL",
+    agent,
+    trajectory,
+    model="YOUR_CODEX_MODEL",
     output="artifacts/graphify-handoff-reflections",
 )
 print(reflection.output.model_dump_json(indent=2))
@@ -128,8 +130,12 @@ agent, trajectories = load_runs(
     ["06babf7d18ca4332bb93cc0028995502", "073aff39688148cc8c3c528b2c3a9b39"],
 )
 merged = adapt(
-    agent, trajectories, implementation="claude", model="YOUR_CLAUDE_MODEL",
-    max_workers=2, output="artifacts/graphify-parallel",
+    agent,
+    trajectories,
+    implementation="claude",
+    model="YOUR_CLAUDE_MODEL",
+    max_workers=2,
+    output="artifacts/graphify-parallel",
 )
 if merged.unresolved:
     print([issue.model_dump() for issue in merged.unresolved])
@@ -167,8 +173,11 @@ from cookbook.graphify_inputs import load_inputs
 
 inputs = load_inputs("inputs.json", target=agent)
 merged = adapt(
-    inputs.agent, inputs.histories, source_agents=inputs.source_agents,
-    implementation="antigravity", model="YOUR_GEMINI_MODEL",
+    inputs.agent,
+    inputs.histories,
+    source_agents=inputs.source_agents,
+    implementation="antigravity",
+    model="YOUR_GEMINI_MODEL",
     output="artifacts/graphify-mixed",
 )
 ```

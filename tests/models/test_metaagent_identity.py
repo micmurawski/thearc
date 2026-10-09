@@ -26,15 +26,17 @@ def test_name_is_required_for_constructor_json_and_workspace(tmp_path):
 @pytest.mark.parametrize("implementation", ["codex", "claude", "antigravity", "pi"])
 def test_identity_survives_install_import_and_workspace(tmp_path, implementation):
     agent = MetaAgent(
-        name="graphify-config", version="1.2.3",
-        skills=[Skill(name="graphify", instructions="Use the graph.",
-                      files={".graphify_version": "0.9.68"})],
+        name="graphify-config",
+        version="1.2.3",
+        skills=[Skill(name="graphify", instructions="Use the graph.", files={".graphify_version": "0.9.68"})],
     )
     project = tmp_path / implementation
     result = agent.install(implementation, path=project)
     metadata = result["metadata"][0]
     assert json.loads(metadata.read_text()) == {
-        "schema_version": 1, "name": "graphify-config", "version": "1.2.3",
+        "schema_version": 1,
+        "name": "graphify-config",
+        "version": "1.2.3",
     }
     marker = metadata.parent / ".graphify-config_version"
     assert marker.read_text() == "1.2.3\n"

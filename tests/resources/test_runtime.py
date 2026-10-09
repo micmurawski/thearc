@@ -14,8 +14,9 @@ from thearc.learning.reflection.providers.codex import _DISABLED_FEATURES
 from thearc.learning.sessions.models import SourceConfig
 from thearc.resources import ReflectionBaseModel, Reflector, SessionStore
 
-pytestmark = pytest.mark.skipif(os.environ.get("THEARC_TEST_CODEX_RUNTIME") != "1",
-                                reason="Opt-in installed runtime with local mock inference")
+pytestmark = pytest.mark.skipif(
+    os.environ.get("THEARC_TEST_CODEX_RUNTIME") != "1", reason="Opt-in installed runtime with local mock inference"
+)
 
 
 @pytest.fixture
@@ -31,43 +32,98 @@ def runtime(tmp_path, monkeypatch):
 
         def do_POST(self):
             requests.append(json.loads(self.rfile.read(int(self.headers["Content-Length"]))))
-            text = ('{"summary":"Typed fixture result"}' if "TYPED_FIXTURE" in json.dumps(requests[-1])
-                    else "Reflection fixture result.")
-            message = {"id": f"msg_{len(requests)}", "type": "message", "status": "completed",
-                       "role": "assistant", "content": [{"type": "output_text", "text": text, "annotations": []}]}
-            response = {"id": f"resp_{len(requests)}", "object": "response", "created_at": 1,
-                        "status": "completed", "model": "fixture-model", "output": [message],
-                        "usage": {"input_tokens": 10, "output_tokens": 10, "total_tokens": 20,
-                                  "input_tokens_details": {"cached_tokens": 0},
-                                  "output_tokens_details": {"reasoning_tokens": 0}}}
+            text = (
+                '{"summary":"Typed fixture result"}'
+                if "TYPED_FIXTURE" in json.dumps(requests[-1])
+                else "Reflection fixture result."
+            )
+            message = {
+                "id": f"msg_{len(requests)}",
+                "type": "message",
+                "status": "completed",
+                "role": "assistant",
+                "content": [{"type": "output_text", "text": text, "annotations": []}],
+            }
+            response = {
+                "id": f"resp_{len(requests)}",
+                "object": "response",
+                "created_at": 1,
+                "status": "completed",
+                "model": "fixture-model",
+                "output": [message],
+                "usage": {
+                    "input_tokens": 10,
+                    "output_tokens": 10,
+                    "total_tokens": 20,
+                    "input_tokens_details": {"cached_tokens": 0},
+                    "output_tokens_details": {"reasoning_tokens": 0},
+                },
+            }
             events = [
                 {"type": "response.created", "response": {**response, "status": "in_progress", "output": []}},
-                {"type": "response.output_item.added", "output_index": 0,
-                 "item": {**message, "status": "in_progress", "content": []}},
-                {"type": "response.content_part.added", "item_id": message["id"], "output_index": 0,
-                 "content_index": 0, "part": {"type": "output_text", "text": "", "annotations": []}},
-                {"type": "response.output_text.delta", "item_id": message["id"], "output_index": 0,
-                 "content_index": 0, "delta": text},
-                {"type": "response.output_text.done", "item_id": message["id"], "output_index": 0,
-                 "content_index": 0, "text": text},
-                {"type": "response.content_part.done", "item_id": message["id"], "output_index": 0,
-                 "content_index": 0, "part": message["content"][0]},
+                {
+                    "type": "response.output_item.added",
+                    "output_index": 0,
+                    "item": {**message, "status": "in_progress", "content": []},
+                },
+                {
+                    "type": "response.content_part.added",
+                    "item_id": message["id"],
+                    "output_index": 0,
+                    "content_index": 0,
+                    "part": {"type": "output_text", "text": "", "annotations": []},
+                },
+                {
+                    "type": "response.output_text.delta",
+                    "item_id": message["id"],
+                    "output_index": 0,
+                    "content_index": 0,
+                    "delta": text,
+                },
+                {
+                    "type": "response.output_text.done",
+                    "item_id": message["id"],
+                    "output_index": 0,
+                    "content_index": 0,
+                    "text": text,
+                },
+                {
+                    "type": "response.content_part.done",
+                    "item_id": message["id"],
+                    "output_index": 0,
+                    "content_index": 0,
+                    "part": message["content"][0],
+                },
                 {"type": "response.output_item.done", "output_index": 0, "item": message},
                 {"type": "response.completed", "response": response},
             ]
             request = requests[-1]
-            if ("MCP_FIXTURE" in json.dumps(request)
-                    and not any(i.get("type") == "function_call_output" for i in request["input"])):
-                namespace = next(t for t in request["tools"] if t.get("type") == "namespace"
-                                 and t["name"].startswith("mcp__thearc_reflection_"))
+            if "MCP_FIXTURE" in json.dumps(request) and not any(
+                i.get("type") == "function_call_output" for i in request["input"]
+            ):
+                namespace = next(
+                    t
+                    for t in request["tools"]
+                    if t.get("type") == "namespace" and t["name"].startswith("mcp__thearc_reflection_")
+                )
                 tool = next(t for t in namespace["tools"] if t["name"] == "submit_reflections")
-                call = {"id": "fc_submit", "type": "function_call", "call_id": "call_submit",
-                        "name": tool["name"], "namespace": namespace["name"], "arguments": '{"reflections":[]}'}
+                call = {
+                    "id": "fc_submit",
+                    "type": "function_call",
+                    "call_id": "call_submit",
+                    "name": tool["name"],
+                    "namespace": namespace["name"],
+                    "arguments": '{"reflections":[]}',
+                }
                 events = [
                     {"type": "response.created", "response": {**response, "status": "in_progress", "output": []}},
                     {"type": "response.output_item.added", "output_index": 0, "item": {**call, "arguments": ""}},
-                    {"type": "response.function_call_arguments.delta", "item_id": call["id"],
-                     "output_index": 0, "delta": call["arguments"]},
+                    {
+                        "type": "response.function_call_arguments.delta",
+                        "item_id": call["id"],
+                        "output_index": 0,
+                        "delta": call["arguments"],
+                    },
                     {"type": "response.output_item.done", "output_index": 0, "item": call},
                     {"type": "response.completed", "response": {**response, "output": [call]}},
                 ]
@@ -87,13 +143,15 @@ def runtime(tmp_path, monkeypatch):
     workspace.mkdir()
     env = {**os.environ, "CODEX_HOME": str(home)}
     overrides = (
-        'model_provider="fixture"', 'model="fixture-model"',
+        'model_provider="fixture"',
+        'model="fixture-model"',
         'model_providers.fixture.name="Local fixture"',
         f'model_providers.fixture.base_url="http://127.0.0.1:{server.server_port}/v1"',
         'model_providers.fixture.wire_api="responses"',
         "model_providers.fixture.requires_openai_auth=false",
         "model_providers.fixture.supports_websockets=false",
-        "check_for_update_on_startup=false", "project_doc_max_bytes=0",
+        "check_for_update_on_startup=false",
+        "project_doc_max_bytes=0",
         *[f"features.{name}=false" for name in _DISABLED_FEATURES],
     )
     real_client = openai_codex.client.CodexClient
@@ -113,8 +171,9 @@ def runtime(tmp_path, monkeypatch):
 def test_claude_trajectory_import_is_history_not_prompt(runtime, history, tmp_path):
     requests, _, _, _ = runtime
     original = history.to_jsonl()
-    reflector = Reflector(implementation="codex", model="fixture-model", timeout_seconds=30,
-                          artifact_dir=tmp_path / "reflections")
+    reflector = Reflector(
+        implementation="codex", model="fixture-model", timeout_seconds=30, artifact_dir=tmp_path / "reflections"
+    )
     result = reflector.handoff("RP only", history.split_into_trajectories()[0])
     assert result.text == "Reflection fixture result."
     assert result.provenance["mode"] == "import"
@@ -137,8 +196,10 @@ def test_activation_is_per_call_and_reference_mode_does_not_apply_instructions(r
     reflector = Reflector(implementation="codex", model="fixture-model", timeout_seconds=30)
     reflector.reflect("Reflect", agent=agent, agent_mode="active")
     reflector.reflect("Reflect again", agent=agent)
+
     def developers(request):
         return "\n".join(str(item) for item in request["input"] if item.get("role") == "developer")
+
     assert "ACTIVE_SENTINEL" in developers(requests[0])
     assert "ACTIVE_SENTINEL" not in developers(requests[1])
 
@@ -170,8 +231,9 @@ def test_cookbook_native_mcp_submission(runtime, tmp_path):
     (output / "evidence.json").write_text("[]")
     (output / "reflection-schema.json").write_text(json.dumps(ReflectionSchema.model_json_schema()))
     (output / "prompt.txt").write_text("MCP_FIXTURE: submit an empty reflections list")
-    Session.from_events([event(0, role="user", text="Historical task"),
-                         event(1, role="assistant", text="Completed")]).save(output / "history.json")
+    Session.from_events(
+        [event(0, role="user", text="Historical task"), event(1, role="assistant", text="Completed")]
+    ).save(output / "history.json")
     assert generate_reflections(output, model="fixture-model", timeout=30) == []
     assert json.loads((output / "reflections.json").read_text()) == []
     assert json.loads((output / "submission.json").read_text())["accepted"] is True
@@ -186,8 +248,15 @@ def test_native_prefix_remains_at_captured_boundary(runtime, tmp_path):
     try:
         client.start()
         client.initialize()
-        started = client.thread_start({"cwd": str(workspace), "model": "fixture-model",
-                                       "approvalPolicy": "never", "sandbox": "read-only", "ephemeral": False})
+        started = client.thread_start(
+            {
+                "cwd": str(workspace),
+                "model": "fixture-model",
+                "approvalPolicy": "never",
+                "sandbox": "read-only",
+                "ephemeral": False,
+            }
+        )
         sdk.Thread(client, started.thread.id).run("Original task")
         path = Path(client.thread_read(started.thread.id).thread.path)
         with SessionStore(tmp_path / "index.sqlite") as store:
@@ -221,8 +290,7 @@ def test_native_prefix_remains_at_captured_boundary(runtime, tmp_path):
 
     prefix = captured.through(captured.split_into_trajectories()[0])
     tools = ReflectionTools(agent=MetaAgent(name="subject"), evidence=prefix)
-    mcp_reflector = Reflector(implementation="codex", model="fixture-model",
-                              tool_transport="mcp", timeout_seconds=30)
+    mcp_reflector = Reflector(implementation="codex", model="fixture-model", tool_transport="mcp", timeout_seconds=30)
     assert mcp_reflector.handoff("MCP_FIXTURE: submit an empty list", prefix, tools=tools) == []
     assert tools.accepted
     assert "Original task" in json.dumps(requests[-1]["input"])

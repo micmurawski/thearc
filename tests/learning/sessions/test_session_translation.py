@@ -412,13 +412,22 @@ class TestAntigravityRecordBuilder:
 
 
 class TestNormalizeProvider:
-    @pytest.mark.parametrize("alias,expected", [
-        ("agy", "agy"), ("antigravity", "agy"), ("gemini", "agy"),
-        ("claude", "claude"), ("claudecode", "claude"), ("claude-code", "claude"),
-        ("codex", "codex"),
-        ("pi", "pi"), ("pi-agent", "pi"),
-        ("opencode", "opencode"), ("open-code", "opencode"),
-    ])
+    @pytest.mark.parametrize(
+        "alias,expected",
+        [
+            ("agy", "agy"),
+            ("antigravity", "agy"),
+            ("gemini", "agy"),
+            ("claude", "claude"),
+            ("claudecode", "claude"),
+            ("claude-code", "claude"),
+            ("codex", "codex"),
+            ("pi", "pi"),
+            ("pi-agent", "pi"),
+            ("opencode", "opencode"),
+            ("open-code", "opencode"),
+        ],
+    )
     def test_aliases(self, alias, expected):
         assert _normalize_provider(alias) == expected
 
@@ -435,9 +444,15 @@ class TestSessionTranslator:
 
         class FakeStore:
             provider_name = source.provider
-            def load(self, session_id): return source
-            def list(self): return []
-            def load_path(self, path): return source
+
+            def load(self, session_id):
+                return source
+
+            def list(self):
+                return []
+
+            def load_path(self, path):
+                return source
 
         store = FakeStore()
         setattr(t, f"_{source.provider}", store)
@@ -501,8 +516,12 @@ class TestSessionTranslator:
 
         class FakeStore:
             provider_name = "codex"
-            def load(self, session_id): return source
-            def list(self): return []
+
+            def load(self, session_id):
+                return source
+
+            def list(self):
+                return []
 
         t._codex = FakeStore()
         plan = t.plan("codex", "pi", session_id=_UUID)
@@ -534,8 +553,11 @@ def test_plans_write_to_custom_roots_using_explicit_format(tmp_path, target):
     # A directory name must not choose the serialization format.
     destination_root = tmp_path / ".claude" / "custom"
     translator = SessionTranslator(
-        codex_home=destination_root, pi_home=destination_root, claude_home=destination_root,
-        opencode_data_home=destination_root, agy_brain_dir=destination_root,
+        codex_home=destination_root,
+        pi_home=destination_root,
+        claude_home=destination_root,
+        opencode_data_home=destination_root,
+        agy_brain_dir=destination_root,
         markdown_export_dir=destination_root,
     )
     plan = translator.plan_from_path("codex", target, path=source)
@@ -557,7 +579,11 @@ def test_opencode_writer_uses_json_array_even_under_claude_directory(tmp_path):
     from thearc.learning.sessions.translation import ConversionPlan
 
     records = [{"id": "first"}, {"id": "second"}]
-    plan = ConversionPlan(source=_make_source("codex"), destination=tmp_path / ".claude" / "output.json",
-                          records=records, target_provider="opencode")
+    plan = ConversionPlan(
+        source=_make_source("codex"),
+        destination=tmp_path / ".claude" / "output.json",
+        records=records,
+        target_provider="opencode",
+    )
     SessionTranslator().write(plan)
     assert json.loads(plan.destination.read_text()) == records

@@ -77,12 +77,12 @@ def _compact(value):
 class Sessions:
     """Collect, list and resolve sessions from many harnesses in one index.
 
-        sessions = Sessions.open()
-        sessions.add("~/.codex/sessions")
-        sessions.add("~/.claude/projects")
-        sessions.add("logs/batch")          # collector batch: also exposes agent snapshots
-        sessions.sync()
-        history = sessions.get("14a6b5fe").trajectories[0]
+    sessions = Sessions.open()
+    sessions.add("~/.codex/sessions")
+    sessions.add("~/.claude/projects")
+    sessions.add("logs/batch")          # collector batch: also exposes agent snapshots
+    sessions.sync()
+    history = sessions.get("14a6b5fe").trajectories[0]
     """
 
     def __init__(self, store):
@@ -123,8 +123,7 @@ class Sessions:
             harness = "claude" if format == "dataclaw" else detect_harness(root)
         if root in self.store.path.parents:
             raise ValueError("Keep the index outside the source directory")
-        source = SourceConfig(id=source_id or f"{harness}:{format}:{root}", harness=harness, root=root,
-                              format=format)
+        source = SourceConfig(id=source_id or f"{harness}:{format}:{root}", harness=harness, root=root, format=format)
         known = next((s for s in self.sources() if s.root == source.root and s.format == source.format), None)
         if known is not None and source_id is None:
             if known.harness != source.harness:
@@ -144,6 +143,7 @@ class Sessions:
 
     def list(self, *, harness=None, source=None, since=None, until=None):
         """Session records, newest first. `since`/`until` accept datetimes or ISO strings (naive = UTC)."""
+
         def moment(value):
             value = datetime.fromisoformat(value) if isinstance(value, str) else value
             return value.replace(tzinfo=UTC) if value is not None and value.tzinfo is None else value
@@ -151,7 +151,8 @@ class Sessions:
         filters = SearchFilters(
             harnesses=[harness] if isinstance(harness, str) else list(harness or []),
             source_ids=[source] if isinstance(source, str) else list(source or []),
-            started_after=moment(since), started_before=moment(until),
+            started_after=moment(since),
+            started_before=moment(until),
         )
         records = list(self._index.iter_sessions(filters))
         return sorted(records, key=lambda s: (s.started_at or "", s.id), reverse=True)
@@ -169,8 +170,11 @@ class Sessions:
             return exact[0]
         compact = _compact(reference)
         native = {self._run_native_id(reference)} - {None}
-        matches = {r["id"] for r in rows if r["id"].startswith(reference)
-                   or _compact(r["native_id"]).startswith(compact) or r["native_id"] in native}
+        matches = {
+            r["id"]
+            for r in rows
+            if r["id"].startswith(reference) or _compact(r["native_id"]).startswith(compact) or r["native_id"] in native
+        }
         if len(matches) != 1:
             problem = "matches no indexed session" if not matches else f"is ambiguous ({len(matches)} sessions)"
             raise LookupError(f"Session reference {reference!r} {problem}")

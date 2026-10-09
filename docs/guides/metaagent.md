@@ -12,7 +12,9 @@ from thearc import MetaAgent, Skill
 
 # Import an existing installation. Replace IMPLEMENTATION and the project path.
 agent = MetaAgent.from_project(
-    "IMPLEMENTATION", "/path/to/project", name="my-agent",
+    "IMPLEMENTATION",
+    "/path/to/project",
+    name="my-agent",
 )
 
 # Or construct a configuration in Python.

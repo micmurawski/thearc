@@ -142,21 +142,28 @@ def list_command(index, source_id, harness, since, until, limit, offset, as_json
             records = store.list(harness=harness, source=source_id, since=since, until=until)
     except ValueError as exc:
         raise click.ClickException(str(exc)) from exc
-    for record in records[offset:offset + limit]:
+    for record in records[offset : offset + limit]:
         if as_json:
             click.echo(record.model_dump_json())
         else:
             title = (record.title or record.cwd or "").replace("\n", " ")
-            click.echo(f"{record.id[:12]}  {record.harness:<11} {(record.started_at or '')[:19]:<19}  "
-                       f"{record.event_count:>5} events  {title[:60]}")
+            click.echo(
+                f"{record.id[:12]}  {record.harness:<11} {(record.started_at or '')[:19]:<19}  "
+                f"{record.event_count:>5} events  {title[:60]}"
+            )
 
 
 @sessions.command("render")
 @click.argument("session", required=False)
 @click.option("--trajectory", type=click.IntRange(min=0), help="Zero-based trajectory index.")
 @click.option("--through", is_flag=True, help="Include the prefix through the selected trajectory.")
-@click.option("--format", "output_format", type=click.Choice(["markdown", "thearc", "codex", "claude"]),
-              default="markdown", show_default=True)
+@click.option(
+    "--format",
+    "output_format",
+    type=click.Choice(["markdown", "thearc", "codex", "claude"]),
+    default="markdown",
+    show_default=True,
+)
 @click.option("--header/--no-header", default=True, help="Markdown: prefix a session summary.")
 @click.pass_obj
 def render_command(index, session, trajectory, through, output_format, header):
@@ -179,10 +186,12 @@ def render_command(index, session, trajectory, through, output_format, header):
             click.echo(selected.to_jsonl(output_format), nl=False)
             return
         if header:
-            click.echo(f"# Session {meta.native_id}\n\n"
-                       f"- Harness: {meta.harness}\n- Indexed ID: {meta.id}\n"
-                       f"- Started: {meta.started_at or 'unknown'}\n- Directory: {meta.cwd or 'unknown'}\n"
-                       f"- Showing: {scope} ({len(trajectories)} trajectories in session)\n")
+            click.echo(
+                f"# Session {meta.native_id}\n\n"
+                f"- Harness: {meta.harness}\n- Indexed ID: {meta.id}\n"
+                f"- Started: {meta.started_at or 'unknown'}\n- Directory: {meta.cwd or 'unknown'}\n"
+                f"- Showing: {scope} ({len(trajectories)} trajectories in session)\n"
+            )
         click.echo(selected.to_markdown(), nl=False)
     except (ValueError, KeyError, IndexError, LookupError, OSError) as exc:
         raise click.ClickException(str(exc)) from exc

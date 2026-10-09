@@ -72,8 +72,7 @@ class BehavioralPattern:
 
 def _stream_key(event: Event) -> tuple:
     """Native ordering is meaningful only within the same run and artifact."""
-    return (event.source_id, event.session_id, event.run_id,
-            event.reference.path, event.reference.generation)
+    return (event.source_id, event.session_id, event.run_id, event.reference.path, event.reference.generation)
 
 
 def _same_stream(events: list[Event]) -> bool:
@@ -112,7 +111,7 @@ class StubbornToolLoop(BehavioralPattern):
         matches: list[PatternMatch] = []
         size = 2 * self.min_repeats - 1
         for i in range(len(events) - size + 1):
-            window = events[i:i + size]
+            window = events[i : i + size]
             tool = window[0].tool_name
             if not tool or not _same_stream(window):
                 continue
@@ -120,16 +119,18 @@ class StubbornToolLoop(BehavioralPattern):
                 continue
             if not all(_failed_result(window[j], window[j + 1]) for j in range(0, size - 1, 2)):
                 continue
-            matches.append(PatternMatch(
-                pattern_name=self.name,
-                description=f"Tool '{tool}' called {self.min_repeats} times with intervening failures.",
-                session_id=window[0].session_id,
-                start_index=i,
-                end_index=i + size - 1,
-                events=tuple(window),
-                context={"tool": tool, "cycles": self.min_repeats},
-                severity="warning",
-            ))
+            matches.append(
+                PatternMatch(
+                    pattern_name=self.name,
+                    description=f"Tool '{tool}' called {self.min_repeats} times with intervening failures.",
+                    session_id=window[0].session_id,
+                    start_index=i,
+                    end_index=i + size - 1,
+                    events=tuple(window),
+                    context={"tool": tool, "cycles": self.min_repeats},
+                    severity="warning",
+                )
+            )
         return matches
 
 
@@ -158,21 +159,23 @@ class FrustrationSpike(BehavioralPattern):
     def find_matches(self, events: list[Event]) -> list[PatternMatch]:
         matches: list[PatternMatch] = []
         for i in range(len(events) - self.window + 1):
-            window = events[i: i + self.window]
+            window = events[i : i + self.window]
             if not _same_stream(window):
                 continue
             error_count = sum(1 for e in window if e.status in {"failure", "error"})
             if error_count >= self.threshold:
-                matches.append(PatternMatch(
-                    pattern_name=self.name,
-                    description=f"{error_count} errors in a {self.window}-event window.",
-                    session_id=events[i].session_id,
-                    start_index=i,
-                    end_index=i + self.window - 1,
-                    events=tuple(window),
-                    context={"error_count": error_count, "window_size": self.window},
-                    severity="warning",
-                ))
+                matches.append(
+                    PatternMatch(
+                        pattern_name=self.name,
+                        description=f"{error_count} errors in a {self.window}-event window.",
+                        session_id=events[i].session_id,
+                        start_index=i,
+                        end_index=i + self.window - 1,
+                        events=tuple(window),
+                        context={"error_count": error_count, "window_size": self.window},
+                        severity="warning",
+                    )
+                )
         return matches
 
 
@@ -191,10 +194,17 @@ class SelfOverwrite(BehavioralPattern):
     name = "self_overwrite"
     description = "Agent writes the same file multiple times without verifying."
 
-    _WRITE_TOOLS = frozenset({
-        "write_to_file", "replace_file_content", "create_file", "edit_file",
-        "write_file", "file_editor", "str_replace_editor",
-    })
+    _WRITE_TOOLS = frozenset(
+        {
+            "write_to_file",
+            "replace_file_content",
+            "create_file",
+            "edit_file",
+            "write_file",
+            "file_editor",
+            "str_replace_editor",
+        }
+    )
 
     def __init__(self, min_writes: int = 2) -> None:
         _positive_integer("min_writes", min_writes)
@@ -231,16 +241,18 @@ class SelfOverwrite(BehavioralPattern):
                 break
             write_count = sum(1 for ev in streak if ev.kind == "tool_call")
             if write_count >= self.min_writes:
-                matches.append(PatternMatch(
-                    pattern_name=self.name,
-                    description=f"File '{target_file}' written {write_count} times consecutively.",
-                    session_id=events[streak_start].session_id,
-                    start_index=streak_start,
-                    end_index=streak_start + len(streak) - 1,
-                    events=tuple(streak),
-                    context={"file": target_file, "write_count": write_count},
-                    severity="warning",
-                ))
+                matches.append(
+                    PatternMatch(
+                        pattern_name=self.name,
+                        description=f"File '{target_file}' written {write_count} times consecutively.",
+                        session_id=events[streak_start].session_id,
+                        start_index=streak_start,
+                        end_index=streak_start + len(streak) - 1,
+                        events=tuple(streak),
+                        context={"file": target_file, "write_count": write_count},
+                        severity="warning",
+                    )
+                )
             i = j
         return matches
 
@@ -289,7 +301,7 @@ class IgnoredUserInstruction(BehavioralPattern):
             if not e.text or not e.text.strip():
                 continue
             # Look at the next max_gap events
-            window = events[i + 1: i + 1 + self.max_gap]
+            window = events[i + 1 : i + 1 + self.max_gap]
             has_assistant_text = False
             has_tool_call = False
             span_events: list[Event] = [e]
@@ -303,16 +315,18 @@ class IgnoredUserInstruction(BehavioralPattern):
                 if w.role == "user":
                     break  # next user turn
             if has_tool_call and not has_assistant_text:
-                matches.append(PatternMatch(
-                    pattern_name=self.name,
-                    description="Agent jumped to tool calls without acknowledging user instruction.",
-                    session_id=e.session_id,
-                    start_index=i,
-                    end_index=i + len(span_events) - 1,
-                    events=tuple(span_events),
-                    context={"user_text_preview": e.text[:100]},
-                    severity="info",
-                ))
+                matches.append(
+                    PatternMatch(
+                        pattern_name=self.name,
+                        description="Agent jumped to tool calls without acknowledging user instruction.",
+                        session_id=e.session_id,
+                        start_index=i,
+                        end_index=i + len(span_events) - 1,
+                        events=tuple(span_events),
+                        context={"user_text_preview": e.text[:100]},
+                        severity="info",
+                    )
+                )
         return matches
 
 
@@ -330,16 +344,18 @@ class EmptyToolResult(BehavioralPattern):
             if e.text and e.text.strip():
                 continue
             tool = e.tool_name or e.action_kind or "unknown"
-            matches.append(PatternMatch(
-                pattern_name=self.name,
-                description=f"Tool '{tool}' returned empty output.",
-                session_id=e.session_id,
-                start_index=i,
-                end_index=i,
-                events=(e,),
-                context={"tool": tool, "status": e.status or "unknown"},
-                severity="info",
-            ))
+            matches.append(
+                PatternMatch(
+                    pattern_name=self.name,
+                    description=f"Tool '{tool}' returned empty output.",
+                    session_id=e.session_id,
+                    start_index=i,
+                    end_index=i,
+                    events=(e,),
+                    context={"tool": tool, "status": e.status or "unknown"},
+                    severity="info",
+                )
+            )
         return matches
 
 
@@ -396,21 +412,22 @@ class AbandonedFix(BehavioralPattern):
                     if ej_file == target_file:
                         came_back = True
                         break
-                    if (moved_to is None and ej_file
-                            and (ej.tool_name or "").lower() in self._WRITE_TOOLS):
+                    if moved_to is None and ej_file and (ej.tool_name or "").lower() in self._WRITE_TOOLS:
                         moved_to = j
-            if not came_back and moved_to is not None and _same_stream(events[i:moved_to + 1]):
-                span = events[i:moved_to + 1]
-                matches.append(PatternMatch(
-                    pattern_name=self.name,
-                    description=f"Edit to '{target_file}' failed; another file was edited within the lookahead window.",
-                    session_id=e.session_id,
-                    start_index=i,
-                    end_index=i + len(span) - 1,
-                    events=tuple(span),
-                    context={"file": target_file, "tool": tool},
-                    severity="warning",
-                ))
+            if not came_back and moved_to is not None and _same_stream(events[i : moved_to + 1]):
+                span = events[i : moved_to + 1]
+                matches.append(
+                    PatternMatch(
+                        pattern_name=self.name,
+                        description=f"Edit to '{target_file}' failed; another file was edited within the lookahead window.",
+                        session_id=e.session_id,
+                        start_index=i,
+                        end_index=i + len(span) - 1,
+                        events=tuple(span),
+                        context={"file": target_file, "tool": tool},
+                        severity="warning",
+                    )
+                )
             i += 2
         return matches
 
@@ -436,24 +453,23 @@ class LongSilence(BehavioralPattern):
         streak_start: int | None = None
         streak_count = 0
         for i, e in enumerate(events):
-            is_assistant_text = (
-                e.role == "assistant" and e.kind == "message"
-                and e.text and e.text.strip()
-            )
+            is_assistant_text = e.role == "assistant" and e.kind == "message" and e.text and e.text.strip()
             is_user = e.role == "user"
             if is_assistant_text or is_user:
                 if streak_count >= self.threshold and streak_start is not None:
-                    span = events[streak_start: i]
-                    matches.append(PatternMatch(
-                        pattern_name=self.name,
-                        description=f"No assistant text for {streak_count} consecutive events.",
-                        session_id=events[streak_start].session_id,
-                        start_index=streak_start,
-                        end_index=i - 1,
-                        events=tuple(span),
-                        context={"silent_events": streak_count},
-                        severity="info",
-                    ))
+                    span = events[streak_start:i]
+                    matches.append(
+                        PatternMatch(
+                            pattern_name=self.name,
+                            description=f"No assistant text for {streak_count} consecutive events.",
+                            session_id=events[streak_start].session_id,
+                            start_index=streak_start,
+                            end_index=i - 1,
+                            events=tuple(span),
+                            context={"silent_events": streak_count},
+                            severity="info",
+                        )
+                    )
                 streak_start = None
                 streak_count = 0
             else:
@@ -463,14 +479,16 @@ class LongSilence(BehavioralPattern):
         # Trailing silence
         if streak_count >= self.threshold and streak_start is not None:
             span = events[streak_start:]
-            matches.append(PatternMatch(
-                pattern_name=self.name,
-                description=f"No assistant text for {streak_count} consecutive events (end of session).",
-                session_id=events[streak_start].session_id,
-                start_index=streak_start,
-                end_index=len(events) - 1,
-                events=tuple(span),
-                context={"silent_events": streak_count},
-                severity="info",
-            ))
+            matches.append(
+                PatternMatch(
+                    pattern_name=self.name,
+                    description=f"No assistant text for {streak_count} consecutive events (end of session).",
+                    session_id=events[streak_start].session_id,
+                    start_index=streak_start,
+                    end_index=len(events) - 1,
+                    events=tuple(span),
+                    context={"silent_events": streak_count},
+                    severity="info",
+                )
+            )
         return matches

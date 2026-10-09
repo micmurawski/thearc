@@ -37,8 +37,8 @@ with Sessions.open() as sessions:
     sessions.add("logs/claude-traning")
     for record in sessions.list(harness="claude", since="2026-10-01"):
         print(record.id, record.native_id, record.started_at)
-    session = sessions.get("14a6b5fe")        # None selects the most recent
-    agent = sessions.agent(session)           # recorded MetaAgent, or None
+    session = sessions.get("14a6b5fe")  # None selects the most recent
+    agent = sessions.agent(session)  # recorded MetaAgent, or None
 trajectory = session.trajectories[0]
 print(trajectory.to_markdown())
 ```
@@ -67,9 +67,13 @@ from thearc.learning.sessions.store import SessionStore
 from thearc.learning.sessions.models import SourceConfig
 
 with SessionStore("artifacts/sessions.sqlite") as store:
-    report = store.ingest(SourceConfig(
-        id="experiment", harness="claude", root=Path("/path/to/logs"),
-    ))
+    report = store.ingest(
+        SourceConfig(
+            id="experiment",
+            harness="claude",
+            root=Path("/path/to/logs"),
+        )
+    )
     print(report.warnings)
 ```
 
@@ -85,10 +89,12 @@ from thearc.learning.sessions.models import SearchFilters
 from thearc.learning.sessions.store import SessionStore
 
 with SessionStore("artifacts/sessions.sqlite") as store:
-    evidence = store.snapshot(filters=SearchFilters(
-        source_ids=["experiment"],
-        started_before=datetime(2026, 9, 1, tzinfo=timezone.utc),
-    ))
+    evidence = store.snapshot(
+        filters=SearchFilters(
+            source_ids=["experiment"],
+            started_before=datetime(2026, 9, 1, tzinfo=timezone.utc),
+        )
+    )
 ```
 
 `started_before` and `started_after` use exclusive bounds and require timezone-aware
@@ -219,6 +225,7 @@ from thearc.learning.sessions.patterns import BehavioralPattern
 from thearc.learning.sessions.patterns import PatternMatch
 from thearc.learning.sessions.scanner import PatternScanner
 
+
 class RepeatedMessage(BehavioralPattern):
     name = "repeated_message"
     description = "Two adjacent assistant messages have identical text."
@@ -226,16 +233,25 @@ class RepeatedMessage(BehavioralPattern):
     def find_matches(self, events):
         matches = []
         for i in range(len(events) - 1):
-            first, second = events[i:i + 2]
-            if (first.kind == second.kind == "message"
-                    and first.role == second.role == "assistant"
-                    and first.text.strip() and first.text == second.text):
-                matches.append(PatternMatch(
-                    pattern_name=self.name, description=self.description,
-                    session_id=first.session_id, start_index=i, end_index=i + 1,
-                    events=(first, second),
-                ))
+            first, second = events[i : i + 2]
+            if (
+                first.kind == second.kind == "message"
+                and first.role == second.role == "assistant"
+                and first.text.strip()
+                and first.text == second.text
+            ):
+                matches.append(
+                    PatternMatch(
+                        pattern_name=self.name,
+                        description=self.description,
+                        session_id=first.session_id,
+                        start_index=i,
+                        end_index=i + 1,
+                        events=(first, second),
+                    )
+                )
         return matches
+
 
 scanner = PatternScanner(patterns=[RepeatedMessage()])
 # matches = scanner.scan_events(ordered_events)
@@ -246,6 +262,138 @@ a scan to registered names. `scan_session(canonical_session_id)` scans one index
 session. `scanner.summary(matches)` returns counts by pattern and severity.
 
 ### Use a match for reflection
+
+The v2 scanner can match literal text in submitted shell scripts:
+
+```python
+from thearcv2.sessions.scanner import ShellCommand
+
+matches = session.match(ShellCommand(startswith="graphify query"))
+matches = session.match(ShellCommand(contains="scripts/check.sh"))
+matches = session.match(ShellCommand(startswith="graphify", contains="route"))
+
+for match in matches:
+    print(match.context["command"], match.context["status"], match.event_ids)
+```
+
+Both filters together require both conditions on the same command. Matching is
+literal and case-sensitive (`case_sensitive=False` opts out); `startswith` ignores
+leading whitespace. The whole script is checked, including pipelines and newlines.
+Messages, tool output and command descriptions are not searched. Matches identify
+submitted text, including failed or blocked attempts; they do not prove that a
+command mentioned inside that text executed. Missing result status is `unknown`.
+
+Literal shell calls nested inside Codex `functions.exec` are included with
+`wrapped=True` and command status `unknown`; `wrapper_status` records the outer
+call's reported outcome. Variables and computed JavaScript commands are skipped.
+`command_index` distinguishes multiple recognized commands within one tool event.
+
+### Find skill usage in v2
+
+```python
+from thearcv2.sessions.scanner import AllOf, ShellCommand, SkillUsage
+
+session.match(SkillUsage(agent=agent))
+session.match(SkillUsage(path="skills/graphify"))
+session.match(SkillUsage(agent=agent, path="skills/graphify/references/query.md"))
+
+# A particular historical installation; no file needs to exist today.
+session.match(SkillUsage(path="/old/worktree/.claude/skills/graphify/SKILL.md"))
+
+# Skill evidence and tests in one trajectory.
+session.match(SkillUsage(agent=agent) & ShellCommand(startswith="pytest"))
+
+# A skill file accessed by a particular shell command.
+session.match(AllOf(
+    SkillUsage(path="skills/graphify"),
+    ShellCommand(startswith="cat"),
+    scope="command",
+))
+```
+
+`agent=` limits findings to skills and supporting files in that configuration.
+`path=` beginning with `skills/<name>` is portable: it matches the canonical
+workspace layout and recognized `.claude`, `.codex`, `.agents`, `.pi`, and
+`.opencode` installation layouts, including `.pi/agent/skills`. A skill directory
+selects its files; a narrower path selects that file or subtree. With both
+arguments, the path narrows the agent's resources.
+
+Other paths select a specific location. Relative locations use the recorded
+working directory (including a tool's `workdir`); absolute locations match that
+historical path. Explicit custom skill directories and their `SKILL.md` files
+are also accepted. Matching never resolves symlinks, expands environment variables
+or `~` against the current machine, or reads current files.
+
+Each finding records `skill`, `canonical_path`, the observed and lexically
+resolved paths, the matching `basis`, and a `usage` category:
+
+- `requested`: a user message begins with `/skill-name`.
+- `invoked`: a native `Skill`, `use_skill`, or `load_skill` tool names the skill.
+- `read`: a file-read tool or supported shell reader targets a skill file.
+- `executed`: a shell command targets a skill script, directly or through a
+  recognized interpreter. This describes an execution attempt.
+
+Name-only requests/invocations do not satisfy an explicit installation path or
+a supporting-file selector. The reported `status`, `outcome_scope`, result event,
+and source events remain available. Shell status applies to the submitted script
+as a whole; nested Codex commands retain `unknown` status and a separate
+`wrapper_status`. These observations do not establish that instructions were
+fully loaded, applied, or helpful. `agent_revision` identifies the supplied
+configuration, not a verified historical installation.
+
+Supported shell forms include literal `cat`, `head`, `tail`, simple `sed` print
+expressions, and direct or interpreter-based script calls. Dynamic expressions
+and unfamiliar syntax are skipped. Associated CLI names alone (e.g. `graphify
+query`) are not skill-usage evidence; match those separately with `ShellCommand`.
+
+### Compose v2 matchers
+
+`AnyOf` combines findings from any operand; `AllOf` requires findings from every
+operand within the same scope. Both work with `session.match`, trajectory/view
+matching, and `PatternScanner(patterns=[...])`.
+
+```python
+from thearcv2.sessions.scanner import AllOf, AnyOf, ShellCommand
+
+query = ShellCommand(startswith="graphify query")
+update = ShellCommand(startswith="graphify update")
+tests = ShellCommand(startswith="pytest")
+
+session.match(AnyOf(query, update))  # Same as query | update.
+session.match(AllOf(query, tests, scope="trajectory"))  # Same as query & tests.
+session.match((query | update) & tests)
+
+# Both filters must match one command, including inside a multi-command wrapper.
+session.match(AllOf(
+    ShellCommand(startswith="graphify"),
+    ShellCommand(contains="route"),
+    scope="command",
+))
+```
+
+- `AnyOf` / `|` returns original findings in event order, removing identical
+  duplicates while retaining different judgments of the same events.
+- `AllOf` / `&` defaults to `scope="trajectory"`: every operand must have a
+  finding wholly within one user prompt and its response. Matches before the
+  first prompt, after recorded completion, or crossing a trajectory boundary
+  cannot satisfy it. It never joins separate runs or transcript streams.
+- `scope="command"` joins matches with the same shell-call event and command
+  index. It supports `ShellCommand`, shell-based `SkillUsage` findings, and other command-scoped combinations,
+  including alternatives inside `AnyOf`.
+
+AND emits one result per qualifying scope, spanning its supporting findings,
+with the highest operand severity. `match.context["operands"]` retains the
+findings for each operand: their pattern names, descriptions, event IDs,
+severity and context. Repeated findings do not produce every possible
+combination. Nested ANDs retain their own scopes; these operators impose no
+ordering requirement on the findings.
+
+Use parentheses when mixing operators: Python evaluates `&` before `|`.
+Python's `and` / `or` raise an explanatory error on matchers; they cannot perform
+composition. Matcher composition makes no additional claim that a submitted
+command executed successfully—inspect the supporting findings' outcomes.
+
+### Reflect on matched evidence
 
 Use immutable resource scopes for new integrations:
 
@@ -276,7 +424,9 @@ from thearc.learning.sessions.translation import SessionTranslator
 
 translator = SessionTranslator(markdown_export_dir=Path("artifacts/translations"))
 plan = translator.plan_from_path(
-    "codex", "markdown", path=Path("/path/to/rollout-session.jsonl"),
+    "codex",
+    "markdown",
+    path=Path("/path/to/rollout-session.jsonl"),
 )
 print(plan.target_provider, plan.destination)  # Preview without writing.
 translator.write(plan)  # Refuses to overwrite an existing output by default.

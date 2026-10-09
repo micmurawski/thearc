@@ -25,16 +25,47 @@ def store(tmp_path):
     root.mkdir()
     records = [
         {"type": "session_meta", "payload": {"id": "native", "cwd": "/private/original"}},
-        {"type": "response_item", "payload": {"type": "message", "role": "developer",
-         "content": [{"type": "input_text", "text": "DO NOT EXPORT THIS"}]}},
-        {"type": "response_item", "payload": {"type": "message", "role": "user",
-         "content": [{"type": "input_text", "text": "Investigate graphify"}]}},
-        {"type": "response_item", "payload": {"type": "function_call", "call_id": "c1", "name": "shell",
-         "arguments": json.dumps({"command": "graphify query", "api_key": "secret-value"})}},
-        {"type": "response_item", "payload": {"type": "function_call_output", "call_id": "c1",
-         "output": "# Guide (helpful: 7, neutral: 0, harmful: 2)\n" + "graph text αβ " * 1000}},
-        {"type": "response_item", "payload": {"type": "message", "role": "assistant",
-         "content": [{"type": "output_text", "text": "Finished graph inspection"}]}},
+        {
+            "type": "response_item",
+            "payload": {
+                "type": "message",
+                "role": "developer",
+                "content": [{"type": "input_text", "text": "DO NOT EXPORT THIS"}],
+            },
+        },
+        {
+            "type": "response_item",
+            "payload": {
+                "type": "message",
+                "role": "user",
+                "content": [{"type": "input_text", "text": "Investigate graphify"}],
+            },
+        },
+        {
+            "type": "response_item",
+            "payload": {
+                "type": "function_call",
+                "call_id": "c1",
+                "name": "shell",
+                "arguments": json.dumps({"command": "graphify query", "api_key": "secret-value"}),
+            },
+        },
+        {
+            "type": "response_item",
+            "payload": {
+                "type": "function_call_output",
+                "call_id": "c1",
+                "output": "# Guide (helpful: 7, neutral: 0, harmful: 2)\n" + "graph text αβ " * 1000,
+            },
+        },
+        {
+            "type": "response_item",
+            "payload": {
+                "type": "message",
+                "role": "assistant",
+                "content": [{"type": "output_text", "text": "Finished graph inspection"}],
+            },
+        },
     ]
     (root / "rollout-native.jsonl").write_text("\n".join(map(json.dumps, records)) + "\n")
     with SessionStore(tmp_path / "index.sqlite") as service:
@@ -46,23 +77,49 @@ def snapshot(store, **kwargs):
     return store.snapshot(session_ids=[s.id for s in store.list_sessions()], **kwargs)
 
 
-
-
 def test_offline_handoff_roundtrip_and_no_replay(store, tmp_path):
     workspace = tmp_path / "worktree"
     workspace.mkdir()
     subprocess.run(["git", "init", str(workspace)], check=True, capture_output=True)
-    subprocess.run(["git", "-C", str(workspace), "-c", "user.name=Test", "-c", "user.email=test@example.org",
-                    "-c", "commit.gpgsign=false", "commit", "--allow-empty", "-m", "fixture"],
-                   check=True, capture_output=True)
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(workspace),
+            "-c",
+            "user.name=Test",
+            "-c",
+            "user.email=test@example.org",
+            "-c",
+            "commit.gpgsign=false",
+            "commit",
+            "--allow-empty",
+            "-m",
+            "fixture",
+        ],
+        check=True,
+        capture_output=True,
+    )
     evidence = snapshot(store)
     evidence_path = evidence.save(tmp_path / "cli-evidence")
     runner = CliRunner()
     for number, prefix in enumerate([["handoff"]]):
         output = tmp_path / f"cli-handoff-{number}"
-        prepared = runner.invoke(main, [*prefix, "prepare", "--snapshot", str(evidence_path),
-                                       "--task", "Review the evidence", "--workspace", str(workspace),
-                                       "--output", str(output)])
+        prepared = runner.invoke(
+            main,
+            [
+                *prefix,
+                "prepare",
+                "--snapshot",
+                str(evidence_path),
+                "--task",
+                "Review the evidence",
+                "--workspace",
+                str(workspace),
+                "--output",
+                str(output),
+            ],
+        )
         assert prepared.exit_code == 0, prepared.output
         assert not json.loads(prepared.output)["plan"]["permissions"]["execution_enabled"]
         shown = runner.invoke(main, [*prefix, "show", str(output)])
@@ -95,14 +152,26 @@ def test_unicode_search_ranges_and_unknown_tool_rejection(store):
     event = store.list_sessions()[0]
     source = store.list_sources()[0].root / "rollout-native.jsonl"
     with source.open("a") as stream:
-        stream.write(json.dumps({"type": "response_item", "payload": {"type": "message", "role": "assistant",
-                                "content": [{"type": "output_text", "text": "İ" * 300 + "needle"}]}}) + "\n")
+        stream.write(
+            json.dumps(
+                {
+                    "type": "response_item",
+                    "payload": {
+                        "type": "message",
+                        "role": "assistant",
+                        "content": [{"type": "output_text", "text": "İ" * 300 + "needle"}],
+                    },
+                }
+            )
+            + "\n"
+        )
     store.sync()
     evidence = snapshot(store)
     tools = session_tools(evidence)
     result = tools.call("search_events", {"query": "needle"})["items"][0]
-    original = tools.call("read_event", {"session_id": event.id, "event_id": result["event_id"],
-                                         "max_chars": 8000})["content"]
+    original = tools.call("read_event", {"session_id": event.id, "event_id": result["event_id"], "max_chars": 8000})[
+        "content"
+    ]
     start, end = result["range"]
     assert result["snippet"] == original[start:end]
     assert "needle" in result["snippet"]
@@ -136,11 +205,23 @@ def test_snapshot_keeps_one_revision_during_concurrent_sync(store, tmp_path, mon
     source = store.list_sources()[0].root / "rollout-native.jsonl"
     original_get = store.get_session
     with SessionStore(tmp_path / "index.sqlite") as writer:
+
         def change_during_read(session_id):
             # snapshot_store has already read revision and source rows in its transaction.
             with source.open("a") as stream:
-                stream.write(json.dumps({"type": "response_item", "payload": {"type": "message", "role": "user",
-                                         "content": [{"type": "input_text", "text": "Later generation"}]}}) + "\n")
+                stream.write(
+                    json.dumps(
+                        {
+                            "type": "response_item",
+                            "payload": {
+                                "type": "message",
+                                "role": "user",
+                                "content": [{"type": "input_text", "text": "Later generation"}],
+                            },
+                        }
+                    )
+                    + "\n"
+                )
             writer.sync()
             return original_get(session_id)
 
@@ -178,7 +259,7 @@ def test_storage_integrity_and_limits(store, tmp_path):
     with pytest.raises(ValueError, match="storage limit"):
         EvidenceSnapshot.load(path, max_bytes=20)
     with (path / "records.jsonl").open("a") as stream:
-        stream.write('{}\n')
+        stream.write("{}\n")
     with pytest.raises(ValueError):
         EvidenceSnapshot.load(path)
 
@@ -274,13 +355,25 @@ def test_offline_cli(store, tmp_path, group):
     runner = CliRunner()
     session_id = store.list_sessions()[0].id
     path = tmp_path / "snapshot"
-    result = runner.invoke(main, [group, "--index", str(tmp_path / "index.sqlite"), "snapshot",
-                                 "--session-id", session_id, "--output", str(path)])
+    result = runner.invoke(
+        main,
+        [
+            group,
+            "--index",
+            str(tmp_path / "index.sqlite"),
+            "snapshot",
+            "--session-id",
+            session_id,
+            "--output",
+            str(path),
+        ],
+    )
     assert result.exit_code == 0, result.output
     result = runner.invoke(main, [group, "inspect", "--snapshot", str(path)])
     assert result.exit_code == 0, result.output
     assert session_id in result.output
-    result = runner.invoke(main, [group, "export", "--snapshot", str(path), "--format", "context",
-                                 "--output", str(tmp_path / "context")])
+    result = runner.invoke(
+        main, [group, "export", "--snapshot", str(path), "--format", "context", "--output", str(tmp_path / "context")]
+    )
     assert result.exit_code == 0, result.output
     assert (tmp_path / "context" / "context.json").is_file()

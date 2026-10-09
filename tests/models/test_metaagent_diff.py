@@ -8,10 +8,18 @@ from thearc.models import Ranks
 
 
 def config():
-    return MetaAgent(name="graphify", version="1.0", skills=[
-        Skill(name="graphify", instructions="# Query\n\nQuery first.\n",
-              files={"references/query.md": "Broad query\n"}),
-    ], context=[ContextDocument(filename="AGENTS.md", content="# Rules\n\nRead source.\n")])
+    return MetaAgent(
+        name="graphify",
+        version="1.0",
+        skills=[
+            Skill(
+                name="graphify",
+                instructions="# Query\n\nQuery first.\n",
+                files={"references/query.md": "Broad query\n"},
+            ),
+        ],
+        context=[ContextDocument(filename="AGENTS.md", content="# Rules\n\nRead source.\n")],
+    )
 
 
 def test_diff_content_and_no_mutation(tmp_path):
@@ -81,8 +89,18 @@ def test_cli_verified_epoch_diff(tmp_path):
     before = config()
     after = before.model_copy(deep=True)
     after.skills["graphify"].files["references/query.md"] = "Focused query\n"
-    commit_epoch(tmp_path, epoch_id="first", expected_head=None, baseline=before, agent=after,
-                 ledger={}, reflections=[], changes=[], actor={}, summary="Focused query")
+    commit_epoch(
+        tmp_path,
+        epoch_id="first",
+        expected_head=None,
+        baseline=before,
+        agent=after,
+        ledger={},
+        reflections=[],
+        changes=[],
+        actor={},
+        summary="Focused query",
+    )
     runner = CliRunner()
     for options in ([], ["--epoch", "first", "--context-lines", "0"]):
         result = runner.invoke(main, ["curation", "diff", str(tmp_path), *options])
@@ -102,8 +120,18 @@ def test_cli_noop_filters_and_missing_epoch(tmp_path):
     after = before.model_copy(deep=True)
     after.version = "1.1"
     after.skills["graphify"].ranks = Ranks(helpful=2)
-    commit_epoch(tmp_path, epoch_id="first", expected_head=None, baseline=before, agent=after,
-                 ledger={}, reflections=[], changes=[], actor={}, summary="Metadata only")
+    commit_epoch(
+        tmp_path,
+        epoch_id="first",
+        expected_head=None,
+        baseline=before,
+        agent=after,
+        ledger={},
+        reflections=[],
+        changes=[],
+        actor={},
+        summary="Metadata only",
+    )
     result = runner.invoke(main, ["curation", "diff", str(tmp_path), "--no-version"])
     assert result.exit_code == 0
     assert "No differences" in result.output

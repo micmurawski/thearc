@@ -157,8 +157,17 @@ class OpenCodeAdapter(BaseAdapter):
         if not isinstance(info, dict) or not info.get("id") or not isinstance(data.get("messages"), list):
             raise ValueError("Expected OpenCode export with info and messages")
         metadata.update(session=info["id"], cwd=info.get("location", {}).get("directory", info.get("directory")))
-        result = [self.event(source, ref, info, metadata, kind="metadata", raw_pointer="/info",
-                             timestamp=info.get("time", {}).get("created"))]
+        result = [
+            self.event(
+                source,
+                ref,
+                info,
+                metadata,
+                kind="metadata",
+                raw_pointer="/info",
+                timestamp=info.get("time", {}).get("created"),
+            )
+        ]
         for m, message in enumerate(data["messages"]):
             if not isinstance(message, dict):
                 raise TypeError("Expected OpenCode message with info")
@@ -176,19 +185,28 @@ class OpenCodeAdapter(BaseAdapter):
                 if role == "assistant" or not native:
                     pointer += f"/{content_key}/{p}"
                 part_ref = ref.model_copy(update={"json_pointer": pointer})
-                fields = {"role": role if role in {"assistant", "user", "system"} else None,
-                          "kind": "metadata", "text": "",
-                          "raw_pointer": part_ref.json_pointer,
-                          "timestamp": message_info.get("time", {}).get("created")}
+                fields = {
+                    "role": role if role in {"assistant", "user", "system"} else None,
+                    "kind": "metadata",
+                    "text": "",
+                    "raw_pointer": part_ref.json_pointer,
+                    "timestamp": message_info.get("time", {}).get("created"),
+                }
                 if part.get("type") in {"text", "reasoning", "user", "system"}:
-                    fields.update(kind="thinking" if part["type"] == "reasoning" else "message",
-                                  text=part.get("text", ""))
+                    fields.update(
+                        kind="thinking" if part["type"] == "reasoning" else "message", text=part.get("text", "")
+                    )
                 elif part.get("type") == "tool":
                     state = part.get("state", {})
                     name = part.get("name") if native else part.get("tool")
-                    fields.update(kind="tool_call", tool_name=name,
-                                  action_kind=action(name), call_id=part.get("id") if native else part.get("callID"),
-                                  arguments=state.get("input", {}), text=json.dumps(state.get("input", {})))
+                    fields.update(
+                        kind="tool_call",
+                        tool_name=name,
+                        action_kind=action(name),
+                        call_id=part.get("id") if native else part.get("callID"),
+                        arguments=state.get("input", {}),
+                        text=json.dumps(state.get("input", {})),
+                    )
                     result.append(self.event(source, part_ref, part, metadata, subrecord=len(result), **fields))
                     if state.get("status") not in {"completed", "error"}:
                         continue
@@ -198,9 +216,13 @@ class OpenCodeAdapter(BaseAdapter):
                         error = error.get("message", json.dumps(error))
                     exit_code = state.get("metadata", {}).get("exit")
                     failed = state["status"] == "error" or (type(exit_code) is int and exit_code != 0)
-                    fields.update(kind="tool_result", role="tool", arguments=None,
-                                  status="failure" if failed else "success",
-                                  text=str(error or output))
+                    fields.update(
+                        kind="tool_result",
+                        role="tool",
+                        arguments=None,
+                        status="failure" if failed else "success",
+                        text=str(error or output),
+                    )
                 result.append(self.event(source, part_ref, part, metadata, subrecord=len(result), **fields))
         return result
 

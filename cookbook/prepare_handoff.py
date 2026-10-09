@@ -18,11 +18,14 @@ def main(argv=None):
     parser.add_argument("--output", type=Path, required=True)
     project_arguments(parser)
     args = parser.parse_args(argv)
-    plan = prepare_handoff(EvidenceSnapshot.load(args.snapshot), task=args.task, workspace=args.workspace,
-                           destination_config=load_config(args))
+    plan = prepare_handoff(
+        EvidenceSnapshot.load(args.snapshot),
+        task=args.task,
+        workspace=args.workspace,
+        destination_config=load_config(args),
+    )
     save_handoff(plan, args.output)
-    print(json.dumps({"plan_sha256": plan.sha256, "preview": plan.preview(),
-                      "execution_enabled": False}, indent=2))
+    print(json.dumps({"plan_sha256": plan.sha256, "preview": plan.preview(), "execution_enabled": False}, indent=2))
 
 
 if __name__ == "__main__":

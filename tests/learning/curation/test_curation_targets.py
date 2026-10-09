@@ -1,4 +1,3 @@
-
 import pytest
 from pydantic import ValidationError
 
@@ -16,27 +15,46 @@ def agent():
     )
 
 
-@pytest.mark.parametrize(("target", "initial", "edit"), [
-    (ResourceTarget(kind="skill", name="new"), {"description": "Initial"}, {"description": "Changed"}),
-    (ResourceTarget(kind="hook", name="new"), {"command": "echo initial"}, {"command": "echo changed"}),
-    (ResourceTarget(kind="mcp", name="new"), {"command": "initial"}, {"args": ["changed"]}),
-    (ResourceTarget(kind="rule", name="new.md"), {"content": "Initial"}, {"content": "Changed"}),
-    (ResourceTarget(kind="workflow", name="new.md"), {"content": "Initial"}, {"content": "Changed"}),
-    (ResourceTarget(kind="command", name="new.md"), {"content": "Initial"}, {"content": "Changed"}),
-    (ResourceTarget(kind="rule", name="existing.md", section="New"), {"content": "Initial"}, {"content": "Changed"}),
-    (ResourceTarget(kind="context", name="NEW.md"), {"content": "Initial"}, {"content": "Changed"}),
-    (ResourceTarget(kind="skill_file", name="graphify/references/new.md"), "Initial", "Changed"),
-    (ResourceTarget(kind="context", name="AGENTS.md", section="New"), {"content": "Initial"}, {"content": "Changed"}),
-    (ResourceTarget(kind="skill", name="graphify", section="New"), {"content": "Initial"}, {"content": "Changed"}),
-    (ResourceTarget(kind="skill_file", name="graphify/references/query.md", section="New"),
-     {"content": "Initial"}, {"content": "Changed"}),
-])
+@pytest.mark.parametrize(
+    ("target", "initial", "edit"),
+    [
+        (ResourceTarget(kind="skill", name="new"), {"description": "Initial"}, {"description": "Changed"}),
+        (ResourceTarget(kind="hook", name="new"), {"command": "echo initial"}, {"command": "echo changed"}),
+        (ResourceTarget(kind="mcp", name="new"), {"command": "initial"}, {"args": ["changed"]}),
+        (ResourceTarget(kind="rule", name="new.md"), {"content": "Initial"}, {"content": "Changed"}),
+        (ResourceTarget(kind="workflow", name="new.md"), {"content": "Initial"}, {"content": "Changed"}),
+        (ResourceTarget(kind="command", name="new.md"), {"content": "Initial"}, {"content": "Changed"}),
+        (
+            ResourceTarget(kind="rule", name="existing.md", section="New"),
+            {"content": "Initial"},
+            {"content": "Changed"},
+        ),
+        (ResourceTarget(kind="context", name="NEW.md"), {"content": "Initial"}, {"content": "Changed"}),
+        (ResourceTarget(kind="skill_file", name="graphify/references/new.md"), "Initial", "Changed"),
+        (
+            ResourceTarget(kind="context", name="AGENTS.md", section="New"),
+            {"content": "Initial"},
+            {"content": "Changed"},
+        ),
+        (ResourceTarget(kind="skill", name="graphify", section="New"), {"content": "Initial"}, {"content": "Changed"}),
+        (
+            ResourceTarget(kind="skill_file", name="graphify/references/query.md", section="New"),
+            {"content": "Initial"},
+            {"content": "Changed"},
+        ),
+    ],
+)
 def test_curation_crud_targets(tmp_path, target, initial, edit):
     meta = agent()
     for operation, value in [(Operation.ADD, initial), (Operation.EDIT, edit), (Operation.REMOVE, None)]:
         curation = Curation(
-            id=operation.value, target=target, operation=operation, value=value,
-            reflection_ids=["reflection"], evidence_event_ids=["event"], rationale="Test evidence",
+            id=operation.value,
+            target=target,
+            operation=operation,
+            value=value,
+            reflection_ids=["reflection"],
+            evidence_event_ids=["event"],
+            rationale="Test evidence",
         )
         # The same payload must survive JSON transport between flow stages.
         curation = Curation.model_validate_json(curation.model_dump_json())

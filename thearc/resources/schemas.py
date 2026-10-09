@@ -73,8 +73,10 @@ class TaggedReflection(ReflectionBaseModel):
 class ResourceReference(OutputBaseModel):
     """A rating of the agent lines at ``ref``; ranks go to the innermost section containing them."""
 
-    ref: str = Field(pattern=r"^[^#\s]+#L[1-9][0-9]*(-L[1-9][0-9]*)?$",
-                     description="Agent file lines, e.g. skills/debug/SKILL.md#L14-L25 or hooks.json#L3-L9.")
+    ref: str = Field(
+        pattern=r"^[^#\s]+#L[1-9][0-9]*(-L[1-9][0-9]*)?$",
+        description="Agent file lines, e.g. skills/debug/SKILL.md#L14-L25 or hooks.json#L3-L9.",
+    )
     tag: ReflectionRating
 
 
@@ -119,6 +121,7 @@ def schema_for(spec):
         elif isinstance(node, list):
             for value in node:
                 local_only(value)
+
     local_only(schema)
     return schema
 
@@ -135,8 +138,19 @@ def native_output_schema(schema):
     """
     if not isinstance(schema, dict) or schema.get("type") != "object":
         return None
-    allowed = {"type", "properties", "required", "additionalProperties", "$defs", "$ref",
-               "title", "description", "enum", "anyOf", "items"}
+    allowed = {
+        "type",
+        "properties",
+        "required",
+        "additionalProperties",
+        "$defs",
+        "$ref",
+        "title",
+        "description",
+        "enum",
+        "anyOf",
+        "items",
+    }
 
     def convert(node):
         if not isinstance(node, dict):
@@ -158,6 +172,7 @@ def native_output_schema(schema):
         if "anyOf" in node:
             result["anyOf"] = [convert(value) for value in node["anyOf"]]
         return result
+
     try:
         return convert(schema)
     except (TypeError, ValueError):
@@ -243,6 +258,7 @@ def validate_references(data, schema, agent):
             for branch in node.get(operator, []):
                 if operator == "allOf" or _validator(schema).evolve(schema=branch).is_valid(value):
                     walk(value, branch, path, seen)
+
     walk(data, schema, "", set())
 
 
@@ -271,10 +287,15 @@ class ResourceAssessmentReport(ReflectionBaseModel):
         for finding in self.findings:
             if any(event_id not in sessions for event_id in finding.event_ids):
                 raise ValueError("Assessment cites events outside the supplied history")
-            result.append(ReflectionItem(target=finding.resource, rating=finding.rating, reason=finding.reason,
-                                         limitations=finding.limitations,
-                                         evidence=[{"event_id": eid, "session_id": sessions[eid]}
-                                                   for eid in finding.event_ids]))
+            result.append(
+                ReflectionItem(
+                    target=finding.resource,
+                    rating=finding.rating,
+                    reason=finding.reason,
+                    limitations=finding.limitations,
+                    evidence=[{"event_id": eid, "session_id": sessions[eid]} for eid in finding.event_ids],
+                )
+            )
         return result
 
 

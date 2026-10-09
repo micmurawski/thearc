@@ -17,11 +17,19 @@ Two
 
 
 def agent():
-    return MetaAgent(name="a", context={"AGENTS.md": {"content": TEXT}},
-                     skills=[Skill(name="debug", instructions="# Retry\nInspect errors\n# Verify\nRun tests",
-                                   files={"run.sh": "echo", "notes/tips.md": "# Tip\nRead logs"})],
-                     hooks=[Hook(name="lint", command="ruff"), Hook(name="fmt", command="black")],
-                     mcps=[MCP(name="docs", command="docs-server")])
+    return MetaAgent(
+        name="a",
+        context={"AGENTS.md": {"content": TEXT}},
+        skills=[
+            Skill(
+                name="debug",
+                instructions="# Retry\nInspect errors\n# Verify\nRun tests",
+                files={"run.sh": "echo", "notes/tips.md": "# Tip\nRead logs"},
+            )
+        ],
+        hooks=[Hook(name="lint", command="ruff"), Hook(name="fmt", command="black")],
+        mcps=[MCP(name="docs", command="docs-server")],
+    )
 
 
 def target(section=None, kind="context", name="AGENTS.md"):
@@ -43,8 +51,14 @@ def test_iter_targets_nests_sections_and_skips_ambiguous_headings():
 
 def test_files_are_rank_free_and_every_target_has_lines():
     files = agent().files()
-    assert set(files.files) == {"skills/debug/SKILL.md", "skills/debug/run.sh", "skills/debug/notes/tips.md",
-                                "context/AGENTS.md", "hooks.json", "mcp.json"}
+    assert set(files.files) == {
+        "skills/debug/SKILL.md",
+        "skills/debug/run.sh",
+        "skills/debug/notes/tips.md",
+        "context/AGENTS.md",
+        "hooks.json",
+        "mcp.json",
+    }
     assert "harmful" not in "".join(files.files.values())
     assert {span.target for span in files.spans} == {t for t, _ in agent().iter_targets()}
     hooks = json.loads(files.files["hooks.json"])
@@ -66,13 +80,16 @@ def test_references_resolve_to_innermost_section():
     assert files.resolve(lint) == target(kind="hook", name="lint")
 
 
-@pytest.mark.parametrize(("reference", "message"), [
-    ("context/AGENTS.md#L2-L{style}", "crosses the boundary"),
-    ("context/AGENTS.md#L99", "lines"),
-    ("missing.md#L1", "Unknown file"),
-    ("context/AGENTS.md", "Invalid reference"),
-    ("hooks.json#L1", "not inside one resource"),
-])
+@pytest.mark.parametrize(
+    ("reference", "message"),
+    [
+        ("context/AGENTS.md#L2-L{style}", "crosses the boundary"),
+        ("context/AGENTS.md#L99", "lines"),
+        ("missing.md#L1", "Unknown file"),
+        ("context/AGENTS.md", "Invalid reference"),
+        ("hooks.json#L1", "not inside one resource"),
+    ],
+)
 def test_ambiguous_or_invalid_references_are_rejected(reference, message):
     files = agent().files()
     style = int(files.reference_for(target("Style")).split("#L")[1].split("-")[0])

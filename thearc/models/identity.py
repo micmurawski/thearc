@@ -18,8 +18,13 @@ def identity_path(base: Path) -> Path:
 
 
 def version_filename(name: str) -> str:
-    if (not isinstance(name, str) or not name.strip() or name in {".", ".."}
-            or any(char in name for char in "/\\:") or any(ord(char) < 32 or ord(char) == 127 for char in name)):
+    if (
+        not isinstance(name, str)
+        or not name.strip()
+        or name in {".", ".."}
+        or any(char in name for char in "/\\:")
+        or any(ord(char) < 32 or ord(char) == 127 for char in name)
+    ):
         raise ValueError("MetaAgent name must be a safe filename component")
     return f".{name}_version"
 
@@ -54,7 +59,7 @@ def read_identity(base: Path, *, name: str | None = None) -> dict:
         if len(markers) > 1:
             raise ValueError("Multiple MetaAgent version markers; specify name explicitly")
         if markers:
-            marker_name = markers[0].name[1:-len("_version")]
+            marker_name = markers[0].name[1 : -len("_version")]
             marker = version_path(base, marker_name)
             return {"name": marker_name, "version": _read_version(marker)}
         return {}
@@ -65,8 +70,12 @@ def read_identity(base: Path, *, name: str | None = None) -> dict:
     if len(content) > 16_384:
         raise ValueError("MetaAgent identity file is too large")
     data = json.loads(content)
-    if (not isinstance(data, dict) or set(data) != {"schema_version", "name", "version"}
-            or type(data["schema_version"]) is not int or data["schema_version"] != 1):
+    if (
+        not isinstance(data, dict)
+        or set(data) != {"schema_version", "name", "version"}
+        or type(data["schema_version"]) is not int
+        or data["schema_version"] != 1
+    ):
         raise ValueError("Invalid MetaAgent identity file")
     marker = version_path(base, data["name"])
     if marker.exists() and _read_version(marker) != data["version"]:

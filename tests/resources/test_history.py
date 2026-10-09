@@ -48,7 +48,8 @@ def test_foreign_prefix_and_stream_boundary(history):
 
 def test_rendering_and_conversion(history, tmp_path):
     assert evidence_to_markdown(history.events) == evidence_to_markdown(
-        json.dumps([e.model_dump() for e in history.events]))
+        json.dumps([e.model_dump() for e in history.events])
+    )
     text = history.to_markdown()
     assert "fixture.jsonl" not in text and "harness" not in text
     assert 'Responds to: "e1"' in text
@@ -106,8 +107,13 @@ def test_store_pins_lazy_artifacts_and_result_membership(tmp_path):
     log = source / "session.jsonl"
 
     def write(text):
-        log.write_text(json.dumps({"type": "user", "uuid": "u", "sessionId": "native",
-                                   "message": {"role": "user", "content": text}}) + "\n")
+        log.write_text(
+            json.dumps(
+                {"type": "user", "uuid": "u", "sessionId": "native", "message": {"role": "user", "content": text}}
+            )
+            + "\n"
+        )
+
     write("old SyntaxError")
     store = SessionStore(tmp_path / "index.sqlite")
     store.ingest(SourceConfig(id="fixture", harness="claude", root=source))
@@ -125,8 +131,9 @@ def test_store_pins_lazy_artifacts_and_result_membership(tmp_path):
 
     from thearc.cli import main
 
-    rendered = CliRunner().invoke(main, ["sessions", "--index", str(tmp_path / "index.sqlite"),
-                                        "render", sid, "--trajectory", "0"])
+    rendered = CliRunner().invoke(
+        main, ["sessions", "--index", str(tmp_path / "index.sqlite"), "render", sid, "--trajectory", "0"]
+    )
     assert rendered.exit_code == 0, rendered.output
     assert "new SyntaxError" in rendered.output
     store.close()
@@ -144,7 +151,8 @@ def test_input_mutations_do_not_change_history():
 
 
 def test_markdown_prints_tool_arguments_once():
-    call = event(0, kind="tool_call", tool_name="Bash", call_id="c", arguments={"command": "ls"},
-                 text='{"command": "ls"}')
+    call = event(
+        0, kind="tool_call", tool_name="Bash", call_id="c", arguments={"command": "ls"}, text='{"command": "ls"}'
+    )
     text = Session.from_events([call]).to_markdown()
     assert text.count('"command"') == 1

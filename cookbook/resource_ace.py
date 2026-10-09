@@ -22,10 +22,16 @@ def adapt(agent: MetaAgent, history: History, *, implementation: str, model: str
     reflector = Reflector(implementation=implementation, model=model, artifact_dir=destination / "reflections")
     reflection = reflector.reflect(
         REFLECTION_PROMPT + "\n\n" + history.to_markdown(),
-        agent=agent, output_schema=ResourceAssessmentReport, validate_resources=True,
+        agent=agent,
+        output_schema=ResourceAssessmentReport,
+        validate_resources=True,
     )
     assessments = reflection.assessments(history)
     curator = Curator(implementation=implementation, model=model, artifact_dir=destination / "curator-runs")
-    result = curator.curate("Improve the configuration using the supported findings.", [assessments],
-                            agent=agent, output=destination / "curation")
+    result = curator.curate(
+        "Improve the configuration using the supported findings.",
+        [assessments],
+        agent=agent,
+        output=destination / "curation",
+    )
     return result

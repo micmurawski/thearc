@@ -104,8 +104,7 @@ def _context_records(events: list[Event]) -> set[tuple]:
             continue
         item = payload.get("item", {})
         text = None
-        if (payload.get("type") == "item_completed" and isinstance(item, dict)
-                and item.get("type") == "UserMessage"):
+        if payload.get("type") == "item_completed" and isinstance(item, dict) and item.get("type") == "UserMessage":
             from .adapters import text_content
 
             text = text_content(item.get("content", []))
@@ -137,15 +136,19 @@ def split_trajectories(events: Sequence[Event]) -> TrajectorySplit:
         for event in segment:
             marker, turn_id = _native_marker(event)
             if _user_prompt(event) and _record(event) not in context_records:
-                if (current is not None and not current.events
-                        and _record(current.prompt_events[-1]) == _record(event)):
+                if current is not None and not current.events and _record(current.prompt_events[-1]) == _record(event):
                     current.prompt_events.append(event)
                     continue
                 if current is not None:
                     pending_turn = pending_turn or current.native_turn_id
                     current.boundary = "next_prompt"
-                current = Trajectory(session_id=event.session_id, run_id=event.run_id,
-                                     prompt_events=[event], boundary="end_of_stream", native_turn_id=pending_turn)
+                current = Trajectory(
+                    session_id=event.session_id,
+                    run_id=event.run_id,
+                    prompt_events=[event],
+                    boundary="end_of_stream",
+                    native_turn_id=pending_turn,
+                )
                 result.trajectories.append(current)
                 pending_turn = None
                 continue

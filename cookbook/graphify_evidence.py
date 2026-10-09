@@ -9,10 +9,12 @@ class GraphifyReflection(ResourceAssessmentReport):
     """ResourceAssessmentReport extends ReflectionBaseModel and validates event citations."""
 
     summary: str = Field(description="How Graphify affected completion of the user's coding task")
-    findings: list[ResourceAssessment] = Field(description=(
-        "Supported resource assessments. Cite provided event IDs. In each reason, explain the observed "
-        "behavior, its effect, and a concrete guidance improvement. Return [] when support is insufficient."
-    ))
+    findings: list[ResourceAssessment] = Field(
+        description=(
+            "Supported resource assessments. Cite provided event IDs. In each reason, explain the observed "
+            "behavior, its effect, and a concrete guidance improvement. Return [] when support is insufficient."
+        )
+    )
 
 
 class ReflectionSchema(ReflectionBaseModel):
@@ -46,19 +48,19 @@ def adapt(agent, store, *, pattern, filters, reflector, curator, output=None):
 
     # Keep windows separate so gaps are not mistaken for adjacent events.
     evidence_prompt = "\n\n".join(
-        f"## Match {number}: {match.pattern_name}\n{match.description}\n\n"
-        + evidence_to_markdown(match.events)
+        f"## Match {number}: {match.pattern_name}\n{match.description}\n\n" + evidence_to_markdown(match.events)
         for number, match in enumerate(matches, 1)
     )
     prompt = (
-        REFLECTION_PROMPT
-        + "\nThese are selected behavioral windows, not complete sessions. "
-          "A match is a signal to inspect, not proof of a mistake. "
-          "The target agent may differ from the producer; recommend applicable improvements.\n\n"
-        + evidence_prompt
+        REFLECTION_PROMPT + "\nThese are selected behavioral windows, not complete sessions. "
+        "A match is a signal to inspect, not proof of a mistake. "
+        "The target agent may differ from the producer; recommend applicable improvements.\n\n" + evidence_prompt
     )
     response = reflector.reflect(
-        prompt, agent=agent, output_schema=ReflectionSchema, validate_resources=True,
+        prompt,
+        agent=agent,
+        output_schema=ReflectionSchema,
+        validate_resources=True,
     )
     reflections = response.output.reflections
     events = {event.id: event for match in matches for event in match.events}

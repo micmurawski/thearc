@@ -126,12 +126,9 @@ class SessionStore:
         normalized = self.connection.execute(
             "SELECT value FROM settings WHERE key='projection_timestamps_utc'",
         ).fetchone()
-        if (
-            normalized is None
-            or (
-                self.connection.execute("SELECT 1 FROM events LIMIT 1").fetchone()
-                and not self.connection.execute("SELECT 1 FROM sessions LIMIT 1").fetchone()
-            )
+        if normalized is None or (
+            self.connection.execute("SELECT 1 FROM events LIMIT 1").fetchone()
+            and not self.connection.execute("SELECT 1 FROM sessions LIMIT 1").fetchone()
         ):
             self._refresh_projections()
 
@@ -161,17 +158,26 @@ class SessionStore:
 
     def list_sources(self) -> list[SourceConfig]:
         """Read registered roots without scanning or modifying the source corpus."""
-        return [SourceConfig.model_validate_json(row[0]) for row in
-                self.connection.execute("SELECT config FROM sources ORDER BY id")]
+        return [
+            SourceConfig.model_validate_json(row[0])
+            for row in self.connection.execute("SELECT config FROM sources ORDER BY id")
+        ]
 
     def ingest(self, source: SourceConfig) -> SyncReport:
         """Register and synchronize only this source, leaving other sources untouched."""
         self.register_source(source)
         return self.sync(source_ids=[source.id])
 
-    def snapshot(self, *, session_ids: list[str] | None = None, filters: SearchFilters | None = None,
-                 redact: bool = True, hide_ranks: bool = True,
-                 kinds: list[str] | None = None, max_bytes: int = 100_000_000):
+    def snapshot(
+        self,
+        *,
+        session_ids: list[str] | None = None,
+        filters: SearchFilters | None = None,
+        redact: bool = True,
+        hide_ranks: bool = True,
+        kinds: list[str] | None = None,
+        max_bytes: int = 100_000_000,
+    ):
         """Freeze explicit IDs or filtered whole sessions in one read transaction.
 
         Supply exactly one selector; SearchFilters() explicitly selects all sessions.
@@ -180,8 +186,15 @@ class SessionStore:
         """
         from thearc.learning.evidence.snapshot import snapshot_store
 
-        return snapshot_store(self, session_ids=session_ids, filters=filters, redact=redact, hide_ranks=hide_ranks,
-                              kinds=kinds, max_bytes=max_bytes)
+        return snapshot_store(
+            self,
+            session_ids=session_ids,
+            filters=filters,
+            redact=redact,
+            hide_ranks=hide_ranks,
+            kinds=kinds,
+            max_bytes=max_bytes,
+        )
 
     def sync(self, *, source_ids: list[str] | None = None) -> SyncReport:
         report = SyncReport()
@@ -453,7 +466,8 @@ class SessionStore:
         """
         where, params = self._session_conditions(filters)
         cursor = self.connection.execute(
-            f"SELECT * FROM sessions WHERE {where} ORDER BY COALESCE(ended_at,''),id", params,
+            f"SELECT * FROM sessions WHERE {where} ORDER BY COALESCE(ended_at,''),id",
+            params,
         )
         try:
             for row in cursor:
@@ -473,7 +487,8 @@ class SessionStore:
         cursor = self.connection.execute(
             "SELECT * FROM sessions WHERE id IN ("
             f"SELECT e.session_id FROM events e WHERE {where}) "
-            "ORDER BY COALESCE(ended_at,''),id", params,
+            "ORDER BY COALESCE(ended_at,''),id",
+            params,
         )
         try:
             for row in cursor:
@@ -746,7 +761,8 @@ class SessionStore:
         where = " AND ".join(conditions) or "1"
         cursor = self.connection.execute(
             f"SELECT e.data FROM events e WHERE {where} "
-            "ORDER BY e.source_id,e.session_id,e.path,e.byte_offset,e.subrecord,e.id", params,
+            "ORDER BY e.source_id,e.session_id,e.path,e.byte_offset,e.subrecord,e.id",
+            params,
         )
         try:
             for row in cursor:

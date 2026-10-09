@@ -47,7 +47,6 @@ def test_agent_initialization():
     assert agent.context["CLAUDE.md"].content == "# Claude context"
 
 
-
 def test_agent_initialization_with_dicts_and_context():
     agent = MetaAgent(
         name="dict-agent",
@@ -179,13 +178,17 @@ def test_replace_false_appends_and_merges():
         agent1 = MetaAgent(
             name="agent",
             skills=[
-                Skill(name="shared-skill", description="Initial skill", 
-                          instructions="# Section One\nFirst skill content.")],
+                Skill(
+                    name="shared-skill", description="Initial skill", instructions="# Section One\nFirst skill content."
+                )
+            ],
             hooks=[Hook(name="hook1", command="echo 1")],
             mcps=[MCP(name="mcp1", command="cmd1")],
             context=[
-                ContextDocument(filename="AGENTS.md", 
-                                content="# General Standards\nUse Python.\n\n# Code Quality\nClean code.")],
+                ContextDocument(
+                    filename="AGENTS.md", content="# General Standards\nUse Python.\n\n# Code Quality\nClean code."
+                )
+            ],
         )
         agent1.install(implementation="claudecode", replace=True, project_dir=proj_dir)
 
@@ -204,14 +207,19 @@ def test_replace_false_appends_and_merges():
         agent2 = MetaAgent(
             name="agent",
             skills=[
-                Skill(name="shared-skill", description="Initial skill", 
-                      instructions="# Section Two\nSecond skill section.")
+                Skill(
+                    name="shared-skill",
+                    description="Initial skill",
+                    instructions="# Section Two\nSecond skill section.",
+                )
             ],
             hooks=[Hook(name="hook2", command="echo 2")],
             mcps=[MCP(name="mcp2", command="cmd2")],
-            context=[ContextDocument(
-                filename="AGENTS.md", 
-                content="# Security Rules\nNever leak keys.\n\n# Code Quality\nUpdated quality rules.")
+            context=[
+                ContextDocument(
+                    filename="AGENTS.md",
+                    content="# Security Rules\nNever leak keys.\n\n# Code Quality\nUpdated quality rules.",
+                )
             ],
         )
         agent2.install(implementation="claudecode", replace=False, project_dir=proj_dir)

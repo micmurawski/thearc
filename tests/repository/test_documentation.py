@@ -19,7 +19,11 @@ def test_documentation_builds_strictly_without_private_artifacts(tmp_path):
     site = tmp_path / "site"
     result = subprocess.run(
         [sys.executable, "-m", "mkdocs", "build", "--strict", "--site-dir", str(site)],
-        cwd=root, capture_output=True, text=True, timeout=60, check=False,
+        cwd=root,
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
     )
     assert result.returncode == 0, result.stdout + result.stderr
     assert (site / "index.html").is_file()
@@ -72,11 +76,11 @@ def test_documented_public_imports_resolve():
     import importlib
 
     root = REPOSITORY_ROOT
-    paths = [root / 'README.md', root / 'GLOSSARY.md', *sorted((root / 'docs').rglob('*.md'))]
+    paths = [root / "README.md", root / "GLOSSARY.md", *sorted((root / "docs").rglob("*.md"))]
     for path in paths:
-        for snippet in re.findall(r'```python\n(.*?)```', path.read_text(), re.DOTALL):
+        for snippet in re.findall(r"```python\n(.*?)```", path.read_text(), re.DOTALL):
             for node in ast.walk(ast.parse(snippet)):
-                if isinstance(node, ast.ImportFrom) and node.module and node.module.startswith(('thearc', 'cookbook')):
+                if isinstance(node, ast.ImportFrom) and node.module and node.module.startswith(("thearc", "cookbook")):
                     module = importlib.import_module(node.module)
                     for name in node.names:
-                        assert hasattr(module, name.name), f'{path}: missing {node.module}.{name.name}'
+                        assert hasattr(module, name.name), f"{path}: missing {node.module}.{name.name}"

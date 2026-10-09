@@ -36,9 +36,17 @@ def _reader(path):
 
 
 def _filters(options):
-    aliases = {"kind": "kinds", "role": "roles", "status": "statuses", "tool_name": "tool_names",
-               "action_kind": "action_kinds", "session_id": "session_ids", "source_id": "source_ids",
-               "run_id": "run_ids", "harness": "harnesses"}
+    aliases = {
+        "kind": "kinds",
+        "role": "roles",
+        "status": "statuses",
+        "tool_name": "tool_names",
+        "action_kind": "action_kinds",
+        "session_id": "session_ids",
+        "source_id": "source_ids",
+        "run_id": "run_ids",
+        "harness": "harnesses",
+    }
     data = {}
     for key, value in options.items():
         if key in aliases:
@@ -72,7 +80,8 @@ def _query(index, text, filters, mode, sensitive, ids=None):
     where = " AND ".join(conditions) or "1"
     cursor = index.connection.execute(
         f"SELECT e.id,e.session_id FROM events e WHERE {where} "
-        "ORDER BY e.source_id,e.session_id,e.path,e.byte_offset,e.subrecord,e.id", params,
+        "ORDER BY e.source_id,e.session_id,e.path,e.byte_offset,e.subrecord,e.id",
+        params,
     )
     try:
         yield from cursor
@@ -138,8 +147,14 @@ class SearchHit:
 
     @property
     def trajectory(self):
-        return next((t for t in self.session.split_into_trajectories()
-                     if any(e.id == self.event.id for e in t.selected_events)), None)
+        return next(
+            (
+                t
+                for t in self.session.split_into_trajectories()
+                if any(e.id == self.event.id for e in t.selected_events)
+            ),
+            None,
+        )
 
 
 @dataclass(frozen=True)
@@ -192,6 +207,7 @@ class History:
                     yield SearchHit(event, session, tuple(ranges))
             finally:
                 index.close()
+
         return Results(generate)
 
     def match(self, pattern):
@@ -203,9 +219,14 @@ class History:
             for match in pattern.find_matches(group):
                 from dataclasses import replace
 
-                results.append(replace(match, start_index=match.start_index + offset,
-                                       end_index=match.end_index + offset,
-                                       events=immutable_events(match.events)))
+                results.append(
+                    replace(
+                        match,
+                        start_index=match.start_index + offset,
+                        end_index=match.end_index + offset,
+                        events=immutable_events(match.events),
+                    )
+                )
             offset += len(group)
         return tuple(results)
 
@@ -235,11 +256,17 @@ class Session(History):
             if not captured:
                 raise ValueError("Empty histories require explicit session metadata")
             first = captured[0]
-            metadata = SessionRecord(id=first.session_id, source_id=first.source_id, harness=first.harness,
-                                     native_id=first.session_native_id or first.session_id)
+            metadata = SessionRecord(
+                id=first.session_id,
+                source_id=first.source_id,
+                harness=first.harness,
+                native_id=first.session_native_id or first.session_id,
+            )
         metadata = SessionRecord.model_validate(metadata.model_dump() if hasattr(metadata, "model_dump") else metadata)
-        if any(e.session_id != metadata.id or e.source_id != metadata.source_id or e.harness != metadata.harness
-               for e in captured):
+        if any(
+            e.session_id != metadata.id or e.source_id != metadata.source_id or e.harness != metadata.harness
+            for e in captured
+        ):
             raise ValueError("Events must belong to the supplied session")
         if len({e.id for e in captured}) != len(captured):
             raise ValueError("Duplicate event identity")
@@ -261,8 +288,12 @@ class Session(History):
 
     def save(self, path):
         detached = Session.from_events(self.events, metadata=self.metadata)
-        data = {"version": 1, "session": detached.metadata.model_dump(),
-                "events": [e.model_dump() for e in detached.events], "sha256": detached.artifact_id}
+        data = {
+            "version": 1,
+            "session": detached.metadata.model_dump(),
+            "events": [e.model_dump() for e in detached.events],
+            "sha256": detached.artifact_id,
+        }
         with Path(path).open("x", encoding="utf-8") as stream:
             json.dump(data, stream, ensure_ascii=False)
         return Path(path)
@@ -298,9 +329,16 @@ class Session(History):
     def _trajectories(self):
         split = split_trajectories([Event.model_validate(e.model_dump()) for e in self.events])
         by_id = {e.id: e for e in self.events}
-        trajectories = tuple(Trajectory(self, tuple(by_id[e.id] for e in t.prompt_events),
-                                        tuple(by_id[e.id] for e in t.events), t.boundary, t.native_turn_id)
-                             for t in split.trajectories)
+        trajectories = tuple(
+            Trajectory(
+                self,
+                tuple(by_id[e.id] for e in t.prompt_events),
+                tuple(by_id[e.id] for e in t.events),
+                t.boundary,
+                t.native_turn_id,
+            )
+            for t in split.trajectories
+        )
         return Trajectories(trajectories, tuple(by_id[e.id] for e in split.unassigned_events))
 
     def split_into_trajectories(self):
@@ -356,14 +394,17 @@ class SessionView(History):
     def __post_init__(self):
         if type(self.stop) is not int or not 0 < self.stop <= len(self.session.events):
             raise ValueError("A session prefix requires a valid positive endpoint")
-        endings = [t for t in self.session.split_into_trajectories()
-                   if t.selected_events[-1].id == self.session.events[self.stop - 1].id]
+        endings = [
+            t
+            for t in self.session.split_into_trajectories()
+            if t.selected_events[-1].id == self.session.events[self.stop - 1].id
+        ]
         if not endings or endings[0].native_turn_id != self.native_turn_id:
             raise ValueError("A prefix must end at a recorded trajectory boundary")
 
     @property
     def selected_events(self):
-        return self.session.events[:self.stop]
+        return self.session.events[: self.stop]
 
     @property
     def events(self):
@@ -382,8 +423,9 @@ class SessionStore:
 
     def __init__(self, path, *, artifact_dir=None):
         self.path = Path(path).expanduser().resolve()
-        self.artifact_dir = (Path(artifact_dir).expanduser().resolve()
-                             if artifact_dir else self.path.with_suffix(".artifacts"))
+        self.artifact_dir = (
+            Path(artifact_dir).expanduser().resolve() if artifact_dir else self.path.with_suffix(".artifacts")
+        )
         self.index = Index(self.path)
         self._snapshot = None
         self._revision = None
@@ -405,8 +447,11 @@ class SessionStore:
 
     def _capture(self):
         # data_version also detects commits by another connection.
-        revision = (self.index.revision, self.index.connection.total_changes,
-                    self.index.connection.execute("PRAGMA data_version").fetchone()[0])
+        revision = (
+            self.index.revision,
+            self.index.connection.total_changes,
+            self.index.connection.execute("PRAGMA data_version").fetchone()[0],
+        )
         if self._snapshot is None or revision != self._revision:
             self.artifact_dir.mkdir(parents=True, exist_ok=True)
             with NamedTemporaryFile(dir=self.artifact_dir, suffix=".sqlite", delete=False) as stream:
@@ -453,6 +498,7 @@ class SessionStore:
                     yield SearchHit(event, session, tuple(ranges))
             finally:
                 index.close()
+
         return Results(generate)
 
     def match(self, pattern, **options):
@@ -466,4 +512,5 @@ class SessionStore:
                     yield from self._get(path, record.id).match(pattern)
             finally:
                 index.close()
+
         return Results(generate)

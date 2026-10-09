@@ -17,8 +17,11 @@ def test_cli_version():
         ([], ["sessions", "evidence", "handoff", "curation", "reflection"], ["history"]),
         (["reflection"], ["run", "handoff", "serve", "resources", "show"], []),
         (["curation"], ["run", "show", "history", "diff"], ["approve", "accept"]),
-        (["sessions"], ["add", "sources", "index", "sync", "search", "show", "trace", "list", "render"],
-         ["snapshot", "export", "inspect", "handoff"]),
+        (
+            ["sessions"],
+            ["add", "sources", "index", "sync", "search", "show", "trace", "list", "render"],
+            ["snapshot", "export", "inspect", "handoff"],
+        ),
         (["evidence"], ["snapshot", "export", "inspect"], ["handoff", "search"]),
         (["handoff"], ["prepare", "show"], ["index", "sync"]),
     ],
@@ -39,8 +42,9 @@ def test_handoff_paths_validate_saved_plans(tmp_path, path):
     assert "No such command" not in result.output
 
 
-@pytest.mark.parametrize("path", [["history"], ["sessions", "snapshot"], ["sessions", "handoff"],
-                                  ["handoff", "reflect"]])
+@pytest.mark.parametrize(
+    "path", [["history"], ["sessions", "snapshot"], ["sessions", "handoff"], ["handoff", "reflect"]]
+)
 def test_removed_aliases_are_not_registered(path):
     result = CliRunner().invoke(main, [*path, "--help"])
     assert result.exit_code == 2

@@ -20,8 +20,14 @@ SCHEMA_VERSION = 1
 
 def _relative(value: str) -> str:
     path = PurePosixPath(value)
-    if (not value or "\\" in value or path.is_absolute() or any(part in {".", "..", ""} for part in value.split("/"))
-            or ":" in value or "\x00" in value):
+    if (
+        not value
+        or "\\" in value
+        or path.is_absolute()
+        or any(part in {".", "..", ""} for part in value.split("/"))
+        or ":" in value
+        or "\x00" in value
+    ):
         raise ValueError(f"Unsafe workspace path: {value!r}")
     return value
 
@@ -128,8 +134,12 @@ def read_workspace(path: str | Path, *, max_bytes: int = 10_000_000, max_files: 
         return content.decode("utf-8")
 
     manifest = json.loads(read(MANIFEST), object_pairs_hook=_unique_object)
-    if (not isinstance(manifest, dict) or set(manifest) != {"schema_version", "agent"}
-            or type(manifest["schema_version"]) is not int or manifest["schema_version"] != SCHEMA_VERSION):
+    if (
+        not isinstance(manifest, dict)
+        or set(manifest) != {"schema_version", "agent"}
+        or type(manifest["schema_version"]) is not int
+        or manifest["schema_version"] != SCHEMA_VERSION
+    ):
         raise ValueError("Unsupported workspace manifest")
     data = manifest["agent"]
     if not isinstance(data, dict):

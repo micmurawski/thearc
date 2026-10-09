@@ -14,8 +14,6 @@ def handoff_commands():
     """Prepare portable task/context plans. For reflection use reflection handoff."""
 
 
-
-
 @handoff_commands.command("prepare")
 @click.option("--snapshot", type=click.Path(exists=True, file_okay=False, path_type=Path), required=True)
 @click.option("--task", required=True)
@@ -25,8 +23,9 @@ def handoff_commands():
 def handoff_prepare(snapshot, task, workspace, output, max_chars):
     """Save a task and bounded context without invoking an agent or modifying the workspace."""
     try:
-        plan = prepare_handoff(EvidenceSnapshot.load(snapshot), task=task, workspace=workspace,
-                               max_context_chars=max_chars)
+        plan = prepare_handoff(
+            EvidenceSnapshot.load(snapshot), task=task, workspace=workspace, max_context_chars=max_chars
+        )
         save_handoff(plan, output)
         click.echo(json.dumps({"sha256": plan.sha256, "plan": plan.data}, indent=2))
     except (ValueError, OSError, KeyError) as exc:

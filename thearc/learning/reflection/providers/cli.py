@@ -11,8 +11,15 @@ from pathlib import Path
 from thearc.learning.reflection.runtime import ReflectionError
 
 
-def run_cli(argv: list[str], *, cwd: Path, timeout: float, input_text: str = "",
-            env: dict[str, str] | None = None, max_bytes: int = 4_000_000) -> str:
+def run_cli(
+    argv: list[str],
+    *,
+    cwd: Path,
+    timeout: float,
+    input_text: str = "",
+    env: dict[str, str] | None = None,
+    max_bytes: int = 4_000_000,
+) -> str:
     if os.name != "posix":
         raise ReflectionError("unsupported_platform", "CLI reflection currently requires macOS or Linux")
     deadline = time.monotonic() + timeout
@@ -20,8 +27,15 @@ def run_cli(argv: list[str], *, cwd: Path, timeout: float, input_text: str = "",
         source.write(input_text.encode())
         source.seek(0)
         try:
-            process = subprocess.Popen(argv, cwd=cwd, env=env, stdin=source, stdout=subprocess.PIPE,
-                                       stderr=subprocess.PIPE, start_new_session=True)
+            process = subprocess.Popen(
+                argv,
+                cwd=cwd,
+                env=env,
+                stdin=source,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                start_new_session=True,
+            )
         except OSError as exc:
             raise ReflectionError("missing_runtime", "Unable to start the configured reflection executable") from exc
         output = bytearray()

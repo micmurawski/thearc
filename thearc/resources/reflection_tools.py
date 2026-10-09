@@ -32,6 +32,7 @@ from .schemas import (
 
 def _list_schema(item_schema):
     """Keep local references, including recursive ones, valid inside the tool envelope."""
+
     def rebase(node):
         if isinstance(node, list):
             return [rebase(value) for value in node]
@@ -48,10 +49,16 @@ def _list_schema(item_schema):
             else:
                 result[key] = rebase(value)
         return result
-    return {"type": "object", "properties": {
-        "reflections": {"type": "array", "maxItems": 100, "items": {"$ref": "#/$defs/Reflection"}},
-    }, "required": ["reflections"], "additionalProperties": False,
-        "$defs": {"Reflection": rebase(item_schema)}}
+
+    return {
+        "type": "object",
+        "properties": {
+            "reflections": {"type": "array", "maxItems": 100, "items": {"$ref": "#/$defs/Reflection"}},
+        },
+        "required": ["reflections"],
+        "additionalProperties": False,
+        "$defs": {"Reflection": rebase(item_schema)},
+    }
 
 
 class ReflectionTools:
@@ -91,10 +98,15 @@ class ReflectionTools:
         blocks = []
         for path in self.files.files:
             outline = [span for span in self.files.outline(path) if span.target.section or span.path.endswith(".json")]
-            rows = [f"  L{span.start}-L{span.end} " + (f"{span.target.section} [SectionId: {span.target.id}]"
-                                                         if span.target.section
-                                                         else f"{span.target.kind}: {span.target.name}")
-                    for span in outline]
+            rows = [
+                f"  L{span.start}-L{span.end} "
+                + (
+                    f"{span.target.section} [SectionId: {span.target.id}]"
+                    if span.target.section
+                    else f"{span.target.kind}: {span.target.name}"
+                )
+                for span in outline
+            ]
             blocks.append((f"{path} ({self.files.line_count(path)} lines)", rows))
         text = "\n".join("\n".join([head, *rows]) for head, rows in blocks)
         if len(text) > self.max_index_chars:
@@ -104,21 +116,35 @@ class ReflectionTools:
     def resource_index(self):
         """Every addressable resource ID, so tagging never depends on what a search happened to find."""
         rows = [(key, target) for key, target in self.resources.mapping.items()]
-        lines = [f"{key} | {t['kind']} | {t['name']}" + (f" | {t['section']}" if t["section"] else "")
-                 for key, t in rows]
+        lines = [
+            f"{key} | {t['kind']} | {t['name']}" + (f" | {t['section']}" if t["section"] else "") for key, t in rows
+        ]
         text = "\n".join(lines)
         if len(text) > self.max_index_chars:
             # Very large agents: whole resources stay listed; sections remain reachable via list_resources.
             whole = [line for line, (_, t) in zip(lines, rows, strict=True) if not t["section"]]
-            text = "\n".join(whole) + (f"\n({len(lines) - len(whole)} section IDs omitted for size; "
-                                       "find them with list_resources.)")
-        return (f"AGENT RESOURCES ({len(rows)} IDs; id | kind | name | section):\n" + text if rows
-                else "AGENT RESOURCES: none. Leave bullet_tags empty.")
+            text = "\n".join(whole) + (
+                f"\n({len(lines) - len(whole)} section IDs omitted for size; find them with list_resources.)"
+            )
+        return (
+            f"AGENT RESOURCES ({len(rows)} IDs; id | kind | name | section):\n" + text
+            if rows
+            else "AGENT RESOURCES: none. Leave bullet_tags empty."
+        )
 
-    def __init__(self, *, agent: MetaAgent, evidence, reflection_schema=TaggedReflection,
-                 ledger=None, output=None, max_submissions=3, max_calls=100, page_chars=8000):
-        for name, value in (("max_submissions", max_submissions), ("max_calls", max_calls),
-                            ("page_chars", page_chars)):
+    def __init__(
+        self,
+        *,
+        agent: MetaAgent,
+        evidence,
+        reflection_schema=TaggedReflection,
+        ledger=None,
+        output=None,
+        max_submissions=3,
+        max_calls=100,
+        page_chars=8000,
+    ):
+        for name, value in (("max_submissions", max_submissions), ("max_calls", max_calls), ("page_chars", page_chars)):
             if type(value) is not int or value < 1:
                 raise ValueError(f"{name} must be a positive integer")
         if not isinstance(agent, MetaAgent):
@@ -176,8 +202,10 @@ class ReflectionTools:
         # Models are mutable; callers must not change an accepted batch in place.
         from copy import deepcopy
 
-        return [Reflection(r.id, r.text, deepcopy(r.output), r.provenance, r.execution, r.history)
-                for r in self._reflections]
+        return [
+            Reflection(r.id, r.text, deepcopy(r.output), r.provenance, r.execution, r.history)
+            for r in self._reflections
+        ]
 
     @property
     def assessments(self):
@@ -192,36 +220,73 @@ class ReflectionTools:
     @property
     def definitions(self):
         def tool(name, description, fields):
-            return {"type": "function", "name": name, "description": description,
-                    "inputSchema": {"type": "object", "properties": fields, "required": list(fields),
-                                    "additionalProperties": False}}
-        paging = {"query": {"type": "string", "maxLength": 500},
-                  "offset": {"type": "integer", "minimum": 0},
-                  "limit": {"type": "integer", "minimum": 1, "maximum": 50}}
+            return {
+                "type": "function",
+                "name": name,
+                "description": description,
+                "inputSchema": {
+                    "type": "object",
+                    "properties": fields,
+                    "required": list(fields),
+                    "additionalProperties": False,
+                },
+            }
+
+        paging = {
+            "query": {"type": "string", "maxLength": 500},
+            "offset": {"type": "integer", "minimum": 0},
+            "limit": {"type": "integer", "minimum": 1, "maximum": 50},
+        }
         if self.files is not None:
             access = [
                 tool("list_files", "List the agent's files with their line counts.", {}),
-                tool("read_file", "Read numbered lines of one agent file. Continue from next_line.",
-                     {"path": {"type": "string", "maxLength": 500},
-                      "start_line": {"type": "integer", "minimum": 1},
-                      "end_line": {"type": "integer", "minimum": 1}}),
+                tool(
+                    "read_file",
+                    "Read numbered lines of one agent file. Continue from next_line.",
+                    {
+                        "path": {"type": "string", "maxLength": 500},
+                        "start_line": {"type": "integer", "minimum": 1},
+                        "end_line": {"type": "integer", "minimum": 1},
+                    },
+                ),
             ]
         else:
             access = [
-                tool("list_resources", "Search resource names and section titles; empty query lists all. "
-                     "Paged IDs only.", {**paging, "include_ranks": {"type": "boolean"}}),
-                tool("read_resource", "Read one resource/section page by ID. Continue using next_offset.",
-                     {"id": {"type": "string", "maxLength": 100},
-                      "offset": {"type": "integer", "minimum": 0}, "include_ranks": {"type": "boolean"}}),
+                tool(
+                    "list_resources",
+                    "Search resource names and section titles; empty query lists all. Paged IDs only.",
+                    {**paging, "include_ranks": {"type": "boolean"}},
+                ),
+                tool(
+                    "read_resource",
+                    "Read one resource/section page by ID. Continue using next_offset.",
+                    {
+                        "id": {"type": "string", "maxLength": 100},
+                        "offset": {"type": "integer", "minimum": 0},
+                        "include_ranks": {"type": "boolean"},
+                    },
+                ),
             ]
-        evidence = [tool("list_evidence", "Locate event IDs by literal text search in the supplied evidence. "
-                         "Paged previews.", paging)] if self.cites_events else []
+        evidence = (
+            [
+                tool(
+                    "list_evidence",
+                    "Locate event IDs by literal text search in the supplied evidence. Paged previews.",
+                    paging,
+                )
+            ]
+            if self.cites_events
+            else []
+        )
         return [
             *access,
             *evidence,
-            {"type": "function", "name": "submit_reflections",
-             "description": "Validate and accept the complete reflection list. Fix errors and retry before finishing.",
-             "inputSchema": json.loads(json.dumps(self._submission_schema))},
+            {
+                "type": "function",
+                "name": "submit_reflections",
+                "description": "Validate and accept the complete reflection list. Fix errors and retry before finishing.",
+                "inputSchema": json.loads(json.dumps(self._submission_schema)),
+            },
         ]
 
     @staticmethod
@@ -229,8 +294,11 @@ class ReflectionTools:
         return {"path": path, "code": code, "message": message[:500]}
 
     def _rejected(self, errors):
-        return {"accepted": False, "errors": errors[:10],
-                "attempts_remaining": max(0, self.max_submissions - self._attempts)}
+        return {
+            "accepted": False,
+            "errors": errors[:10],
+            "attempts_remaining": max(0, self.max_submissions - self._attempts),
+        }
 
     def call(self, name, arguments):
         with self._lock:
@@ -262,22 +330,33 @@ class ReflectionTools:
                 if name == "submit_reflections":
                     return self._submit(arguments)
                 if name == "list_files":
-                    result = {"files": [{"path": path, "lines": self.files.line_count(path)}
-                                        for path in self.files.files]}
+                    result = {
+                        "files": [{"path": path, "lines": self.files.line_count(path)} for path in self.files.files]
+                    }
                 elif name == "read_file":
                     result = self._read_file(**arguments)
                 elif name == "list_resources":
                     result = self.resources.list(**arguments)
                 elif name == "read_resource":
-                    result = self.resources.read(arguments["id"], offset=arguments["offset"],
-                                                 include_ranks=arguments["include_ranks"], max_chars=self.page_chars)
+                    result = self.resources.read(
+                        arguments["id"],
+                        offset=arguments["offset"],
+                        include_ranks=arguments["include_ranks"],
+                        max_chars=self.page_chars,
+                    )
                 else:
-                    matches = [event for event in self._events
-                               if arguments["query"].casefold() in event.text.casefold()]
+                    matches = [
+                        event for event in self._events if arguments["query"].casefold() in event.text.casefold()
+                    ]
                     start, end = arguments["offset"], arguments["offset"] + arguments["limit"]
-                    result = {"events": [{"event_id": e.id, "role": e.role, "kind": e.kind,
-                                          "preview": e.text[:160]} for e in matches[start:end]],
-                              "total": len(matches), "next_offset": end if end < len(matches) else None}
+                    result = {
+                        "events": [
+                            {"event_id": e.id, "role": e.role, "kind": e.kind, "preview": e.text[:160]}
+                            for e in matches[start:end]
+                        ],
+                        "total": len(matches),
+                        "next_offset": end if end < len(matches) else None,
+                    }
                 if len(json.dumps(result, ensure_ascii=False)) > self.page_chars * 4:
                     raise ValueError("Page exceeds response limit; request fewer entries")
                 return result
@@ -294,26 +373,41 @@ class ReflectionTools:
             if len(content) <= self.page_chars or end == start_line:
                 break
             end = start_line + max(0, (end - start_line) // 2)
-        return {"path": path, "start_line": start_line, "end_line": end, "total_lines": total,
-                "content": content[:self.page_chars], "next_line": end + 1 if end < min(end_line, total) else None}
+        return {
+            "path": path,
+            "start_line": start_line,
+            "end_line": end,
+            "total_lines": total,
+            "content": content[: self.page_chars],
+            "next_line": end + 1 if end < min(end_line, total) else None,
+        }
 
     def _submit(self, arguments):
         outputs, items_by_reflection, errors = [], [], []
         for index, data in enumerate(arguments["reflections"]):
             path = f"reflections[{index}]"
             try:
-                output = parse_output(json.dumps(data), self._spec, self._schema,
-                                      agent=self._agent, validate_resources=True)
+                output = parse_output(
+                    json.dumps(data), self._spec, self._schema, agent=self._agent, validate_resources=True
+                )
                 canonical = output.model_dump(mode="json", by_alias=True) if isinstance(output, BaseModel) else output
                 citations = canonical.get("event_ids", [])
-                if (not isinstance(citations, list) or any(not isinstance(eid, str) for eid in citations)
-                        or len(set(citations)) != len(citations)):
+                if (
+                    not isinstance(citations, list)
+                    or any(not isinstance(eid, str) for eid in citations)
+                    or len(set(citations)) != len(citations)
+                ):
                     errors.append(self._error(path + ".event_ids", "invalid_evidence", "Use unique event IDs"))
                     continue
                 unknown = [eid for eid in citations if eid not in self._event_sessions]
                 if unknown:
-                    errors.append(self._error(path + ".event_ids", "unknown_event",
-                                              f"Event outside supplied evidence: {unknown[0]}. Use list_evidence."))
+                    errors.append(
+                        self._error(
+                            path + ".event_ids",
+                            "unknown_event",
+                            f"Event outside supplied evidence: {unknown[0]}. Use list_evidence.",
+                        )
+                    )
                     continue
                 if not self.cites_events:
                     citations = list(self._event_sessions)
@@ -341,25 +435,39 @@ class ReflectionTools:
                 items, seen = [], set()
                 for tag_path, target, rating, reference in ratings:
                     if target in seen:
-                        errors.append(self._error(tag_path, "duplicate_resource",
-                                                  "Rate each resource once per reflection"
-                                                  + (f"; {reference} is credited to {target.section or target.name}"
-                                                     if reference else "")))
+                        errors.append(
+                            self._error(
+                                tag_path,
+                                "duplicate_resource",
+                                "Rate each resource once per reflection"
+                                + (
+                                    f"; {reference} is credited to {target.section or target.name}" if reference else ""
+                                ),
+                            )
+                        )
                         continue
                     seen.add(target)
                     if not citations:
-                        errors.append(self._error(path + ".event_ids", "missing_evidence",
-                                                  "Resource tags require evidence"))
+                        errors.append(
+                            self._error(path + ".event_ids", "missing_evidence", "Resource tags require evidence")
+                        )
                         continue
                     reason = canonical.get("reasoning")
                     if not isinstance(reason, str) or not reason.strip():
-                        errors.append(self._error(path + ".reasoning", "missing_reason",
-                                                  "Resource tags require a reason"))
+                        errors.append(
+                            self._error(path + ".reasoning", "missing_reason", "Resource tags require a reason")
+                        )
                         continue
-                    items.append(ReflectionItem(target=target, rating=rating, reason=reason, limitations=[],
-                                                reference=reference,
-                                                evidence=[{"event_id": eid, "session_id": self._event_sessions[eid]}
-                                                          for eid in citations]))
+                    items.append(
+                        ReflectionItem(
+                            target=target,
+                            rating=rating,
+                            reason=reason,
+                            limitations=[],
+                            reference=reference,
+                            evidence=[{"event_id": eid, "session_id": self._event_sessions[eid]} for eid in citations],
+                        )
+                    )
                 if isinstance(output, ResourceAssessmentReport):
                     items = output.assessment_items(self._events)
                 outputs.append(output)
@@ -370,38 +478,72 @@ class ReflectionTools:
                 break
         if errors:
             return self._rejected(errors)
-        manifest = {"version": 1, "agent_mode": "reference", "config_sha256": self.resources.revision,
-                    "schema_sha256": _hash(self._schema), "submission": "tool",
-                    "evidence_sha256": self._evidence_hash,
-                    "configuration_provenance": "supplied snapshot; historical installation/loading is unverified"}
+        manifest = {
+            "version": 1,
+            "agent_mode": "reference",
+            "config_sha256": self.resources.revision,
+            "schema_sha256": _hash(self._schema),
+            "submission": "tool",
+            "evidence_sha256": self._evidence_hash,
+            "configuration_provenance": "supplied snapshot; historical installation/loading is unverified",
+        }
         reflections, assessments = [], []
         for i, (output, items) in enumerate(zip(outputs, items_by_reflection, strict=True)):
             data = output.model_dump(mode="json", by_alias=True) if isinstance(output, BaseModel) else output
             identifier = f"reflection-{self._batch_id}-{i}"
-            provenance = {**manifest, "resource_ids": {
-                tag["id"]: self.resources.resolve(tag["id"]).model_dump(mode="json")
-                for tag in data.get("bullet_tags", [])}}
+            provenance = {
+                **manifest,
+                "resource_ids": {
+                    tag["id"]: self.resources.resolve(tag["id"]).model_dump(mode="json")
+                    for tag in data.get("bullet_tags", [])
+                },
+            }
             if self.files is not None:
                 provenance["resource_refs"] = {
                     ref["ref"]: {**target.model_dump(mode="json"), "id": target.id}
-                    for ref in data.get("resource_refs", []) for target in [self.files.resolve(ref["ref"])]}
-            reflections.append(Reflection(identifier, json.dumps(data, ensure_ascii=False), output,
-                                          freeze(provenance), freeze({"submission_batch": self._batch_id}),
-                                          self.history))
+                    for ref in data.get("resource_refs", [])
+                    for target in [self.files.resolve(ref["ref"])]
+                }
+            reflections.append(
+                Reflection(
+                    identifier,
+                    json.dumps(data, ensure_ascii=False),
+                    output,
+                    freeze(provenance),
+                    freeze({"submission_batch": self._batch_id}),
+                    self.history,
+                )
+            )
             summary = data.get("key_insight") or data.get("summary")
-            assessments.append(AssessmentReport(
-                id=identifier, summary=summary if isinstance(summary, str) else json.dumps(data, ensure_ascii=False),
-                items=items,
-                session_ids=list(dict.fromkeys(e.session_id for item in items for e in item.evidence)),
-                evidence_event_ids=list(dict.fromkeys(e.event_id for item in items for e in item.evidence)),
-                raw={"manifest": manifest},
-            ))
+            assessments.append(
+                AssessmentReport(
+                    id=identifier,
+                    summary=summary if isinstance(summary, str) else json.dumps(data, ensure_ascii=False),
+                    items=items,
+                    session_ids=list(dict.fromkeys(e.session_id for item in items for e in item.evidence)),
+                    evidence_event_ids=list(dict.fromkeys(e.event_id for item in items for e in item.evidence)),
+                    raw={"manifest": manifest},
+                )
+            )
         if self.output is not None:
-            bundle = {"version": 1, "accepted": True, "schema": self._schema, "resource_ids": self.resources.mapping,
-                      "reflections": [{"id": r.id, "text": r.text, "schema": self._schema,
-                                       "output": json.loads(r.text), "provenance": thaw(r.provenance),
-                                       "execution": thaw(r.execution)} for r in reflections],
-                      "assessments": [item.model_dump(mode="json") for item in assessments]}
+            bundle = {
+                "version": 1,
+                "accepted": True,
+                "schema": self._schema,
+                "resource_ids": self.resources.mapping,
+                "reflections": [
+                    {
+                        "id": r.id,
+                        "text": r.text,
+                        "schema": self._schema,
+                        "output": json.loads(r.text),
+                        "provenance": thaw(r.provenance),
+                        "execution": thaw(r.execution),
+                    }
+                    for r in reflections
+                ],
+                "assessments": [item.model_dump(mode="json") for item in assessments],
+            }
             self.output.parent.mkdir(parents=True, exist_ok=True)
             write_json_exclusive(self.output, bundle)
         self._reflections, self._assessments = reflections, assessments
@@ -409,13 +551,25 @@ class ReflectionTools:
         return self._receipt()
 
     def _receipt(self):
-        receipt = {"accepted": True, "reflection_ids": [item.id for item in self._reflections],
-                   "count": len(self._reflections)}
+        receipt = {
+            "accepted": True,
+            "reflection_ids": [item.id for item in self._reflections],
+            "count": len(self._reflections),
+        }
         if self.files is not None:
             # Where each cited range landed: the section (or whole resource) whose rank it changes.
             receipt["ranked"] = [
-                {"reflection_id": report.id, "ref": item.reference, "tag": item.rating.value,
-                 **({"section_id": item.target.id, "section": item.target.section} if item.target.section
-                    else {"resource": f"{item.target.kind}: {item.target.name}"})}
-                for report in self._assessments for item in report.items]
+                {
+                    "reflection_id": report.id,
+                    "ref": item.reference,
+                    "tag": item.rating.value,
+                    **(
+                        {"section_id": item.target.id, "section": item.target.section}
+                        if item.target.section
+                        else {"resource": f"{item.target.kind}: {item.target.name}"}
+                    ),
+                }
+                for report in self._assessments
+                for item in report.items
+            ]
         return receipt

@@ -45,9 +45,10 @@ def graphify_agent() -> MetaAgent:
     )
 
 
-@pytest.mark.parametrize(("implementation", "target_dir", "skill_header"), [
-    (implementation, *target) for implementation, target in TARGETS.items()
-])
+@pytest.mark.parametrize(
+    ("implementation", "target_dir", "skill_header"),
+    [(implementation, *target) for implementation, target in TARGETS.items()],
+)
 def test_graphify_meta_configuration_installs_for_each_agent(
     tmp_path: Path,
     implementation: str,
@@ -104,9 +105,10 @@ def test_graphify_project_import_reads_native_agent_configurations() -> None:
     codex = MetaAgent.from_project("codex", GRAPHIFY_ROOT)
 
     assert antigravity.skills["graphify"].files[".graphify_version"]
-    assert {
-        f"{resource.location}/{resource.path}" for resource in antigravity.resources.values()
-    } == {"rules/graphify.md", "workflows/graphify.md"}
+    assert {f"{resource.location}/{resource.path}" for resource in antigravity.resources.values()} == {
+        "rules/graphify.md",
+        "workflows/graphify.md",
+    }
 
     assert len(codex.hooks) == 1
     hook = next(iter(codex.hooks.values()))

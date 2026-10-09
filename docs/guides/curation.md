@@ -6,8 +6,9 @@
 from thearc.resources import Curator
 
 curator = Curator(implementation="codex", model="YOUR_MODEL_ID")
-result = curator.curate("Improve the instructions using the findings.", [reflection], agent=agent,
-                        output="artifacts/curation")
+result = curator.curate(
+    "Improve the instructions using the findings.", [reflection], agent=agent, output="artifacts/curation"
+)
 print(agent.diff(result.agent))
 ```
 

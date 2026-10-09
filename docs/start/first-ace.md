@@ -27,8 +27,7 @@ agent = MetaAgent.from_workspace("my-agent")
 with SessionStore("artifacts/sessions.sqlite") as store:
     session = store.get("CANONICAL_SESSION_ID")
 trajectory = session.split_into_trajectories()[0]
-result = adapt(agent, trajectory, implementation="codex", model="YOUR_MODEL_ID",
-                output="artifacts/first-ace-run")
+result = adapt(agent, trajectory, implementation="codex", model="YOUR_MODEL_ID", output="artifacts/first-ace-run")
 print(agent.diff(result.agent))
 ```
 

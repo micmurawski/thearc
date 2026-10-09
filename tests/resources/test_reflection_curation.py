@@ -24,6 +24,7 @@ def test_prompt_schema_validation_and_failure_artifacts(agent, tmp_path):
     def runner(prompt, schema, config):
         calls.append(prompt)
         return {"status": "completed", "final_response": '{"findings": [{"resource": null}]}'}
+
     reflector = Reflector(implementation="custom", model="fixture", runner=runner, artifact_dir=tmp_path)
     result = reflector.reflect("PROMPT\nMY EVIDENCE", agent=agent, output_schema=Report, validate_resources=True)
     assert isinstance(result.output, Report)
@@ -57,8 +58,12 @@ def test_prepare_has_no_execution_and_missing_agent_fails():
 
 
 def test_incomplete_tool_history_rejected_before_runtime():
-    history = Session.from_events([event(0, role="user", text="Task"),
-                                   event(1, kind="tool_call", tool_name="shell", call_id="pending", arguments={})])
+    history = Session.from_events(
+        [
+            event(0, role="user", text="Task"),
+            event(1, kind="tool_call", tool_name="shell", call_id="pending", arguments={}),
+        ]
+    )
     reflector = Reflector(implementation="codex", model="fixture")
     with pytest.raises(ReflectionError, match="completed tool call"):
         reflector.handoff("Reflect", history)
@@ -72,17 +77,33 @@ def test_activation_rejects_unsupported_resources_before_runner(agent):
 
 def test_curation_accepts_text_without_manufacturing_ranks(agent, tmp_path):
     before = agent.model_dump()
-    reflector = Reflector(implementation="custom", model="fixture",
-                          runner=lambda *args: {"status": "completed", "final_response": "Inspect errors first."})
+    reflector = Reflector(
+        implementation="custom",
+        model="fixture",
+        runner=lambda *args: {"status": "completed", "final_response": "Inspect errors first."},
+    )
     reflection = reflector.reflect("prompt", agent=agent)
-    report = CurationReport(summary="Improve retry guidance", changes=[{
-        "id": "change", "target": {"kind": "skill", "name": "debug"}, "operation": "EDIT",
-        "value": {"instructions": "Check error output before retrying."}, "reflection_ids": [reflection.id],
-        "rationale": "The reflection identified an unchanged retry.",
-    }])
-    curator = Curator(implementation="custom", model="fixture", runner=lambda *args: {
-        "status": "completed", "final_response": report.model_dump_json(),
-    })
+    report = CurationReport(
+        summary="Improve retry guidance",
+        changes=[
+            {
+                "id": "change",
+                "target": {"kind": "skill", "name": "debug"},
+                "operation": "EDIT",
+                "value": {"instructions": "Check error output before retrying."},
+                "reflection_ids": [reflection.id],
+                "rationale": "The reflection identified an unchanged retry.",
+            }
+        ],
+    )
+    curator = Curator(
+        implementation="custom",
+        model="fixture",
+        runner=lambda *args: {
+            "status": "completed",
+            "final_response": report.model_dump_json(),
+        },
+    )
     result = curator.curate("Improve configuration", [reflection], agent=agent, output=tmp_path)
     assert result.agent.skills["debug"].instructions.startswith("Check error")
     assert len(result.changes) == 1
@@ -92,32 +113,65 @@ def test_curation_accepts_text_without_manufacturing_ranks(agent, tmp_path):
 
 
 def test_invalid_curation_cannot_commit_even_without_optional_validation(agent, tmp_path):
-    report = CurationReport(summary="Invalid", changes=[{
-        "id": "change", "target": {"kind": "skill", "name": "missing"}, "operation": "REMOVE",
-        "reflection_ids": ["invented"], "rationale": "Missing", "value": None,
-    }])
-    curator = Curator(implementation="custom", model="fixture", runner=lambda *args: {
-        "status": "completed", "final_response": report.model_dump_json(),
-    })
+    report = CurationReport(
+        summary="Invalid",
+        changes=[
+            {
+                "id": "change",
+                "target": {"kind": "skill", "name": "missing"},
+                "operation": "REMOVE",
+                "reflection_ids": ["invented"],
+                "rationale": "Missing",
+                "value": None,
+            }
+        ],
+    )
+    curator = Curator(
+        implementation="custom",
+        model="fixture",
+        runner=lambda *args: {
+            "status": "completed",
+            "final_response": report.model_dump_json(),
+        },
+    )
     with pytest.raises(ValueError):
         curator.curate("prompt", [], agent=agent, validate_resources=False, output=tmp_path)
     assert not (tmp_path / "HEAD.json").exists()
 
 
 def test_empty_agent_no_change():
-    curator = Curator(implementation="custom", model="fixture", runner=lambda *args: {
-        "status": "completed", "final_response": '{"summary":"No evidence for changes", "changes":[]}',
-    })
+    curator = Curator(
+        implementation="custom",
+        model="fixture",
+        runner=lambda *args: {
+            "status": "completed",
+            "final_response": '{"summary":"No evidence for changes", "changes":[]}',
+        },
+    )
     result = curator.curate("prompt", [], agent=MetaAgent(name="empty"))
     assert not result.changes
 
 
 def test_assessment_requires_explicit_evidence_verification(agent, history):
-    data = {"summary": "Retry failure", "findings": [{"resource": {"kind": "skill", "name": "debug"},
-            "rating": "harmful", "reason": "Inputs remained invalid", "event_ids": ["e2"]}]}
-    reflector = Reflector(implementation="custom", model="fixture", runner=lambda *args: {
-        "status": "completed", "final_response": json.dumps(data),
-    })
+    data = {
+        "summary": "Retry failure",
+        "findings": [
+            {
+                "resource": {"kind": "skill", "name": "debug"},
+                "rating": "harmful",
+                "reason": "Inputs remained invalid",
+                "event_ids": ["e2"],
+            }
+        ],
+    }
+    reflector = Reflector(
+        implementation="custom",
+        model="fixture",
+        runner=lambda *args: {
+            "status": "completed",
+            "final_response": json.dumps(data),
+        },
+    )
     reflection = reflector.reflect("prompt", agent=agent, output_schema=ResourceAssessmentReport)
     verified = reflection.assessments(history)
     assert verified.items[0].evidence[0].session_id == "s"

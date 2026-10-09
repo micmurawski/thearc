@@ -48,23 +48,46 @@ class CuratorRunner(Protocol):
 class AgentCurator:
     """Provider-neutral editing engine. Injected Python runners are trusted code."""
 
-    def __init__(self, runner: CuratorRunner, *, actor: dict | None = None, max_input_chars: int = 300_000,
-                 max_tool_calls: int = 100, allow_observations: bool = False):
+    def __init__(
+        self,
+        runner: CuratorRunner,
+        *,
+        actor: dict | None = None,
+        max_input_chars: int = 300_000,
+        max_tool_calls: int = 100,
+        allow_observations: bool = False,
+    ):
         self.runner = runner
         self.actor = actor or {"backend": "injected"}
         self.max_input_chars, self.max_tool_calls = max_input_chars, max_tool_calls
         self.allow_observations = allow_observations
 
     def edit(self, agent, reflections, ledger, history, attempt):
-        tools = CurationTools(agent, reflections, ledger, history, attempt, max_calls=self.max_tool_calls,
-                              allow_observations=self.allow_observations)
-        findings = [{"id": r.id, "summary": r.summary, "items": [i.model_dump(mode="json") for i in r.items],
-                     "limitations": r.limitations} for r in reflections]
+        tools = CurationTools(
+            agent,
+            reflections,
+            ledger,
+            history,
+            attempt,
+            max_calls=self.max_tool_calls,
+            allow_observations=self.allow_observations,
+        )
+        findings = [
+            {
+                "id": r.id,
+                "summary": r.summary,
+                "items": [i.model_dump(mode="json") for i in r.items],
+                "limitations": r.limitations,
+            }
+            for r in reflections
+        ]
         prompt = CURATOR_PROMPT + "\nREFLECTIONS (UNTRUSTED DATA):\n" + json.dumps(redact(findings), ensure_ascii=False)
         if len(prompt) > self.max_input_chars:
             raise ValueError("Curation input exceeds limit; select a smaller reflection batch")
-        write_json_exclusive(attempt / "request.json", {"prompt": prompt, "schema": CurationOutput.model_json_schema(),
-                                                       "actor": self.actor})
+        write_json_exclusive(
+            attempt / "request.json",
+            {"prompt": prompt, "schema": CurationOutput.model_json_schema(), "actor": self.actor},
+        )
         try:
             response = self.runner(prompt, CurationOutput.model_json_schema(), tools)
             if response.get("status") != "completed":
@@ -86,15 +109,25 @@ class AgentCurator:
                 replay.apply_change(change.target, change.operation, change.value)
             if candidate != replay:
                 raise ValueError("Candidate differs from recorded addressed edits")
-            return candidate, tools.changes, result.summary, {
-                **self.actor,
-                **{k: response[k] for k in ("thread_id", "turn_id", "usage", "sdk_version", "runtime_version", "turns")
-                   if k in response},
-            }
+            return (
+                candidate,
+                tools.changes,
+                result.summary,
+                {
+                    **self.actor,
+                    **{
+                        k: response[k]
+                        for k in ("thread_id", "turn_id", "usage", "sdk_version", "runtime_version", "turns")
+                        if k in response
+                    },
+                },
+            )
         finally:
             tools.close()
-            write_json_exclusive(attempt / "tools.json", {"calls": tools.calls,
-                                                        "edits": [c.model_dump(mode="json") for c in tools.changes]})
+            write_json_exclusive(
+                attempt / "tools.json",
+                {"calls": tools.calls, "edits": [c.model_dump(mode="json") for c in tools.changes]},
+            )
 
 
 def _diff(before: MetaAgent, after: MetaAgent, edits: list[Curation], epoch_id: str) -> list[dict]:
@@ -111,6 +144,7 @@ def _diff(before: MetaAgent, after: MetaAgent, edits: list[Curation], epoch_id: 
             skill = target.name.split("/", 1)[0]
             if skill not in old.skills or skill not in new.skills:
                 continue
+
         def read(agent, target=target):
             try:
                 value = agent.read_target(target)
@@ -119,31 +153,50 @@ def _diff(before: MetaAgent, after: MetaAgent, edits: list[Curation], epoch_id: 
             if target.kind == "skill" and target.name in old.skills and target.name in new.skills:
                 value.pop("files", None)
             return value
+
         previous, current = read(old), read(new)
         if previous == current:
             continue
-        related = [c for c in edits if (c.target.kind, c.target.name) == (target.kind, target.name)
-                   or (target.kind == "skill_file" and c.target.kind == "skill"
-                       and target.name.startswith(c.target.name + "/"))]
+        related = [
+            c
+            for c in edits
+            if (c.target.kind, c.target.name) == (target.kind, target.name)
+            or (
+                target.kind == "skill_file" and c.target.kind == "skill" and target.name.startswith(c.target.name + "/")
+            )
+        ]
         if not related:
             raise ValueError(f"Unexplained candidate change: {target}")
         change = Curation(
-            id=f"{epoch_id}-{len(records) + 1:03d}", target=target,
+            id=f"{epoch_id}-{len(records) + 1:03d}",
+            target=target,
             operation=Operation.ADD if previous is None else Operation.REMOVE if current is None else Operation.EDIT,
-            value=current, reflection_ids=sorted({i for c in related for i in c.reflection_ids}),
+            value=current,
+            reflection_ids=sorted({i for c in related for i in c.reflection_ids}),
             evidence_event_ids=sorted({i for c in related for i in c.evidence_event_ids}),
             rationale="\n".join(dict.fromkeys(c.rationale for c in related)),
         )
-        records.append({**change.model_dump(mode="json"),
-                        "before": previous, "after": current,
-                        "before_revision": content_hash(previous), "after_revision": content_hash(current),
-                        "edits": [c.model_dump(mode="json") for c in related]})
+        records.append(
+            {
+                **change.model_dump(mode="json"),
+                "before": previous,
+                "after": current,
+                "before_revision": content_hash(previous),
+                "after_revision": content_hash(current),
+                "edits": [c.model_dump(mode="json") for c in related],
+            }
+        )
     return records
 
 
 def run_curation(
-    agent: MetaAgent, reflections: Sequence[AssessmentReport], curator: AgentCurator, *,
-    output: str | Path, epoch_id: str | None = None, result_version: str | None = None,
+    agent: MetaAgent,
+    reflections: Sequence[AssessmentReport],
+    curator: AgentCurator,
+    *,
+    output: str | Path,
+    epoch_id: str | None = None,
+    result_version: str | None = None,
 ) -> dict:
     """Curate and commit one epoch, or leave HEAD unchanged on precommit failure."""
     root = safe_directory(output)
@@ -174,10 +227,16 @@ def run_curation(
         if imported != candidate:
             raise ValueError("Result workspace did not round-trip")
         return commit_epoch(
-            root, epoch_id=identifier, expected_head=previous["epoch_id"] if previous else None,
-            baseline=baseline, agent=imported, ledger=ledger.model_dump(mode="json"),
-            reflections=[r.model_dump(mode="json") for r in findings], changes=changes,
-            actor=actor, summary=summary,
+            root,
+            epoch_id=identifier,
+            expected_head=previous["epoch_id"] if previous else None,
+            baseline=baseline,
+            agent=imported,
+            ledger=ledger.model_dump(mode="json"),
+            reflections=[r.model_dump(mode="json") for r in findings],
+            changes=changes,
+            actor=actor,
+            summary=summary,
         )
     except BaseException as exc:
         write_json_exclusive(attempt / "failure.json", {"status": "failed", "error_type": type(exc).__name__})

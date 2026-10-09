@@ -20,13 +20,19 @@ def prepared(tmp_path, monkeypatch):
     subprocess.run(["git", "init", str(project)], check=True, capture_output=True)
     (project / "AGENTS.md").write_text("Use the prepared agent.")
     subprocess.run(["git", "add", "."], cwd=project, check=True, capture_output=True)
-    subprocess.run(["git", "-c", "user.name=Test", "-c", "user.email=test@example.com",
-                    "commit", "-m", "baseline"], cwd=project, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "baseline"],
+        cwd=project,
+        check=True,
+        capture_output=True,
+    )
     native = tmp_path / "native"
     native.mkdir()
     monkeypatch.setenv("FAKE_NATIVE", str(native))
     fake = tmp_path / "agent"
-    fake.write_text(f"#!{sys.executable}\n" + '''
+    fake.write_text(
+        f"#!{sys.executable}\n"
+        + """
 import json, os, sys, time, uuid
 from pathlib import Path
 args = sys.argv[1:]
@@ -107,11 +113,22 @@ if mode == "malformed":
     print("not json")
 if mode == "timeout":
     time.sleep(30)
-''')
+"""
+    )
     fake.chmod(0o755)
     output = tmp_path / "output"
-    return output, ["--cwd", str(project), "--bin", str(fake), "--sessions-dir", str(native),
-                    "--output", str(output), "--model", "test/model"]
+    return output, [
+        "--cwd",
+        str(project),
+        "--bin",
+        str(fake),
+        "--sessions-dir",
+        str(native),
+        "--output",
+        str(output),
+        "--model",
+        "test/model",
+    ]
 
 
 @pytest.mark.parametrize("harness", ["pi", "claude", "opencode"])
@@ -184,9 +201,14 @@ def test_opencode_requires_explicit_model(prepared, capsys):
 
 
 def test_unicode_line_separator_is_not_jsonl_boundary(tmp_path):
-    events = [{"type": "session", "id": "one"},
-              {"type": "message_end", "message": {"role": "assistant", "content": [
-                  {"type": "text", "text": "first\u2028second"}]}}, {"type": "agent_settled"}]
+    events = [
+        {"type": "session", "id": "one"},
+        {
+            "type": "message_end",
+            "message": {"role": "assistant", "content": [{"type": "text", "text": "first\u2028second"}]},
+        },
+        {"type": "agent_settled"},
+    ]
     (tmp_path / "events.jsonl").write_text("\n".join(json.dumps(e, ensure_ascii=False) for e in events))
     result = inspect_output("pi", tmp_path)
     assert result["turn_completed"] and not result["malformed_stream"]

@@ -14,6 +14,7 @@ class MarkdownSection(BaseModel):
     """
     Represents a section in a Markdown document bounded by a header (e.g. #, ##, ###).
     """
+
     title: str
     ranks: Ranks | None = None
     level: int = 1
@@ -49,8 +50,8 @@ class MarkdownSection(BaseModel):
     def slug(self) -> str:
         """Generate URL/anchor slug for title."""
         s = self.title.lower().strip()
-        s = re.sub(r'[^\w\s-]', '', s)
-        return re.sub(r'[-\s]+', '-', s)
+        s = re.sub(r"[^\w\s-]", "", s)
+        return re.sub(r"[-\s]+", "-", s)
 
     def full_content(self, include_ranks: bool = True) -> str:
         """Return content of this section including all rendered subsections."""
@@ -65,7 +66,7 @@ class MarkdownSection(BaseModel):
         lines = [header_line]
         if self.content:
             lines.append(self.content)
-        
+
         rendered = "\n\n".join(lines)
         if self.subsections:
             sub_rendered = "\n\n".join([s.to_markdown(include_ranks=include_ranks) for s in self.subsections])
@@ -79,6 +80,7 @@ class MarkdownDocument(BaseModel):
     Object representation of a Markdown document (e.g., AGENTS.md, CLAUDE.md, GEMINI.md).
     Supports hierarchy parsing (# -> ## -> ###), frontmatter metadata, header querying, and serialization.
     """
+
     frontmatter: dict[str, Any] = Field(default_factory=dict)
     root_content: str = ""
     sections: list[MarkdownSection] = Field(default_factory=list)
@@ -109,7 +111,7 @@ class MarkdownDocument(BaseModel):
                     content_text = text
 
         lines = content_text.splitlines()
-        header_pattern = re.compile(r'^(#{1,6})\s+(.+)$')
+        header_pattern = re.compile(r"^(#{1,6})\s+(.+)$")
 
         # Find first header index
         first_header_idx = None
@@ -155,7 +157,7 @@ class MarkdownDocument(BaseModel):
                 found.append((idx + offset + 1, len(match.group(1)), split_ranked_title(match.group(2).strip())[0]))
         spans = []
         for position, (start, level, title) in enumerate(found):
-            end = next((line - 1 for line, other, _ in found[position + 1:] if other <= level), len(lines))
+            end = next((line - 1 for line, other, _ in found[position + 1 :] if other <= level), len(lines))
             spans.append((start, end, level, title))
         return spans
 
@@ -177,7 +179,7 @@ class MarkdownDocument(BaseModel):
 
     @classmethod
     def _parse_section_blocks(cls, lines: list[str]) -> list[MarkdownSection]:
-        header_pattern = re.compile(r'^(#{1,6})\s+(.+)$')
+        header_pattern = re.compile(r"^(#{1,6})\s+(.+)$")
         blocks: list[dict[str, Any]] = []
 
         current_level = None
@@ -189,11 +191,9 @@ class MarkdownDocument(BaseModel):
             match = header_pattern.match(heading_lines.get(idx, ""))
             if match:
                 if current_title is not None:
-                    blocks.append({
-                        "level": current_level,
-                        "title": current_title,
-                        "content": "\n".join(current_lines).strip()
-                    })
+                    blocks.append(
+                        {"level": current_level, "title": current_title, "content": "\n".join(current_lines).strip()}
+                    )
                 current_level = len(match.group(1))
                 current_title = match.group(2).strip()
                 current_lines = []
@@ -202,11 +202,7 @@ class MarkdownDocument(BaseModel):
                     current_lines.append(line)
 
         if current_title is not None:
-            blocks.append({
-                "level": current_level,
-                "title": current_title,
-                "content": "\n".join(current_lines).strip()
-            })
+            blocks.append({"level": current_level, "title": current_title, "content": "\n".join(current_lines).strip()})
 
         return cls._build_hierarchy(blocks)
 
@@ -229,15 +225,11 @@ class MarkdownDocument(BaseModel):
                 while j < len(raw_blocks) and raw_blocks[j]["level"] > min_level:
                     child_blocks.append(raw_blocks[j])
                     j += 1
-                
+
                 subsections = cls._build_hierarchy(child_blocks)
                 title, ranks = split_ranked_title(block["title"])
                 sec = MarkdownSection(
-                    title=title,
-                    ranks=ranks,
-                    level=block["level"],
-                    content=block["content"],
-                    subsections=subsections
+                    title=title, ranks=ranks, level=block["level"], content=block["content"], subsections=subsections
                 )
                 top_sections.append(sec)
                 i = j

@@ -16,11 +16,12 @@ from thearc.models.ranks import Ranks
 if TYPE_CHECKING:
     from thearc.models.references import AgentFiles
 
-ImplementationLiteral = Literal['claudecode', 'codex', 'anitgravity', 'antigravity', 'claude', 'pi']
+ImplementationLiteral = Literal["claudecode", "codex", "anitgravity", "antigravity", "claude", "pi"]
 
 
 class Skill(BaseModel):
     """Represents an agent skill object."""
+
     ranks: Ranks | None = None
     name: str
     description: str = ""
@@ -37,8 +38,13 @@ class Skill(BaseModel):
         if doc.sections:
             sec_md = "\n\n".join([s.to_markdown() for s in doc.sections])
             instr = f"{instr}\n\n{sec_md}".strip()
-        return cls(name=name, description=desc, instructions=instr,
-                   ranks=meta.get("ranks"), metadata={k: v for k, v in meta.items() if k != "ranks"})
+        return cls(
+            name=name,
+            description=desc,
+            instructions=instr,
+            ranks=meta.get("ranks"),
+            metadata={k: v for k, v in meta.items() if k != "ranks"},
+        )
 
     @classmethod
     def from_dir(cls, dir_path: Path) -> Skill:
@@ -69,6 +75,7 @@ class Skill(BaseModel):
 
 class Hook(BaseModel):
     """Represents an agent hook object."""
+
     ranks: Ranks | None = None
     name: str
     event: str = "pre_tool_use"
@@ -103,6 +110,7 @@ class Hook(BaseModel):
 
 class MCP(BaseModel):
     """Represents an MCP (Model Context Protocol) server configuration object."""
+
     name: str
     command: str | None = None
     args: list[str] = Field(default_factory=list)
@@ -135,6 +143,7 @@ class MCP(BaseModel):
 
 class ContextDocument(BaseModel):
     """Represents a context document object (e.g. AGENTS.md, CLAUDE.md, GEMINI.md, etc.)."""
+
     filename: str
     content: str
     description: str = ""
@@ -219,6 +228,7 @@ class MetaAgent(BaseModel):
     Provides install(implementation: Literal['claudecode', 'codex', 'anitgravity', 'pi'], replace=True, **kwargs)
     method to install the agent definition into specific agent harness directory targets.
     """
+
     model_config = {"extra": "forbid", "validate_assignment": True}
     name: str
     version: str | None = None
@@ -264,7 +274,7 @@ class MetaAgent(BaseModel):
             if field == "resources":
                 if "location" not in data or "path" not in data:
                     raise ValueError("resource entries require location and path")
-                name = f'{data["location"]}/{data["path"]}'
+                name = f"{data['location']}/{data['path']}"
             else:
                 name = data.get(identity, key)
                 if name is None:
@@ -311,8 +321,10 @@ class MetaAgent(BaseModel):
     def _target_markdown(self, target: ResourceTarget) -> MarkdownDocument:
         collection, key = self._target_collection(target)
         item = collection[key]
-        text = item.instructions if target.kind == "skill" else (
-            item.content if target.kind in {"context", "rule", "workflow", "command"} else item
+        text = (
+            item.instructions
+            if target.kind == "skill"
+            else (item.content if target.kind in {"context", "rule", "workflow", "command"} else item)
         )
         return MarkdownDocument.parse(text)
 
@@ -342,7 +354,10 @@ class MetaAgent(BaseModel):
         return item.model_dump() if isinstance(item, BaseModel) else item
 
     def apply_change(
-        self, target: ResourceTarget, operation: Operation, value: dict[str, Any] | str | None = None,
+        self,
+        target: ResourceTarget,
+        operation: Operation,
+        value: dict[str, Any] | str | None = None,
     ) -> tuple[dict[str, Any] | str | None, dict[str, Any] | str | None]:
         """Apply ADD/EDIT/REMOVE in memory and return the before/after values.
 
@@ -405,13 +420,18 @@ class MetaAgent(BaseModel):
             if not isinstance(value, dict):
                 raise ValueError("resource changes require a field mapping")
             model = {
-                "skill": Skill, "hook": Hook, "context": ContextDocument, "mcp": MCP,
-                "rule": AgentResource, "workflow": AgentResource, "command": AgentResource,
+                "skill": Skill,
+                "hook": Hook,
+                "context": ContextDocument,
+                "mcp": MCP,
+                "rule": AgentResource,
+                "workflow": AgentResource,
+                "command": AgentResource,
             }[target.kind]
             identities = (
                 {"location": f"{target.kind}s", "path": target.name}
-                if target.kind in {"rule", "workflow", "command"} else
-                {"filename" if target.kind == "context" else "name": key}
+                if target.kind in {"rule", "workflow", "command"}
+                else {"filename" if target.kind == "context" else "name": key}
             )
             data = {**(before or {}), **value}
             if any(data.get(field, expected) != expected for field, expected in identities.items()):
@@ -420,10 +440,16 @@ class MetaAgent(BaseModel):
         return before, None if operation == Operation.REMOVE else self.read_target(target)
 
     def _whole_targets(self) -> list[ResourceTarget]:
-        targets = [ResourceTarget(kind=kind, name=name)
-                   for kind, collection in (("skill", self.skills), ("hook", self.hooks),
-                                            ("mcp", self.mcps), ("context", self.context))
-                   for name in collection]
+        targets = [
+            ResourceTarget(kind=kind, name=name)
+            for kind, collection in (
+                ("skill", self.skills),
+                ("hook", self.hooks),
+                ("mcp", self.mcps),
+                ("context", self.context),
+            )
+            for name in collection
+        ]
         targets += [ResourceTarget(kind="skill_file", name=name) for name, _ in self.iter_skill_files()]
         targets += [ResourceTarget(kind=item.location[:-1], name=item.path) for item in self.resources.values()]
         return sorted(targets, key=lambda t: (t.kind, t.name))
@@ -475,19 +501,22 @@ class MetaAgent(BaseModel):
         from thearc.learning.curation.tools import seed_rank_history
 
         history = seed_rank_history(self, ledger or AssessmentLedger())
-        return propagate_ranks(self, assessments, epoch_id=epoch_id, ledger=history,
-                               allow_unverified=allow_unverified)
+        return propagate_ranks(self, assessments, epoch_id=epoch_id, ledger=history, allow_unverified=allow_unverified)
 
-    def _ranks_or_none(self, target: ResourceTarget,
-                       ranks: Callable[[ResourceTarget], Ranks] | None) -> Ranks | None:
+    def _ranks_or_none(self, target: ResourceTarget, ranks: Callable[[ResourceTarget], Ranks] | None) -> Ranks | None:
         try:
             return ranks(target) if ranks is not None else self.rank_for(target)
         except (KeyError, ValueError):
             return None  # MCP configurations carry no ranks.
 
-    def to_labeled_markdown(self, *, include_ranks: bool = False, outline: bool = False,
-                            ranks: Callable[[ResourceTarget], Ranks] | None = None,
-                            title: str | None = None) -> str:
+    def to_labeled_markdown(
+        self,
+        *,
+        include_ranks: bool = False,
+        outline: bool = False,
+        ranks: Callable[[ResourceTarget], Ranks] | None = None,
+        title: str | None = None,
+    ) -> str:
         """Render the agent with section IDs, resource files, and optionally ranks on every heading.
 
         Section headings read ``## Usage [SectionId: res_…, ranks: (harmful: …, neutral: …, helpful: …)]``;
@@ -512,8 +541,12 @@ class MetaAgent(BaseModel):
 
         targets = list(self.iter_targets())
         whole = sum(1 for _, depth in targets if depth == 0)
-        lines = [f"# {title or f'Agent: {self.name}'}", "",
-                 f"{whole} resources and {len(targets) - whole} sections.", ""]
+        lines = [
+            f"# {title or f'Agent: {self.name}'}",
+            "",
+            f"{whole} resources and {len(targets) - whole} sections.",
+            "",
+        ]
         for target in self._whole_targets():
             heading = f"{target.kind}: {target.name} {label(target)}"
             if outline:
@@ -531,8 +564,10 @@ class MetaAgent(BaseModel):
         document = self._markdown_of(target)
         if document is None:
             # Same shape as hooks.json / mcp.json in files(), without rank metadata.
-            value = {"hook": lambda: self.hooks[target.name].to_dict(include_ranks=False),
-                     "mcp": lambda: self.mcps[target.name].to_dict()}.get(target.kind, lambda: None)()
+            value = {
+                "hook": lambda: self.hooks[target.name].to_dict(include_ranks=False),
+                "mcp": lambda: self.mcps[target.name].to_dict(),
+            }.get(target.kind, lambda: None)()
             if value is None:
                 value = self.read_target(target)
             text = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False, indent=2)
@@ -579,8 +614,12 @@ class MetaAgent(BaseModel):
         return view
 
     def diff(
-        self, other: MetaAgent, *, include_ranks: bool = False,
-        include_version: bool = True, context_lines: int = 3,
+        self,
+        other: MetaAgent,
+        *,
+        include_ranks: bool = False,
+        include_version: bool = True,
+        context_lines: int = 3,
     ) -> str:
         """Return a unified diff from this agent to ``other``; empty means no changes.
 
@@ -592,8 +631,9 @@ class MetaAgent(BaseModel):
         """
         from thearc.models.diff import diff_agents
 
-        return diff_agents(self, other, include_ranks=include_ranks,
-                           include_version=include_version, context_lines=context_lines)
+        return diff_agents(
+            self, other, include_ranks=include_ranks, include_version=include_version, context_lines=context_lines
+        )
 
     @classmethod
     def from_workspace(cls, path: str | Path, *, max_bytes: int = 10_000_000, max_files: int = 10_000) -> MetaAgent:
@@ -673,13 +713,15 @@ class MetaAgent(BaseModel):
                         command = definition.get("command")
                         if not command:
                             continue
-                        imported.append(Hook(
-                            name=f"{event}-{group_index}-{hook_index}",
-                            event=_snake_case(event),
-                            matcher=group.get("matcher"),
-                            command=command,
-                            extra={key: value for key, value in definition.items() if key != "command"},
-                        ))
+                        imported.append(
+                            Hook(
+                                name=f"{event}-{group_index}-{hook_index}",
+                                event=_snake_case(event),
+                                matcher=group.get("matcher"),
+                                command=command,
+                                extra={key: value for key, value in definition.items() if key != "command"},
+                            )
+                        )
             return imported
 
         if not isinstance(raw_hooks, dict):
@@ -716,19 +758,17 @@ class MetaAgent(BaseModel):
                     content = source_file.read_text(encoding="utf-8")
                 except UnicodeDecodeError:
                     continue
-                resources.append(AgentResource(
-                    location=location,
-                    path=str(source_file.relative_to(directory)),
-                    content=content,
-                ))
+                resources.append(
+                    AgentResource(
+                        location=location,
+                        path=str(source_file.relative_to(directory)),
+                        content=content,
+                    )
+                )
         return resources
 
     def install(
-        self,
-        implementation: ImplementationLiteral,
-        replace: bool = True,
-        path: str | Path | None = None,
-        **kwargs
+        self, implementation: ImplementationLiteral, replace: bool = True, path: str | Path | None = None, **kwargs
     ) -> dict[str, list[Path]]:
         """
         Install the agent's skills, hooks, mcps, and context attributes into target implementation.
@@ -771,51 +811,41 @@ class MetaAgent(BaseModel):
         # 1. Install Skills
         for skill in self.skills.values():
             files = installer.install_skill_object(
-                skill=skill,
-                target_scope=target_scope,
-                project_dir=target_path,
-                force=replace
+                skill=skill, target_scope=target_scope, project_dir=target_path, force=replace
             )
             results["skills"].extend(files)
 
         # 2. Install Hooks
         if self.hooks:
             hook_files = installer.install_hooks(
-                hooks=self.hooks,
-                target_scope=target_scope,
-                project_dir=target_path,
-                force=replace
+                hooks=self.hooks, target_scope=target_scope, project_dir=target_path, force=replace
             )
             results["hooks"].extend(hook_files)
 
         # 3. Install MCPs
         if self.mcps:
             mcp_files = installer.install_mcps(
-                mcps=self.mcps,
-                target_scope=target_scope,
-                project_dir=target_path,
-                force=replace
+                mcps=self.mcps, target_scope=target_scope, project_dir=target_path, force=replace
             )
             results["mcps"].extend(mcp_files)
 
         # 4. Install Context Documents (AGENTS.md, CLAUDE.md, etc.)
         for doc in self.context.values():
             doc_files = installer.install_context_doc(
-                doc=doc,
-                target_scope=target_scope,
-                project_dir=target_path,
-                force=replace
+                doc=doc, target_scope=target_scope, project_dir=target_path, force=replace
             )
             results["context"].extend(doc_files)
 
         # 5. Install portable agent-local files such as rules and workflows.
         if self.resources:
-            results["resources"].extend(installer.install_resources(
-                resources=self.resources.values(),
-                target_scope=target_scope,
-                project_dir=target_path,
-                force=replace,
-            ))
+            results["resources"].extend(
+                installer.install_resources(
+                    resources=self.resources.values(),
+                    target_scope=target_scope,
+                    project_dir=target_path,
+                    force=replace,
+                )
+            )
 
         # Persist only the release label, not configuration or credentials.
         # Merge installs do not describe an exact release of this MetaAgent.

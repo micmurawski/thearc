@@ -39,8 +39,11 @@ class AntigravityStrategy(AgentFormatStrategy):
 
     def skill_to_markdown(self, skill: SkillDefinition, include_ranks: bool = True) -> str:
         header = self.to_yaml(skill.metadata, include_ranks=include_ranks)
-        body = skill.instructions if include_ranks else MarkdownDocument.parse(
-            skill.instructions).to_markdown(include_ranks=False).strip()
+        body = (
+            skill.instructions
+            if include_ranks
+            else MarkdownDocument.parse(skill.instructions).to_markdown(include_ranks=False).strip()
+        )
         return f"{header}\n\n{body}".strip() + "\n"
 
     def command_to_markdown(self, command: CommandDefinition) -> str:
@@ -62,8 +65,11 @@ class ClaudeStrategy(AgentFormatStrategy):
     def skill_to_markdown(self, skill: SkillDefinition, include_ranks: bool = True) -> str:
         suffix = skill.metadata.ranks.suffix() if include_ranks and skill.metadata.ranks is not None else ""
         header = f"# Skill: {skill.metadata.name}{suffix}\n> {skill.metadata.description}"
-        body = skill.instructions if include_ranks else MarkdownDocument.parse(
-            skill.instructions).to_markdown(include_ranks=False).strip()
+        body = (
+            skill.instructions
+            if include_ranks
+            else MarkdownDocument.parse(skill.instructions).to_markdown(include_ranks=False).strip()
+        )
         return f"{header}\n\n{body}".strip() + "\n"
 
     def command_to_markdown(self, command: CommandDefinition) -> str:
@@ -81,15 +87,20 @@ class CodexStrategy(AgentFormatStrategy):
     def to_yaml(self, metadata: SkillMetadata, include_ranks: bool = True) -> str:
         header = f"<!-- Skill: {metadata.name} | Description: {metadata.description} -->"
         if include_ranks and metadata.ranks is not None:
-            header = "---\nranks:\n" + "\n".join(
-                f"  {key}: {value}" for key, value in metadata.ranks.model_dump().items()
-            ) + f"\n---\n\n{header}"
+            header = (
+                "---\nranks:\n"
+                + "\n".join(f"  {key}: {value}" for key, value in metadata.ranks.model_dump().items())
+                + f"\n---\n\n{header}"
+            )
         return header
 
     def skill_to_markdown(self, skill: SkillDefinition, include_ranks: bool = True) -> str:
         header = self.to_yaml(skill.metadata, include_ranks=include_ranks)
-        body = skill.instructions if include_ranks else MarkdownDocument.parse(
-            skill.instructions).to_markdown(include_ranks=False).strip()
+        body = (
+            skill.instructions
+            if include_ranks
+            else MarkdownDocument.parse(skill.instructions).to_markdown(include_ranks=False).strip()
+        )
         return f"{header}\n\n{body}".strip() + "\n"
 
     def command_to_markdown(self, command: CommandDefinition) -> str:
@@ -110,8 +121,11 @@ class PiStrategy(AgentFormatStrategy):
 
     def skill_to_markdown(self, skill: SkillDefinition, include_ranks: bool = True) -> str:
         header = self.to_yaml(skill.metadata, include_ranks=include_ranks)
-        body = skill.instructions if include_ranks else MarkdownDocument.parse(
-            skill.instructions).to_markdown(include_ranks=False).strip()
+        body = (
+            skill.instructions
+            if include_ranks
+            else MarkdownDocument.parse(skill.instructions).to_markdown(include_ranks=False).strip()
+        )
         return f"{header}\n\n{body}".strip() + "\n"
 
     def command_to_markdown(self, command: CommandDefinition) -> str:

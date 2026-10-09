@@ -112,8 +112,11 @@ class SearchFilters(BaseModel):
 
     @model_validator(mode="after")
     def validate_date_range(self) -> SearchFilters:
-        if (self.started_before is not None and self.started_after is not None
-                and self.started_after >= self.started_before):
+        if (
+            self.started_before is not None
+            and self.started_after is not None
+            and self.started_after >= self.started_before
+        ):
             raise ValueError("started_after must be earlier than started_before")
         return self
 

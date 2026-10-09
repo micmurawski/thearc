@@ -270,7 +270,7 @@ class MarkdownRecordBuilder:
     ) -> list[JsonObject]:
         ts = timestamp or now_iso()
         lines: list[str] = []
-        
+
         # Frontmatter
         lines.append("---")
         lines.append(f"id: {session_id}")
@@ -278,7 +278,7 @@ class MarkdownRecordBuilder:
             lines.append(f"cwd: {cwd}")
         lines.append(f"timestamp: {ts}")
         lines.append("---\n")
-        
+
         lines.append(f"# Session {session_id}\n")
 
         for msg in messages:

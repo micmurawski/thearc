@@ -38,7 +38,10 @@ def _workspace_identity(workspace: str | Path) -> dict:
     def git(*args):
         result = subprocess.run(
             ["git", "--no-optional-locks", "-C", str(path), *args],
-            capture_output=True, text=True, timeout=10, check=False,
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
         )
         if result.returncode:
             raise ValueError("Workspace must be an existing Git worktree")
@@ -47,11 +50,14 @@ def _workspace_identity(workspace: str | Path) -> dict:
     root = Path(git("rev-parse", "--show-toplevel")).resolve()
     if root != path:
         raise ValueError("Specify the workspace root, not a subdirectory")
-    return {"path": str(path), "head": git("rev-parse", "HEAD"),
-            "detached": not bool(git("branch", "--show-current")),
-            "clean": not bool(git("status", "--porcelain", "--untracked-files=all")),
-            "state": "observed_current_worktree",
-            "checkpoint": False}
+    return {
+        "path": str(path),
+        "head": git("rev-parse", "HEAD"),
+        "detached": not bool(git("branch", "--show-current")),
+        "clean": not bool(git("status", "--porcelain", "--untracked-files=all")),
+        "state": "observed_current_worktree",
+        "checkpoint": False,
+    }
 
 
 @dataclass(frozen=True, slots=True)
@@ -74,8 +80,10 @@ class HandoffPlan:
         if data.get("snapshot_sha256") != self.evidence.sha256:
             raise ValueError("Handoff evidence hash mismatch")
         context = render_context(self.evidence, max_chars=data["max_context_chars"])
-        if data.get("coverage") != {"included": list(context.included_event_ids),
-                                    "omitted": list(context.omitted_event_ids)}:
+        if data.get("coverage") != {
+            "included": list(context.included_event_ids),
+            "omitted": list(context.omitted_event_ids),
+        }:
             raise ValueError("Handoff coverage mismatch")
         if data.get("config_sha256") != content_hash(data.get("destination_config")):
             raise ValueError("Handoff configuration hash mismatch")
@@ -90,17 +98,23 @@ class HandoffPlan:
 
     def preview(self) -> dict:
         """Exact task/context payload for review, not a native thread import."""
-        return {"task": self.data["task"],
-                "historical_evidence": render_context(
-                    self.evidence, max_chars=self.data["max_context_chars"]
-                ).text,
-                "destination_config": self.data["destination_config"]}
+        return {
+            "task": self.data["task"],
+            "historical_evidence": render_context(self.evidence, max_chars=self.data["max_context_chars"]).text,
+            "destination_config": self.data["destination_config"],
+        }
 
 
-def prepare_handoff(evidence: EvidenceSnapshot, *, task: str, workspace: str | Path,
-                    target: str = "codex", mode: HandoffMode = HandoffMode.CONTEXT,
-                    destination_config: MetaAgent | None = None,
-                    max_context_chars: int = 20_000) -> HandoffPlan:
+def prepare_handoff(
+    evidence: EvidenceSnapshot,
+    *,
+    task: str,
+    workspace: str | Path,
+    target: str = "codex",
+    mode: HandoffMode = HandoffMode.CONTEXT,
+    destination_config: MetaAgent | None = None,
+    max_context_chars: int = 20_000,
+) -> HandoffPlan:
     """Prepare an inert context artifact against an existing workspace; never create or modify it."""
     mode = HandoffMode(mode)
     if target != "codex" or mode != HandoffMode.CONTEXT:
@@ -108,20 +122,32 @@ def prepare_handoff(evidence: EvidenceSnapshot, *, task: str, workspace: str | P
     if not evidence.manifest["policy"]["redact"] or not evidence.manifest["policy"]["hide_ranks"]:
         raise ValueError("Handoff preparation requires redacted, rank-free evidence")
     context = render_context(evidence, max_chars=max_context_chars)
-    config = redact(hide_historical_ranks(destination_config.without_ranks().model_dump(mode="json"))) \
-        if destination_config is not None else None
-    data = {"schema_version": 1, "mode": mode.value, "delivery": "inline", "target": target,
-            "task": task, "snapshot_sha256": evidence.sha256,
-            "session_ids": [s["id"] for s in evidence.sessions],
-            "max_context_chars": max_context_chars,
-            "coverage": {"included": list(context.included_event_ids), "omitted": list(context.omitted_event_ids)},
-            "destination_config": config, "config_sha256": content_hash(config),
-            "workspace": _workspace_identity(workspace),
-            "permissions": {"execution_enabled": False, "configuration_installation": False},
-            "limitations": ["No model is invoked and no configuration is installed.",
-                            "Conversation evidence does not restore filesystem state.",
-                            "Workspace identity is not a content checkpoint or execution preflight.",
-                            "Only selected sanitized context is transferred; no native history or hidden state."]}
+    config = (
+        redact(hide_historical_ranks(destination_config.without_ranks().model_dump(mode="json")))
+        if destination_config is not None
+        else None
+    )
+    data = {
+        "schema_version": 1,
+        "mode": mode.value,
+        "delivery": "inline",
+        "target": target,
+        "task": task,
+        "snapshot_sha256": evidence.sha256,
+        "session_ids": [s["id"] for s in evidence.sessions],
+        "max_context_chars": max_context_chars,
+        "coverage": {"included": list(context.included_event_ids), "omitted": list(context.omitted_event_ids)},
+        "destination_config": config,
+        "config_sha256": content_hash(config),
+        "workspace": _workspace_identity(workspace),
+        "permissions": {"execution_enabled": False, "configuration_installation": False},
+        "limitations": [
+            "No model is invoked and no configuration is installed.",
+            "Conversation evidence does not restore filesystem state.",
+            "Workspace identity is not a content checkpoint or execution preflight.",
+            "Only selected sanitized context is transferred; no native history or hidden state.",
+        ],
+    }
     return HandoffPlan(evidence, canonical_json(data))
 
 

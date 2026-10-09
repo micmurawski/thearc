@@ -13,12 +13,17 @@ def config():
 
 def reflection(agent, *, identity="r1", event="e1", rating="helpful", target=None):
     return AssessmentReport(
-        id=identity, session_ids=["s1"],
-        items=[ReflectionItem(
-            target=target or ResourceTarget(kind="skill", name="graphify"),
-            rating=rating, reason="Observed useful configuration", limitations=["Only one task"],
-            evidence=[{"session_id": "s1", "event_id": event}],
-        )],
+        id=identity,
+        session_ids=["s1"],
+        items=[
+            ReflectionItem(
+                target=target or ResourceTarget(kind="skill", name="graphify"),
+                rating=rating,
+                reason="Observed useful configuration",
+                limitations=["Only one task"],
+                evidence=[{"session_id": "s1", "event_id": event}],
+            )
+        ],
         raw={"manifest": {"config_sha256": content_hash(agent.without_ranks().model_dump(mode="json"))}},
     )
 
@@ -45,10 +50,15 @@ def test_production_items_propagate_once_and_preserve_provenance():
 def test_overlap_kept_but_not_counted_and_new_evidence_counts():
     original = config()
     target = ResourceTarget(kind="skill", name="graphify")
-    result, history = propagate_ranks(original, [
-        reflection(original), reflection(original, identity="r2", rating="harmful"),
-        reflection(original, identity="r3", event="e2", rating="neutral"),
-    ], epoch_id="epoch")
+    result, history = propagate_ranks(
+        original,
+        [
+            reflection(original),
+            reflection(original, identity="r2", rating="harmful"),
+            reflection(original, identity="r3", event="e2", rating="neutral"),
+        ],
+        epoch_id="epoch",
+    )
     assert result.rank_for(target) == Ranks(helpful=4, neutral=1)
     assert history.assessments[1].rating == "harmful"
     assert not history.assessments[1].counted
@@ -59,8 +69,9 @@ def test_edit_keeps_old_history_without_attributing_it_to_new_content():
     original = config()
     result, history = propagate_ranks(original, [reflection(original)], epoch_id="first")
     result.skills["graphify"].instructions = "New instructions"
-    result, history = propagate_ranks(result, [reflection(result, identity="new", event="new")],
-                                      ledger=history, epoch_id="second")
+    result, history = propagate_ranks(
+        result, [reflection(result, identity="new", event="new")], ledger=history, epoch_id="second"
+    )
     target = ResourceTarget(kind="skill", name="graphify")
     assert result.rank_for(target) == Ranks(helpful=1)
     assert history.ranks(target) == Ranks(helpful=5)
@@ -73,15 +84,20 @@ def test_edit_keeps_old_history_without_attributing_it_to_new_content():
 
 def test_parent_and_section_counts_do_not_overwrite_each_other():
     original = MetaAgent(
-        name="agent", context=[ContextDocument(filename="AGENTS.md", content="# Rules\n\nUse graphify")],
+        name="agent",
+        context=[ContextDocument(filename="AGENTS.md", content="# Rules\n\nUse graphify")],
     )
     parent = ResourceTarget(kind="context", name="AGENTS.md")
     section = ResourceTarget(kind="context", name="AGENTS.md", section="Rules")
-    result, history = propagate_ranks(original, [
-        reflection(original, target=parent),
-        reflection(original, target=section, identity="section", rating="harmful"),
-        reflection(original, target=section.model_copy(update={"section": "rules"}), identity="alternate"),
-    ], epoch_id="epoch")
+    result, history = propagate_ranks(
+        original,
+        [
+            reflection(original, target=parent),
+            reflection(original, target=section, identity="section", rating="harmful"),
+            reflection(original, target=section.model_copy(update={"section": "rules"}), identity="alternate"),
+        ],
+        epoch_id="epoch",
+    )
     assert result.rank_for(parent) == Ranks(helpful=1)
     assert result.rank_for(section) == Ranks(harmful=1)
     repeated, _ = propagate_ranks(result, [], ledger=history, epoch_id="epoch2")
@@ -129,11 +145,16 @@ def test_hook_and_skill_file_ranks():
         hooks=[Hook(name="guard")],
         skills=[Skill(name="graphify", files={"references/query.md": "# Query\n\nUse it"})],
     )
-    targets = [ResourceTarget(kind="hook", name="guard"),
-               ResourceTarget(kind="skill_file", name="graphify/references/query.md"),
-               ResourceTarget(kind="skill_file", name="graphify/references/query.md", section="Query")]
-    result, _ = propagate_ranks(original, [reflection(original, identity=str(i), target=target)
-                                          for i, target in enumerate(targets)], epoch_id="epoch")
+    targets = [
+        ResourceTarget(kind="hook", name="guard"),
+        ResourceTarget(kind="skill_file", name="graphify/references/query.md"),
+        ResourceTarget(kind="skill_file", name="graphify/references/query.md", section="Query"),
+    ]
+    result, _ = propagate_ranks(
+        original,
+        [reflection(original, identity=str(i), target=target) for i, target in enumerate(targets)],
+        epoch_id="epoch",
+    )
     assert all(result.rank_for(target) == Ranks(helpful=1) for target in targets)
 
 
@@ -143,11 +164,15 @@ def test_executable_and_mcp_assessments_never_rewrite_configuration():
         skills=[Skill(name="graphify", files={"scripts/query.py": "print('hello')\n"})],
         mcps=[MCP(name="server", command="never-execute")],
     )
-    targets = [ResourceTarget(kind="skill_file", name="graphify/scripts/query.py"),
-               ResourceTarget(kind="mcp", name="server")]
-    result, history = propagate_ranks(original, [
-        reflection(original, identity=str(i), target=target) for i, target in enumerate(targets)
-    ], epoch_id="epoch")
+    targets = [
+        ResourceTarget(kind="skill_file", name="graphify/scripts/query.py"),
+        ResourceTarget(kind="mcp", name="server"),
+    ]
+    result, history = propagate_ranks(
+        original,
+        [reflection(original, identity=str(i), target=target) for i, target in enumerate(targets)],
+        epoch_id="epoch",
+    )
     assert result == original
     assert all(history.ranks(target) == Ranks(helpful=1) for target in targets)
 

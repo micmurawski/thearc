@@ -26,19 +26,29 @@ def claude_session(native, text="Run the tests", when="2026-10-01T10:00:00Z"):
 def claude_dir(tmp_path):
     root = tmp_path / "claude"
     write_jsonl(root / "project" / "11111111-aaaa.jsonl", claude_session("11111111-aaaa"))
-    write_jsonl(root / "project" / "22222222-bbbb.jsonl",
-                claude_session("22222222-bbbb", "Second", "2026-10-03T10:00:00Z"))
+    write_jsonl(
+        root / "project" / "22222222-bbbb.jsonl", claude_session("22222222-bbbb", "Second", "2026-10-03T10:00:00Z")
+    )
     return root
 
 
 @pytest.fixture
 def codex_dir(tmp_path):
     root = tmp_path / "codex"
-    write_jsonl(root / "2026" / "rollout-x.jsonl", [
-        {"type": "session_meta", "timestamp": "2026-10-02T10:00:00Z", "payload": {"id": "codex-thread", "cwd": "/w"}},
-        {"type": "response_item", "payload": {"type": "message", "role": "user",
-                                              "content": [{"type": "input_text", "text": "Fix it"}]}},
-    ])
+    write_jsonl(
+        root / "2026" / "rollout-x.jsonl",
+        [
+            {
+                "type": "session_meta",
+                "timestamp": "2026-10-02T10:00:00Z",
+                "payload": {"id": "codex-thread", "cwd": "/w"},
+            },
+            {
+                "type": "response_item",
+                "payload": {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "Fix it"}]},
+            },
+        ],
+    )
     return root
 
 
@@ -48,8 +58,9 @@ def batch(tmp_path):
     write_jsonl(root / "sessions" / "run-1.jsonl", claude_session("33333333-cccc-dddd"))
     run = root / "runs" / "33333333ccccdddd"
     run.mkdir(parents=True)
-    (run / "manifest.json").write_text(json.dumps({"harness": "claude", "thread_id": "33333333-cccc-dddd",
-                                                   "status": "completed"}))
+    (run / "manifest.json").write_text(
+        json.dumps({"harness": "claude", "thread_id": "33333333-cccc-dddd", "status": "completed"})
+    )
     (run / "agent-before.json").write_text(MetaAgent(name="recorded").model_dump_json())
     return root
 
@@ -113,11 +124,31 @@ def test_cli_handoff_previews_tools_with_recorded_agent(tmp_path, batch):
     prompt = tmp_path / "prompt.txt"
     prompt.write_text("Reflect")
     output = tmp_path / "out"
-    result = CliRunner().invoke(main, [
-        "reflection", "handoff", "--implementation", "codex", "--model", "m", "--prompt-file", str(prompt),
-        "--output", str(output), "--index", str(tmp_path / "index.sqlite"), "--source", str(batch),
-        "--session-id", "3333", "--trajectory", "0", "--tools", "mcp",
-    ])
+    result = CliRunner().invoke(
+        main,
+        [
+            "reflection",
+            "handoff",
+            "--implementation",
+            "codex",
+            "--model",
+            "m",
+            "--prompt-file",
+            str(prompt),
+            "--output",
+            str(output),
+            "--index",
+            str(tmp_path / "index.sqlite"),
+            "--source",
+            str(batch),
+            "--session-id",
+            "3333",
+            "--trajectory",
+            "0",
+            "--tools",
+            "mcp",
+        ],
+    )
     assert result.exit_code == 0, result.output
     preview = json.loads((output / "preview.json").read_text())
     assert preview["manifest"]["tool_transport"] == "mcp"
@@ -129,14 +160,28 @@ def test_cli_dumps_resource_catalog_for_recorded_agent(tmp_path, batch):
     runner = CliRunner()
     runner.invoke(main, ["sessions", "--index", index, "add", str(batch)])
     output = tmp_path / "resources.json"
-    result = runner.invoke(main, ["reflection", "resources", "--index", index, "--session-id", "3333",
-                                  "--format", "json", "--output", str(output)])
+    result = runner.invoke(
+        main,
+        [
+            "reflection",
+            "resources",
+            "--index",
+            index,
+            "--session-id",
+            "3333",
+            "--format",
+            "json",
+            "--output",
+            str(output),
+        ],
+    )
     assert result.exit_code == 0, result.output
     assert json.loads(output.read_text()) == []  # the fixture agent has no resources
     agent = tmp_path / "agent.json"
     agent.write_text(MetaAgent(name="a", context={"AGENTS.md": {"content": "# Rules\nBe brief"}}).model_dump_json())
-    listed = json.loads(runner.invoke(main, ["reflection", "resources", "--agent", str(agent),
-                                             "--format", "json"]).output)
+    listed = json.loads(
+        runner.invoke(main, ["reflection", "resources", "--agent", str(agent), "--format", "json"]).output
+    )
     assert {(e["target"]["kind"], e["target"]["section"]) for e in listed} == {("context", None), ("context", "Rules")}
     assert all(e["id"].startswith("res_") for e in listed)
     markdown = runner.invoke(main, ["reflection", "resources", "--agent", str(agent)]).output
@@ -147,7 +192,9 @@ def test_cli_dumps_resource_catalog_for_recorded_agent(tmp_path, batch):
     assert f"# Rules [SectionId: {rules}, ranks: (harmful: 0, neutral: 0, helpful: 0)]" in ranked
     outline = runner.invoke(main, ["reflection", "resources", "--agent", str(agent), "--outline"]).output
     assert f"- Rules [SectionId: {rules}]" in outline and "Be brief" not in outline
-    written = runner.invoke(main, ["reflection", "resources", "--agent", str(agent), "--format", "files",
-                                   "--output", str(tmp_path / "files")])
+    written = runner.invoke(
+        main,
+        ["reflection", "resources", "--agent", str(agent), "--format", "files", "--output", str(tmp_path / "files")],
+    )
     assert written.exit_code == 0, written.output
     assert (tmp_path / "files" / "context" / "AGENTS.md").read_text().startswith("# Rules")

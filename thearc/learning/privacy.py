@@ -13,9 +13,9 @@ def redact(value: Any) -> Any:
     """Best-effort redaction; callers must still review the offline preview."""
     if isinstance(value, dict):
         return {
-            key: "[REDACTED]" if re.search(
-                r"(?i)(password|secret|api[_-]?key|authorization|access[_-]?token|refresh[_-]?token)", key
-            ) else redact(item)
+            key: "[REDACTED]"
+            if re.search(r"(?i)(password|secret|api[_-]?key|authorization|access[_-]?token|refresh[_-]?token)", key)
+            else redact(item)
             for key, item in value.items()
         }
     if isinstance(value, list):
@@ -25,7 +25,9 @@ def redact(value: Any) -> Any:
         value = re.sub(r"(?i)\bBearer\s+[A-Za-z0-9._~+/-]+=*", "Bearer [REDACTED]", value)
         value = re.sub(
             r"(?i)((?:password|secret|api[_-]?key|access[_-]?token|refresh[_-]?token)[\"']?\s*[:=]\s*)"
-            r"(?:\"[^\"]*\"|'[^']*'|[^\s,;}]+)", r"\1[REDACTED]", value,
+            r"(?:\"[^\"]*\"|'[^']*'|[^\s,;}]+)",
+            r"\1[REDACTED]",
+            value,
         )
         return re.sub(r"/(?:Users|home)/[^/\s\"']+", "/[USER]", value)
     return value
@@ -51,11 +53,13 @@ def hide_historical_ranks(value: Any) -> Any:
         return _json(hide_historical_ranks(decoded))
     value = re.sub(
         r"\s*\((?:\s*(?:helpful|neutral|harmful)\s*:\s*\d+\s*,){2}"
-        r"\s*(?:helpful|neutral|harmful)\s*:\s*\d+\s*\)", "", value,
+        r"\s*(?:helpful|neutral|harmful)\s*:\s*\d+\s*\)",
+        "",
+        value,
     )
     value = re.sub(r'(?i)["\']?ranks["\']?\s*:\s*\{[^{}]*\}', "[historical ranks hidden]", value)
     return re.sub(
         r"(?m)^[ \t]*ranks:[ \t]*\n(?:[ \t]+(?:helpful|neutral|harmful):[ \t]*\d+[ \t]*\n?)+",
-        "[historical ranks hidden]\n", value,
+        "[historical ranks hidden]\n",
+        value,
     )
-

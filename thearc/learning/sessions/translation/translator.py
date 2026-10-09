@@ -74,9 +74,7 @@ def _normalize_provider(name: str) -> str:
         return "opencode"
     if n in ("markdown", "md"):
         return "markdown"
-    raise ValueError(
-        f"Unknown provider {name!r}. Choose from: {sorted(PROVIDERS)}"
-    )
+    raise ValueError(f"Unknown provider {name!r}. Choose from: {sorted(PROVIDERS)}")
 
 
 class SessionTranslator:
@@ -206,8 +204,10 @@ class SessionTranslator:
             The plan, regardless of whether it was written.
         """
         plan = self.plan(
-            source_provider, target_provider,
-            session_id=session_id, target_id=target_id,
+            source_provider,
+            target_provider,
+            session_id=session_id,
+            target_id=target_id,
         )
         if write:
             self.write(plan, overwrite=overwrite)
@@ -243,6 +243,7 @@ class SessionTranslator:
             except Exception as exc:
                 if skip_errors:
                     import sys
+
                     print(
                         f"warning: skipped {src_prov}:{summary.session_id} → {tgt_prov}: {exc}",
                         file=sys.stderr,

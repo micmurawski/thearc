@@ -37,8 +37,9 @@ def render_context(evidence: EvidenceSnapshot, *, max_chars: int = 20_000) -> Co
     for session in evidence.sessions:
         indices = [i for i, group in enumerate(groups) if group[0]["session_id"] == session["id"]]
         users = [i for i in indices if groups[i][0].get("role") == "user"]
-        outcomes = [i for i in indices if groups[i][-1].get("role") == "assistant"
-                    and groups[i][-1]["kind"] == "message"]
+        outcomes = [
+            i for i in indices if groups[i][-1].get("role") == "assistant" and groups[i][-1]["kind"] == "message"
+        ]
         priority.extend(users[:1] + outcomes[-1:])
     priority.extend(range(len(groups)))
     selected, used = set(), len(header)

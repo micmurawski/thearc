@@ -23,8 +23,7 @@ def test_schema_descriptions_and_nested_reference_validation(agent, raw):
     assert schema["$defs"]["ResourceTarget"]["x-thearc-resource"]
     assert schema["$defs"]["Finding"]["properties"]["resource"]["description"] == "Evaluated resource"
     spec = schema if raw else Report
-    valid = {"findings": [{"resource": {"kind": "skill", "name": "debug", "section": "Retry"}},
-                          {"resource": None}]}
+    valid = {"findings": [{"resource": {"kind": "skill", "name": "debug", "section": "Retry"}}, {"resource": None}]}
     parse_output(json.dumps(valid), spec, schema, agent=agent, validate_resources=True)
     valid["findings"][0]["resource"]["name"] = "absent"
     with pytest.raises(OutputValidationError, match=r"findings\[0\].resource"):
@@ -43,12 +42,25 @@ def test_raw_schema_and_invalid_output_errors():
 
 def test_add_then_edit_validation_and_input_preserved(agent):
     before = agent.model_dump()
-    report = CurationReport(summary="Add guidance", changes=[
-        {"id": "add", "target": {"kind": "skill", "name": "new"}, "operation": "ADD",
-         "value": {"instructions": "Start"}, "reflection_ids": ["r"]},
-        {"id": "edit", "target": {"kind": "skill", "name": "new"}, "operation": "EDIT",
-         "value": {"instructions": "Better"}, "reflection_ids": ["r"]},
-    ])
+    report = CurationReport(
+        summary="Add guidance",
+        changes=[
+            {
+                "id": "add",
+                "target": {"kind": "skill", "name": "new"},
+                "operation": "ADD",
+                "value": {"instructions": "Start"},
+                "reflection_ids": ["r"],
+            },
+            {
+                "id": "edit",
+                "target": {"kind": "skill", "name": "new"},
+                "operation": "EDIT",
+                "value": {"instructions": "Better"},
+                "reflection_ids": ["r"],
+            },
+        ],
+    )
     report.validate_against(agent)
     assert agent.model_dump() == before
     report.changes.reverse()

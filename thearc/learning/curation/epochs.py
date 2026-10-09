@@ -39,8 +39,11 @@ def load_epoch(root: str | Path, epoch_id: str | None = None) -> dict | None:
     path = safe_directory(root / "epochs" / f"{_identifier(epoch_id)}.json")
     record = json.loads(path.read_text())
     data = record["epoch"]
-    if (record["sha256"] != content_hash(data) or data["epoch_id"] != epoch_id
-            or (head is not None and head["sha256"] != record["sha256"])):
+    if (
+        record["sha256"] != content_hash(data)
+        or data["epoch_id"] != epoch_id
+        or (head is not None and head["sha256"] != record["sha256"])
+    ):
         raise ValueError("Epoch content hash mismatch")
     MetaAgent.model_validate(data["agent"])
     return data
@@ -74,9 +77,17 @@ def _writer(root: Path):
 
 
 def commit_epoch(
-    root: str | Path, *, epoch_id: str, expected_head: str | None,
-    baseline: MetaAgent, agent: MetaAgent, ledger: dict, reflections: list[dict],
-    changes: list[dict], actor: dict, summary: str,
+    root: str | Path,
+    *,
+    epoch_id: str,
+    expected_head: str | None,
+    baseline: MetaAgent,
+    agent: MetaAgent,
+    ledger: dict,
+    reflections: list[dict],
+    changes: list[dict],
+    actor: dict,
+    summary: str,
 ) -> dict:
     """Commit configuration and provenance together, with no approval step.
 
@@ -95,11 +106,17 @@ def commit_epoch(
         if current is not None and current["agent"] != baseline.model_dump(mode="json"):
             raise ValueError("Baseline differs from the committed MetaAgent")
         data = {
-            "schema_version": 1, "epoch_id": epoch_id, "parent": expected_head,
+            "schema_version": 1,
+            "epoch_id": epoch_id,
+            "parent": expected_head,
             "created_at": datetime.now(UTC).isoformat(),
-            "baseline": baseline.model_dump(mode="json"), "agent": agent.model_dump(mode="json"),
-            "ledger": ledger, "reflections": reflections, "changes": changes,
-            "actor": actor, "summary": summary,
+            "baseline": baseline.model_dump(mode="json"),
+            "agent": agent.model_dump(mode="json"),
+            "ledger": ledger,
+            "reflections": reflections,
+            "changes": changes,
+            "actor": actor,
+            "summary": summary,
         }
         digest = content_hash(data)
         write_json_exclusive(root / "epochs" / f"{epoch_id}.json", {"sha256": digest, "epoch": data})

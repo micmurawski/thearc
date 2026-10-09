@@ -22,13 +22,29 @@ def setup(tmp_path, monkeypatch):
     repo = tmp_path / "project"
     repo.mkdir()
     subprocess.run(["git", "init", str(repo)], check=True, capture_output=True)
-    subprocess.run(["git", "-c", "user.name=Test", "-c", "user.email=test@example.com",
-                    "commit", "--allow-empty", "-m", "baseline"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(
+        [
+            "git",
+            "-c",
+            "user.name=Test",
+            "-c",
+            "user.email=test@example.com",
+            "commit",
+            "--allow-empty",
+            "-m",
+            "baseline",
+        ],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+    )
     sessions = tmp_path / "codex-home" / "sessions"
     sessions.mkdir(parents=True)
     monkeypatch.setenv("CODEX_HOME", str(sessions.parent))
     fake = tmp_path / "fake-codex"
-    fake.write_text(f"#!{sys.executable}\n" + '''
+    fake.write_text(
+        f"#!{sys.executable}\n"
+        + """
 import json, os, sys, time, uuid
 from pathlib import Path
 mode = os.environ.get("FAKE_MODE", "success")
@@ -66,7 +82,8 @@ if mode == "quota":
     emit({"type": "turn.failed", "error": {"message": "usage_limit_exceeded"}})
     sys.exit(1)
 emit({"type": "turn.completed"})
-''')
+"""
+    )
     fake.chmod(0o755)
     output = tmp_path / "output"
     return repo, sessions, output, ["--cwd", str(repo), "--codex-bin", str(fake), "--output", str(output)]
@@ -92,12 +109,18 @@ def test_success_collects_exact_sessions_and_indexes_them(setup):
     assert collector.git(repo, "rev-parse", "HEAD") == before
 
 
-@pytest.mark.parametrize("mode,reason", [
-    ("quota", "agent_execution_failed"), ("empty", "no_assistant_or_tool_activity"),
-    ("missing", "matching_transcript_missing"), ("wrong-cwd", "matching_transcript_missing"),
-    ("empty-native", "no_indexed_activity"), ("response-only", "no_tool_activity"),
-    ("timeout", "timeout"),
-])
+@pytest.mark.parametrize(
+    "mode,reason",
+    [
+        ("quota", "agent_execution_failed"),
+        ("empty", "no_assistant_or_tool_activity"),
+        ("missing", "matching_transcript_missing"),
+        ("wrong-cwd", "matching_transcript_missing"),
+        ("empty-native", "no_indexed_activity"),
+        ("response-only", "no_tool_activity"),
+        ("timeout", "timeout"),
+    ],
+)
 def test_failure_stops_batch_and_keeps_diagnostics(setup, monkeypatch, mode, reason):
     _, _, output, args = setup
     monkeypatch.setenv("FAKE_MODE", mode)
@@ -127,8 +150,9 @@ def test_dry_run_and_missing_prompt_file(setup):
 
 def test_malformed_stream_and_multiple_threads(tmp_path):
     stream = tmp_path / "events.jsonl"
-    stream.write_text('not json\n[]\n{"type":"thread.started","thread_id":"a"}\n'
-                      '{"type":"thread.started","thread_id":"b"}\n')
+    stream.write_text(
+        'not json\n[]\n{"type":"thread.started","thread_id":"a"}\n{"type":"thread.started","thread_id":"b"}\n'
+    )
     result = collector.inspect_stream(stream)
     assert result["malformed_stream"] is True
     assert result["thread_id"] is None
@@ -145,8 +169,13 @@ def test_session_cli():
 
 def test_wrapper_from_another_directory(setup, tmp_path):
     wrapper = SCRIPT.with_suffix(".sh")
-    result = subprocess.run([str(wrapper), *setup[3], "--dry-run", "prompts/01_add_request_id_header.md"],
-                            cwd=tmp_path, capture_output=True, text=True, check=False)
+    result = subprocess.run(
+        [str(wrapper), *setup[3], "--dry-run", "prompts/01_add_request_id_header.md"],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
     assert result.returncode == 0, result.stderr
 
 

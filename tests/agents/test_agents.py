@@ -12,9 +12,11 @@ def test_get_installer():
     assert isinstance(get_installer("codex"), CodexInstaller)
     assert get_installer("pi").name == "pi"
 
+
 def test_get_installer_invalid():
     with pytest.raises(ValueError):
         get_installer("non_existent")
+
 
 def test_get_all_installers():
     installers = get_all_installers()
@@ -24,6 +26,7 @@ def test_get_all_installers():
     assert "claude" in names
     assert "codex" in names
     assert "pi" in names
+
 
 def test_format_skill_file():
     ag = AntigravityInstaller()

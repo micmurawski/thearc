@@ -11,6 +11,7 @@ from thearc.models.ranks import Ranks
 
 class SkillMetadata(BaseModel):
     """Pydantic model representing skill metadata frontmatter."""
+
     model_config = ConfigDict(validate_assignment=True)
     ranks: Ranks | None = None
     name: str
@@ -23,6 +24,7 @@ class SkillMetadata(BaseModel):
     def to_yaml(self, include_ranks: bool = True) -> str:
         """Serialize metadata to YAML string."""
         import yaml
+
         data = self.model_dump(exclude_none=True, exclude={"extra"})
         if self.extra:
             data.update(self.extra)
@@ -30,8 +32,10 @@ class SkillMetadata(BaseModel):
             data.pop("ranks", None)
         return yaml.dump(data, sort_keys=False).strip()
 
+
 class SkillDefinition(BaseModel):
     """Pydantic model representing a complete agent skill."""
+
     metadata: SkillMetadata
     instructions: str
     document: MarkdownDocument | None = None
@@ -48,8 +52,11 @@ class SkillDefinition(BaseModel):
             author=meta_dict.get("author"),
             ranks=meta_dict.get("ranks"),
             tags=meta_dict.get("tags", []),
-            extra={k: v for k, v in meta_dict.items()
-                   if k not in {"name", "description", "version", "author", "tags", "ranks"}}
+            extra={
+                k: v
+                for k, v in meta_dict.items()
+                if k not in {"name", "description", "version", "author", "tags", "ranks"}
+            },
         )
 
         instructions = doc.root_content
@@ -72,6 +79,7 @@ class SkillDefinition(BaseModel):
 
 class CommandDefinition(BaseModel):
     """Pydantic model representing a slash command or prompt definition."""
+
     name: str
     description: str
     arguments: str | None = None

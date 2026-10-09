@@ -77,8 +77,14 @@ def load_inputs(path: str | Path, *, target: MetaAgent | None = None) -> Inputs:
                 sources[source.id] = source
         for source in sources.values():
             store.ingest(source)
-        sessions = {(hit.session.metadata.source_id, hit.session.metadata.native_id): hit.session
-                    for hit in store.search(roles=["user"])} if sources else {}
+        sessions = (
+            {
+                (hit.session.metadata.source_id, hit.session.metadata.native_id): hit.session
+                for hit in store.search(roles=["user"])
+            }
+            if sources
+            else {}
+        )
         for entry in entries:
             if "artifact" in entry:
                 session = Session.open(local(entry["artifact"]))
@@ -94,10 +100,12 @@ def load_inputs(path: str | Path, *, target: MetaAgent | None = None) -> Inputs:
 def source_context(target, source_agent=None):
     if source_agent is None or source_agent.model_dump() == target.model_dump():
         return "\nThe target MetaAgent is also the supplied producer configuration."
-    return ("\nThe session was produced by a DIFFERENT agent. The target catalog is the configuration to improve. "
-            "Use the source behavior to suggest applicable improvements, not to claim the target was installed. "
-            "Resource findings must address the target; their ratings will not be propagated.\n"
-            "SOURCE AGENT (reference data):\n" + source_agent.without_ranks().model_dump_json())
+    return (
+        "\nThe session was produced by a DIFFERENT agent. The target catalog is the configuration to improve. "
+        "Use the source behavior to suggest applicable improvements, not to claim the target was installed. "
+        "Resource findings must address the target; their ratings will not be propagated.\n"
+        "SOURCE AGENT (reference data):\n" + source_agent.without_ranks().model_dump_json()
+    )
 
 
 def curation_input(reflection, history, target, source_agent=None):
@@ -107,15 +115,17 @@ def curation_input(reflection, history, target, source_agent=None):
     return assessments
 
 
-def load_runs(batch: str | Path, run_ids: list[str], *, trajectory_index: int = 0
-              ) -> tuple[MetaAgent, tuple[Trajectory, ...]]:
+def load_runs(
+    batch: str | Path, run_ids: list[str], *, trajectory_index: int = 0
+) -> tuple[MetaAgent, tuple[Trajectory, ...]]:
     """Use each recorded baseline and copied transcript, never the current project config."""
     inputs = load_batch(batch, run_ids, trajectory_index=trajectory_index)
     return inputs.agent, inputs.histories
 
 
-def load_batch(batch: str | Path, run_ids: list[str], *, trajectory_index: int = 0,
-               target: MetaAgent | None = None) -> Inputs:
+def load_batch(
+    batch: str | Path, run_ids: list[str], *, trajectory_index: int = 0, target: MetaAgent | None = None
+) -> Inputs:
     """Convenience loader for the prompt collector's batch layout."""
     if not run_ids or len(set(run_ids)) != len(run_ids):
         raise ValueError("Choose one or more distinct run IDs")
@@ -163,8 +173,12 @@ def arguments(description: str, argv=None, *, parallel: bool = False):
     selection.add_argument("--run-id", action="append", help="Directory name under BATCH/runs")
     selection.add_argument("--inputs", type=Path, help="Manifest of sessions from any supported source harness")
     parser.add_argument("--agent", type=Path, help="Explicit adaptation target: MetaAgent JSON or workspace")
-    parser.add_argument("--implementation", choices=["codex", "claude", "antigravity", "agy", "custom"],
-                        default="codex", help="Reflection, curation, and merge runtime; independent of session format")
+    parser.add_argument(
+        "--implementation",
+        choices=["codex", "claude", "antigravity", "agy", "custom"],
+        default="codex",
+        help="Reflection, curation, and merge runtime; independent of session format",
+    )
     parser.add_argument("--runner", help="For custom execution: trusted package.module:function")
     parser.add_argument("--trajectory", type=int, default=0)
     parser.add_argument("--model", required=True, help="Model ID for the chosen execution runtime")

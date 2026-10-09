@@ -17,11 +17,30 @@ from thearc.learning.sessions.models import Event, SearchFilters, Session
 SCHEMA_VERSION = 1
 POLICY_VERSION = "evidence-1"
 ALLOWED_KINDS = frozenset({"message", "tool_call", "tool_result"})
-EVENT_FIELDS = frozenset({
-    "id", "source_id", "harness", "session_id", "session_native_id", "run_id", "native_id",
-    "parent_native_id", "timestamp", "kind", "role", "text", "tool_name", "action_kind",
-    "call_id", "status", "arguments", "parent_run_id", "native_type", "reference",
-})
+EVENT_FIELDS = frozenset(
+    {
+        "id",
+        "source_id",
+        "harness",
+        "session_id",
+        "session_native_id",
+        "run_id",
+        "native_id",
+        "parent_native_id",
+        "timestamp",
+        "kind",
+        "role",
+        "text",
+        "tool_name",
+        "action_kind",
+        "call_id",
+        "status",
+        "arguments",
+        "parent_run_id",
+        "native_type",
+        "reference",
+    }
+)
 
 
 def canonical_json(value: Any) -> str:
@@ -34,9 +53,16 @@ def content_hash(value: Any) -> str:
 
 def _records_digest(manifest: dict, sessions: tuple[str, ...], events: tuple[str, ...]) -> str:
     # Database revisions and local root guards are provenance, not evidence content.
-    content = {k: v for k, v in manifest.items() if k not in {
-        "content_sha256", "source_revision", "blocked_root_hashes",
-    }}
+    content = {
+        k: v
+        for k, v in manifest.items()
+        if k
+        not in {
+            "content_sha256",
+            "source_revision",
+            "blocked_root_hashes",
+        }
+    }
     digest = hashlib.sha256(canonical_json(content).encode())
     for kind, records in (("session", sessions), ("event", events)):
         for record in records:
@@ -85,9 +111,12 @@ class EvidenceSnapshot:
     _events: tuple[str, ...] = field(repr=False)
 
     def __post_init__(self) -> None:
-        if not isinstance(self._manifest, str) or not isinstance(self._sessions, tuple) or not isinstance(
-            self._events, tuple
-        ) or not all(isinstance(x, str) for x in (*self._sessions, *self._events)):
+        if (
+            not isinstance(self._manifest, str)
+            or not isinstance(self._sessions, tuple)
+            or not isinstance(self._events, tuple)
+            or not all(isinstance(x, str) for x in (*self._sessions, *self._events))
+        ):
             raise TypeError("Snapshot internals must be immutable serialized records")
         manifest = self.manifest
         if manifest.get("schema_version") != SCHEMA_VERSION or manifest.get("policy_version") != POLICY_VERSION:
@@ -101,8 +130,13 @@ class EvidenceSnapshot:
                 raise ValueError("Unsupported evidence event fields or kind")
             event = Event.model_validate(data)
             session = sessions.get(event.session_id)
-            if (session is None or session.source_id != event.source_id or session.harness != event.harness
-                    or event.id in ids or event.role in {"system", "developer"}):
+            if (
+                session is None
+                or session.source_id != event.source_id
+                or session.harness != event.harness
+                or event.id in ids
+                or event.role in {"system", "developer"}
+            ):
                 raise ValueError("Invalid event provenance or identity")
             ids.add(event.id)
         if manifest.get("session_count") != len(sessions) or manifest.get("event_count") != len(ids):
@@ -146,9 +180,13 @@ class EvidenceSnapshot:
                     stream.write(line)
             stream.flush()
             os.fsync(stream.fileno())
-        write_json_exclusive(path / "manifest.json", {
-            **self.manifest, "records_sha256": digest.hexdigest(),
-        })
+        write_json_exclusive(
+            path / "manifest.json",
+            {
+                **self.manifest,
+                "records_sha256": digest.hexdigest(),
+            },
+        )
         return path
 
     @classmethod
@@ -180,14 +218,24 @@ class EvidenceSnapshot:
         return cls(canonical_json(manifest), tuple(records["session"]), tuple(records["event"]))
 
 
-def snapshot_store(store, *, session_ids: list[str] | None, filters: SearchFilters | None = None,
-                   redact: bool, hide_ranks: bool,
-                   kinds: list[str] | None, max_bytes: int) -> EvidenceSnapshot:
+def snapshot_store(
+    store,
+    *,
+    session_ids: list[str] | None,
+    filters: SearchFilters | None = None,
+    redact: bool,
+    hide_ranks: bool,
+    kinds: list[str] | None,
+    max_bytes: int,
+) -> EvidenceSnapshot:
     if (session_ids is None) == (filters is None):
         raise ValueError("Provide exactly one of session_ids or filters")
     if filters is not None:
-        unsupported = [name for name in ("run_ids", "kinds", "roles", "action_kinds", "tool_names", "statuses")
-                       if getattr(filters, name)]
+        unsupported = [
+            name
+            for name in ("run_ids", "kinds", "roles", "action_kinds", "tool_names", "statuses")
+            if getattr(filters, name)
+        ]
         if unsupported:
             raise ValueError(f"Snapshot filters select whole sessions; unsupported event filters: {unsupported}")
     selected_kinds = ALLOWED_KINDS if kinds is None else frozenset(kinds)
@@ -215,8 +263,9 @@ def snapshot_store(store, *, session_ids: list[str] | None, filters: SearchFilte
     store.connection.execute("BEGIN")
     try:
         revision = store.revision
-        ids = (sorted(set(session_ids)) if session_ids is not None
-               else sorted(s.id for s in store.iter_sessions(filters)))
+        ids = (
+            sorted(set(session_ids)) if session_ids is not None else sorted(s.id for s in store.iter_sessions(filters))
+        )
         if not ids:
             raise ValueError("No sessions match the snapshot filters")
         sources = {source.id: source for source in store.list_sources()}
@@ -236,9 +285,13 @@ def snapshot_store(store, *, session_ids: list[str] | None, filters: SearchFilte
             for row in rows:
                 event = Event.model_validate_json(row[0])
                 if event.kind not in selected_kinds or event.role in {"system", "developer"}:
-                    omitted.append({"id": event.id, "session_id": session_id,
-                                    "reason": "excluded_role" if event.role in {"system", "developer"}
-                                    else "excluded_kind"})
+                    omitted.append(
+                        {
+                            "id": event.id,
+                            "session_id": session_id,
+                            "reason": "excluded_role" if event.role in {"system", "developer"} else "excluded_kind",
+                        }
+                    )
                     continue
                 source = sources[event.source_id]
                 try:
@@ -251,17 +304,25 @@ def snapshot_store(store, *, session_ids: list[str] | None, filters: SearchFilte
                 provenance.append({"event_id": event.id, "raw_sha256": content_hash(event.raw)})
                 append_record(events, sanitize(data))
         manifest = {
-            "schema_version": SCHEMA_VERSION, "policy_version": POLICY_VERSION,
-            "source_revision": revision, "session_count": len(sessions), "event_count": len(events),
+            "schema_version": SCHEMA_VERSION,
+            "policy_version": POLICY_VERSION,
+            "source_revision": revision,
+            "session_count": len(sessions),
+            "event_count": len(events),
             "policy": {"redact": redact, "hide_ranks": hide_ranks, "kinds": sorted(selected_kinds)},
             "ordering": "session ID, timestamp, source artifact, byte offset, subrecord, event ID",
-            "omitted_events": omitted, "provenance": provenance,
-            "sources": [sanitize({"id": source_id, "harness": sources[source_id].harness,
-                                   "format": sources[source_id].format}) for source_id in sorted(selected_sources)],
+            "omitted_events": omitted,
+            "provenance": provenance,
+            "sources": [
+                sanitize({"id": source_id, "harness": sources[source_id].harness, "format": sources[source_id].format})
+                for source_id in sorted(selected_sources)
+            ],
             "blocked_root_hashes": sorted(content_hash(str(s.root)) for s in sources.values()),
-            "limitations": ["Raw/internal records excluded; attachments and hidden reasoning are not materialized.",
-                            "Evidence reflects indexed data, not a fresh source scan.",
-                            "Redaction and historical-rank removal are best effort."],
+            "limitations": [
+                "Raw/internal records excluded; attachments and hidden reasoning are not materialized.",
+                "Evidence reflects indexed data, not a fresh source scan.",
+                "Redaction and historical-rank removal are best effort.",
+            ],
         }
     finally:
         store.connection.rollback()  # End the read transaction; never commit caller writes.

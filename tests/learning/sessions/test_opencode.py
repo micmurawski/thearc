@@ -7,14 +7,24 @@ from thearc.learning.sessions.trajectories import split_trajectories
 
 def test_export_message_boundaries_and_original_evidence(tmp_path):
     messages = [
-        {"info": {"role": "user"}, "parts": [
-            {"type": "text", "text": "First"}, {"type": "text", "text": "extra detail"}]},
+        {
+            "info": {"role": "user"},
+            "parts": [{"type": "text", "text": "First"}, {"type": "text", "text": "extra detail"}],
+        },
         {"info": {"role": "user"}, "parts": [{"type": "text", "text": "Second"}]},
-        {"info": {"role": "assistant", "time": {"created": 1000}}, "parts": [
-            {"type": "reasoning", "text": "Consider the second prompt"},
-            {"type": "tool", "tool": "bash", "callID": "call", "state": {
-                "status": "completed", "input": {"command": "pwd"}, "output": "/project"}},
-            {"type": "text", "text": "Done"}]},
+        {
+            "info": {"role": "assistant", "time": {"created": 1000}},
+            "parts": [
+                {"type": "reasoning", "text": "Consider the second prompt"},
+                {
+                    "type": "tool",
+                    "tool": "bash",
+                    "callID": "call",
+                    "state": {"status": "completed", "input": {"command": "pwd"}, "output": "/project"},
+                },
+                {"type": "text", "text": "Done"},
+            ],
+        },
     ]
     data = {"info": {"id": "session", "directory": "/project"}, "messages": messages}
     (tmp_path / "session.jsonl").write_text(json.dumps(data) + "\n")
@@ -44,20 +54,45 @@ def test_unsupported_export_reports_diagnostic(tmp_path):
 
 
 def test_v2_export_preserves_prompts_tool_results_and_references(tmp_path):
-    data = {"info": {"id": "session-v2", "location": {"directory": "/project"}}, "messages": [
-        {"type": "user", "id": "m1", "text": "First"},
-        {"type": "user", "id": "m2", "text": "Second"},
-        {"type": "assistant", "time": {"created": 1000, "completed": 2000}, "finish": "stop", "content": [
-            {"type": "reasoning", "text": "Check the directory"},
-            {"type": "tool", "id": "call-1", "name": "shell", "state": {
-                "status": "completed", "input": {"command": "pwd"},
-                "content": [{"type": "text", "text": "/project"}], "metadata": {"exit": 0}}},
-            {"type": "tool", "id": "call-2", "name": "shell", "state": {
-                "status": "completed", "input": {"command": "false"},
-                "content": [{"type": "text", "text": "Exited 1"}], "metadata": {"exit": 1}}},
-            {"type": "text", "text": "Done"}]},
-        {"type": "idle", "outcome": "succeeded"},
-    ]}
+    data = {
+        "info": {"id": "session-v2", "location": {"directory": "/project"}},
+        "messages": [
+            {"type": "user", "id": "m1", "text": "First"},
+            {"type": "user", "id": "m2", "text": "Second"},
+            {
+                "type": "assistant",
+                "time": {"created": 1000, "completed": 2000},
+                "finish": "stop",
+                "content": [
+                    {"type": "reasoning", "text": "Check the directory"},
+                    {
+                        "type": "tool",
+                        "id": "call-1",
+                        "name": "shell",
+                        "state": {
+                            "status": "completed",
+                            "input": {"command": "pwd"},
+                            "content": [{"type": "text", "text": "/project"}],
+                            "metadata": {"exit": 0},
+                        },
+                    },
+                    {
+                        "type": "tool",
+                        "id": "call-2",
+                        "name": "shell",
+                        "state": {
+                            "status": "completed",
+                            "input": {"command": "false"},
+                            "content": [{"type": "text", "text": "Exited 1"}],
+                            "metadata": {"exit": 1},
+                        },
+                    },
+                    {"type": "text", "text": "Done"},
+                ],
+            },
+            {"type": "idle", "outcome": "succeeded"},
+        ],
+    }
     (tmp_path / "session.jsonl").write_text(json.dumps(data) + "\n")
     with SessionStore(tmp_path / "index.sqlite") as store:
         report = store.ingest(SourceConfig(id="test", harness="opencode", root=tmp_path))
@@ -70,4 +105,6 @@ def test_v2_export_preserves_prompts_tool_results_and_references(tmp_path):
         assert [t.prompt_text for t in split.trajectories] == ["First", "Second"]
         results = [e for e in events if e.kind == "tool_result"]
         assert [(e.call_id, e.text, e.status) for e in results] == [
-            ("call-1", "/project", "success"), ("call-2", "Exited 1", "failure")]
+            ("call-1", "/project", "success"),
+            ("call-2", "Exited 1", "failure"),
+        ]

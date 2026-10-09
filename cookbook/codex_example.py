@@ -42,6 +42,7 @@ Submit the complete list through submit_reflections, fixing any returned errors.
 An empty list is valid if there are no supported findings. After acceptance, finish.
 """
 
+
 def load(source, session=None, *, trajectory=0, index=DEFAULT_INDEX):
     """Index SOURCE (any harness directory or collector batch); return one trajectory and its agent."""
     with Sessions.open(index) as sessions:
@@ -57,20 +58,30 @@ def generate_reflections(history, agent, *, model: str, output: Path, timeout: f
     """Hand the trajectory to Codex, collect cited findings through MCP, and count them into ranks."""
     output = Path(output)
     output.mkdir(parents=True, exist_ok=False)
-    tools = ReflectionTools(agent=agent, evidence=history, reflection_schema=ReflectionSchema,
-                            output=output / "submission.json")
-    reflector = Reflector(implementation="codex", model=model, tool_transport="mcp",
-                          timeout_seconds=timeout, artifact_dir=output / "reflection-runs")
+    tools = ReflectionTools(
+        agent=agent, evidence=history, reflection_schema=ReflectionSchema, output=output / "submission.json"
+    )
+    reflector = Reflector(
+        implementation="codex",
+        model=model,
+        tool_transport="mcp",
+        timeout_seconds=timeout,
+        artifact_dir=output / "reflection-runs",
+    )
     try:
         # Reflector owns translation, history import, MCP startup, and validation.
         reflections = reflector.handoff(PROMPT, history, agent=agent, tools=tools)
         write_json_exclusive(output / "reflections.json", [r.output.model_dump(mode="json") for r in reflections])
     except Exception as exc:
-        write_json_exclusive(output / "failure.json", {
-            "type": type(exc).__name__, "code": getattr(exc, "code", None),
-            "message": str(exc) if isinstance(exc, ReflectionError) else "See the raised exception",
-            "artifacts": "reflection-runs/",
-        })
+        write_json_exclusive(
+            output / "failure.json",
+            {
+                "type": type(exc).__name__,
+                "code": getattr(exc, "code", None),
+                "message": str(exc) if isinstance(exc, ReflectionError) else "See the raised exception",
+                "artifacts": "reflection-runs/",
+            },
+        )
         raise
     # Each cited line range was credited to its section; count those votes into ranks.
     ranked, ledger = agent.propagate_ranks(tools.assessments, epoch_id=output.name)
@@ -82,8 +93,12 @@ def generate_reflections(history, agent, *, model: str, output: Path, timeout: f
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--source", type=Path, default=DEFAULT_SOURCE,
-                        help="Transcript directory or collector batch (runs/ + sessions/)")
+    parser.add_argument(
+        "--source",
+        type=Path,
+        default=DEFAULT_SOURCE,
+        help="Transcript directory or collector batch (runs/ + sessions/)",
+    )
     parser.add_argument("--session", help="Session, native or run ID, or a unique prefix; default: most recent")
     parser.add_argument("--trajectory", type=int, default=0)
     parser.add_argument("--index", type=Path, default=DEFAULT_INDEX)
@@ -97,9 +112,12 @@ def main(argv=None):
     try:
         history, agent = load(args.source, args.session, trajectory=args.trajectory, index=args.index)
         export = history.to_codex()
-        print(f"Selected trajectory {args.trajectory} of {history.session.metadata.harness} session "
-              f"{history.session.metadata.native_id}: {len(export.event_ids)} of "
-              f"{len(history.selected_events)} events become Codex items.", flush=True)
+        print(
+            f"Selected trajectory {args.trajectory} of {history.session.metadata.harness} session "
+            f"{history.session.metadata.native_id}: {len(export.event_ids)} of "
+            f"{len(history.selected_events)} events become Codex items.",
+            flush=True,
+        )
         if args.prepare_only:
             args.output.mkdir(parents=True, exist_ok=False)
             export.save(args.output / "trajectory.codex.jsonl")
@@ -108,8 +126,9 @@ def main(argv=None):
             agent.files().write(args.output / "agent-files")
             (args.output / "agent.md").write_text(agent.to_labeled_markdown(include_ranks=True), encoding="utf-8")
         else:
-            reflections = generate_reflections(history, agent, model=args.model, output=args.output,
-                                               timeout=args.timeout)
+            reflections = generate_reflections(
+                history, agent, model=args.model, output=args.output, timeout=args.timeout
+            )
             print(f"Accepted {len(reflections)} reflections through MCP; ranks in ranked-agent.md.")
         print(f"Artifacts: {args.output.resolve()}")
     except (ValueError, LookupError, OSError, KeyError, IndexError, ReflectionError) as exc:

@@ -24,16 +24,26 @@ from .graphify_inputs import arguments, curation_input, load_arguments, source_c
 
 class ReflectionSchema(ResourceAssessmentReport):
     summary: str = Field(description="What this single Graphify run supports changing in the shared baseline")
-    findings: list[ResourceAssessment] = Field(description=(
-        "Resource assessments citing only this run's provided event IDs. Each reason must include "
-        "the observed effect, a proposed guidance improvement, and when that improvement applies."
-    ))
+    findings: list[ResourceAssessment] = Field(
+        description=(
+            "Resource assessments citing only this run's provided event IDs. Each reason must include "
+            "the observed effect, a proposed guidance improvement, and when that improvement applies."
+        )
+    )
     limitations: list[str] = Field(description="Single-run uncertainty and cases that other runs should check")
 
 
-def adapt(agent: MetaAgent, histories: Sequence[History], *, model: str, output: str | Path,
-          max_workers: int = 2, implementation: str = "codex", runner=None,
-          source_agents: Sequence[MetaAgent] | None = None) -> MergeResult:
+def adapt(
+    agent: MetaAgent,
+    histories: Sequence[History],
+    *,
+    model: str,
+    output: str | Path,
+    max_workers: int = 2,
+    implementation: str = "codex",
+    runner=None,
+    source_agents: Sequence[MetaAgent] | None = None,
+) -> MergeResult:
     histories = tuple(histories)
     if len(histories) < 2 or max_workers < 1:
         raise ValueError("Supply at least two histories and a positive max_workers")
@@ -53,32 +63,50 @@ def adapt(agent: MetaAgent, histories: Sequence[History], *, model: str, output:
         source_agent = source_agents[index]
         if source_agent is not None:
             (branch / "source-agent.json").write_text(source_agent.model_dump_json(indent=2), encoding="utf-8")
-        prompt = (REFLECTION_PROMPT + source_context(branch_agent, source_agent)
-                  + "\n\n## Recorded evidence\n\n" + history.to_markdown())
+        prompt = (
+            REFLECTION_PROMPT
+            + source_context(branch_agent, source_agent)
+            + "\n\n## Recorded evidence\n\n"
+            + history.to_markdown()
+        )
         (branch / "reflection-prompt.md").write_text(prompt, encoding="utf-8")
-        reflector = Reflector(implementation=implementation, model=model, runner=runner,
-                              artifact_dir=branch / "reflections")
+        reflector = Reflector(
+            implementation=implementation, model=model, runner=runner, artifact_dir=branch / "reflections"
+        )
         reflection = reflector.reflect(
-            prompt, agent=branch_agent, output_schema=ReflectionSchema, validate_resources=True,
+            prompt,
+            agent=branch_agent,
+            output_schema=ReflectionSchema,
+            validate_resources=True,
         )
         assessments = curation_input(reflection, history, branch_agent, source_agent)
-        curator = Curator(implementation=implementation, model=model, runner=runner,
-                          artifact_dir=branch / "curator-runs")
-        return curator.curate(CURATION_PROMPT + source_context(branch_agent, source_agent), [assessments],
-                              agent=branch_agent, output=branch / "curation")
+        curator = Curator(
+            implementation=implementation, model=model, runner=runner, artifact_dir=branch / "curator-runs"
+        )
+        return curator.curate(
+            CURATION_PROMPT + source_context(branch_agent, source_agent),
+            [assessments],
+            agent=branch_agent,
+            output=branch / "curation",
+        )
 
     # Each worker owns its runtime objects, baseline copy, and output paths.
     # A failed branch raises; merging starts only after every candidate succeeds.
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         candidates = list(executor.map(candidate, enumerate(histories)))
-    resolver = Curator(implementation=implementation, model=model, runner=runner,
-                      artifact_dir=destination / "resolver-runs")
+    resolver = Curator(
+        implementation=implementation, model=model, runner=runner, artifact_dir=destination / "resolver-runs"
+    )
     return Merger(resolver=resolver).merge(
-        base=baseline, candidates=candidates,
-        prompt=("Combine the supported Graphify guidance improvements. Use each run's evidence and "
-                "limitations to resolve competing edits. Preserve uncertainty; leave conflicts unresolved "
-                "when the evidence does not justify a choice."),
-        review=True, output=destination / "merge",
+        base=baseline,
+        candidates=candidates,
+        prompt=(
+            "Combine the supported Graphify guidance improvements. Use each run's evidence and "
+            "limitations to resolve competing edits. Preserve uncertainty; leave conflicts unresolved "
+            "when the evidence does not justify a choice."
+        ),
+        review=True,
+        output=destination / "merge",
     )
 
 
@@ -86,8 +114,16 @@ def main(argv=None):
     args = arguments(__doc__, argv, parallel=True)
     inputs = load_arguments(args, parallel=True)
     agent = inputs.agent
-    result = adapt(agent, inputs.histories, model=args.model, output=args.output, max_workers=args.workers,
-                   implementation=args.implementation, runner=args.runner, source_agents=inputs.source_agents)
+    result = adapt(
+        agent,
+        inputs.histories,
+        model=args.model,
+        output=args.output,
+        max_workers=args.workers,
+        implementation=args.implementation,
+        runner=args.runner,
+        source_agents=inputs.source_agents,
+    )
     if result.unresolved:
         print("Merge requires review:")
         for issue in result.unresolved:
