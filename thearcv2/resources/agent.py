@@ -311,6 +311,25 @@ class MetaAgent(BaseModel):
         """The workspace this agent was read from or initialized in, whose journal ``add_reflection`` appends to."""
         return self._workspace
 
+    def to_worktree(self, path: str | Path, *, branch: str | None = None) -> MetaAgent:
+        """A new git worktree of this agent's workspace at ``path``, on ``branch`` from its current commit.
+
+        Pending journal lines are committed first, so the worktree starts with them. Parallel
+        pipelines each work on their own worktree from the same commit — their shared base —
+        and a merger combines them. The returned agent is bound to the new worktree.
+        """
+        from thearcv2.resources.git import _git, commit_journal
+        from thearcv2.resources.workspace import _root
+
+        root = self.checked_workspace("to_worktree")
+        commit_journal(root)
+        if dirty := _git(root, "status", "--porcelain").decode().strip():
+            raise ValueError(f"commit or undo the workspace's pending edits first: {dirty.splitlines()}")
+        target = _root(path)
+        branch = branch or f"candidate/{target.name}"
+        _git(root, "worktree", "add", "-q", "-b", branch, str(target), "HEAD")
+        return MetaAgent.from_workspace(target)
+
     def annotate(
         self,
         scales: RatingScale | Sequence[RatingScale],

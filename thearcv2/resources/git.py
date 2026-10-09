@@ -45,6 +45,19 @@ def commit(repo: str | Path, message: str, *, author: str = "thearc", email: str
     return _git(repo, "rev-parse", "HEAD").decode().strip()
 
 
+def commit_journal(root: str | Path, message: str = "Record ratings") -> str | None:
+    """Commit journal lines appended since the last commit (e.g. by ``add_reflection``); None if there are none."""
+    if not _git(root, "status", "--porcelain", "--", JOURNAL_FILE).strip():
+        return None
+    _git(root, "add", JOURNAL_FILE)
+    return commit(root, message)
+
+
+def is_worktree(root: str | Path) -> bool:
+    """Whether ``root`` is a linked git worktree (its ``.git`` is a file), not the main checkout."""
+    return (Path(root) / ".git").is_file()
+
+
 @dataclass(frozen=True)
 class Commit:
     sha: str

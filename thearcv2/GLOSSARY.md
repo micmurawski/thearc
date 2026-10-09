@@ -731,8 +731,10 @@ The workspace at the curator's last commit: a new revision of the same MetaAgent
 (same name and version until the pipeline versions it), equal to the base if
 nothing changed. It lands in the workspace as branch `curation/<id>` — the
 curator's commits plus one commit recording them in the journal — and the
-current branch is left as it was. Parallel candidates are combined by merging
-(see Merging).
+current branch is left as it was, unless the agent is a **worktree**
+(`agent.to_worktree(path)`): then the worktree moves forward to the curated
+result, so a pipeline's worktree *is* its candidate. Parallel candidates are
+combined by merging (see Merging).
 
 ### Recording a curation
 
@@ -756,10 +758,12 @@ the curation's ID and the curator's harness and model.
 
 ## Merging
 
-Combining candidates curated in parallel into one. Each pipeline starts from
-the same **base** `B` — reflections, then curation — and ends in a candidate;
-the merger takes them all and produces the **merged candidate**. Versioning and
-installing it are separate steps.
+Combining candidates curated in parallel into one. Each pipeline gets its own
+worktree of the workspace, branched from the same **base** `B`
+(`agent.to_worktree(path)`), runs reflections and curation on it, and so ends in
+a candidate; the merger takes them all and produces the **merged candidate**,
+checked out in a worktree of its own. Versioning and installing it are separate
+steps.
 
 ```text
 B ─ pipeline 1 (reflections | curation) → candidate 1 ┐
@@ -775,8 +779,10 @@ judgement: a change may be taken as it is, combined with another candidate's,
 rewritten, or left out, and the base kept. Like the curator it works in a clone
 of the workspace at `B`, edits files directly, and commits through
 `commit_change` — **one commit per section, the reason as the message**, naming
-the candidates and commits it drew on — and ends with `finish`. Candidates must
-share the same base; candidates from different bases are refused.
+the candidates and commits it drew on — and ends with `finish`. thearc finds `B`
+from the candidates' branches; candidates of different workspaces, or whose
+branches do not all meet at one commit (one started from another's result), are
+refused.
 
 ### Proposals
 
@@ -801,4 +807,11 @@ The curators' change entries stay on their candidate branches; what a merge
 took, combined, or left out is told by the merger's commit messages, not by
 separate entries. (Whether the merged journal should keep more of the
 candidates' history is parked — see `PARKED_PROBLEMS.md`.)
+
+### In code
+
+| Concept | Python |
+| --- | --- |
+| Candidate worktree | `agent.to_worktree(path, branch=…)` → an agent bound to a new worktree on its own branch |
+| Merging | `curation.Merger(harness).merge(prompt, [candidate, …], into=…)` → `Merge` (`agent`, `branch`, `base`, `commits`, `entries`, `proposals`, `summary`) |
 

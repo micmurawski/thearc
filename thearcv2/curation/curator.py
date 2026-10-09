@@ -4,8 +4,9 @@ The curator works in a clone of the workspace at a base commit ``B`` (annotated,
 section's lineage ID and ratings). It edits files directly and commits through thearc's
 ``commit_change`` tool — one change per commit, the reason as its message — and ends with
 ``finish``. Recording the commits after ``B`` (or Kept entries, when there are none) extends the
-journal; the candidate lands in the workspace as branch ``curation/<id>``, leaving the current
-branch untouched.
+journal; the candidate lands in the workspace as branch ``curation/<id>``. The current branch is
+left as it was — unless the agent is a worktree (``agent.to_worktree``), which then moves forward
+to the curated result: a candidate's worktree *is* its pipeline's outcome.
 """
 
 from __future__ import annotations
@@ -23,7 +24,7 @@ from thearcv2.reflection.mcp import ToolSpec, serve
 from thearcv2.reflection.runtimes import RUNTIMES, ReflectionError, Runtime
 from thearcv2.resources.agent import MetaAgent
 from thearcv2.resources.changes import detect_changes
-from thearcv2.resources.git import _git, agent_at, commit, record_commits
+from thearcv2.resources.git import _git, agent_at, commit, commit_journal, is_worktree, record_commits
 from thearcv2.resources.journal import Entry, Journal, Kept
 from thearcv2.resources.ratings import RatingPolicy, RatingScale
 from thearcv2.resources.reflection import ReflectionItem
@@ -192,7 +193,7 @@ class Curator:
         root = agent.checked_workspace("curate")
         if scales:
             agent.annotate(scales, policy=policy)
-        _commit_journal(root)
+        commit_journal(root)
         if dirty := [line for line in _git(root, "status", "--porcelain").decode().splitlines() if line.strip()]:
             raise ValueError(f"commit or undo the workspace's pending edits first: {dirty}")
         base = _git(root, "rev-parse", "HEAD").decode().strip()
@@ -224,16 +225,11 @@ class Curator:
                 commit(clone, f"Record {identifier}")
             head = _git(clone, "rev-parse", "HEAD").decode().strip()
             _git(root, "fetch", "-q", str(clone), f"{branch}:{branch}")
+            if is_worktree(root):  # A candidate's worktree becomes the curated result.
+                _git(root, "merge", "-q", "--ff-only", branch)
         curator = {"harness": self.harness, "model": self.runtime.model, "session": talk.id}
         return Curation(identifier, root, base, branch, head, tuple(tools.commits), tuple(recorded), tools.summary,
                         curator, tuple(reflection.id for reflection in reflections))
-
-
-def _commit_journal(root: Path) -> None:
-    """Commit journal entries appended since the last commit (e.g. by ``add_reflection``)."""
-    if _git(root, "status", "--porcelain", "--", JOURNAL_FILE).strip():
-        _git(root, "add", JOURNAL_FILE)
-        commit(root, "Record ratings")
 
 
 @dataclass(frozen=True)
