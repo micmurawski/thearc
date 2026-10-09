@@ -1,84 +1,79 @@
 # Your first ACE run
 
-This example indexes existing logs, selects evidence, then reflects and curates.
-It does not replay session commands or install changes into your project.
+This walk-through follows `cookbook/live_ace.py`: one round of reflection and curation on a
+configuration installed in a project.
 
-## 1. Index sessions
-
-From the repository root, after [installation](installation.md):
-
-```sh
-thearc sessions --index artifacts/sessions.sqlite index \
-  --source YOUR_SOURCE --source-id experiment \
-  --root /absolute/path/to/session/logs
-thearc sessions --index artifacts/sessions.sqlite list
-```
-
-Replace `YOUR_SOURCE` with `antigravity`, `claude`, `codex`, or `pi`, matching the
-log format. Choose a directory containing the sessions you intend to analyze.
-Indexing reads logs and writes SQLite; no inference occurs.
-
-## 2. Adapt configuration
-
-Replace `YOUR_IMPLEMENTATION` with the harness whose configuration is installed
-in your project, and set the project path. `YOUR_BACKEND` independently chooses
-the runtime that performs reflection and curation; see [runtime support](../reference/runtimes.md).
-Choose a model available to that runtime and adjust the cutoff to your experiment.
+## 1. Import the configuration into a workspace
 
 ```python
-from datetime import datetime, timezone
+from thearc.resources import MetaAgent
 
-from cookbook.simple_ace import adapt
-from thearc import MetaAgent
-from thearc.learning import SearchFilters, SessionStore
-
-agent = MetaAgent.from_project(
-    "YOUR_IMPLEMENTATION", "/absolute/path/to/project", name="my-agent",
-)
-
-with SessionStore("artifacts/sessions.sqlite") as store:
-    evidence = store.snapshot(filters=SearchFilters(
-        source_ids=["experiment"],
-        started_before=datetime(2026, 9, 1, tzinfo=timezone.utc),
-    ))
-
-adapted = adapt(
-    agent, evidence,
-    backend="YOUR_BACKEND",
-    model="YOUR_MODEL_ID",
-    output="artifacts/first-ace-run",
-)
-print(agent.diff(adapted))
+agent = MetaAgent.from_installation("codex", "tests/fastapi", name="graphify", version="0.9.68")
+agent = agent.init_workspace("artifacts/graphify", branch="reflections")
 ```
 
-`adapt()` is a small [cookbook helper](https://github.com/micmurawski/thearc/blob/HEAD/cookbook/simple_ace.py),
-not a new framework abstraction. It prepares the evidence, saves inputs, calls
-the reflector, and passes its findings to `run_curation()`. The
-[reflection](../guides/reflections.md) and [curation](../guides/curation.md) guides
-show those library calls separately.
+The **workspace** is a git repository holding the configuration as files (`skills/…`,
+`context/…`, `hooks.jsonc`) and the **journal** (`journal.jsonl`). Every heading carries a
+marker with its section's ID; ratings appear there after `annotate`.
 
-Calling `adapt()` invokes real agents and can consume quota. Use a **new output
-directory**, including after failed attempts. The original MetaAgent is unchanged.
+## 2. Index sessions and pick evidence
 
-The cutoff selects sessions that started strictly before that time; it does not
-remove later events within them. `SearchFilters()` selects all indexed sessions.
-No matching sessions raises an error. Keep this first snapshot small: reflector
-input limits still apply, and the helper does not batch large collections.
+```python
+from thearc.sessions import Sessions
+from thearc.sessions.scanner import ShellCommand
 
-## 3. Inspect the result
-
-The output contains `baseline/`, `evidence/`, `reflections/`, and `curation/`.
-
-```sh
-thearc reflection show artifacts/first-ace-run/reflections
-thearc curation show artifacts/first-ace-run/curation
-thearc curation diff artifacts/first-ace-run/curation
+with Sessions("artifacts/sessions.sqlite") as sessions:
+    sessions.add("logs/codex-training")
+    used = sorted({m.session_id for m in sessions.match(ShellCommand(contains="graphify"))})
+    session = sessions.get(used[0])
 ```
 
-Findings name configuration targets and cite session evidence. Curation records
-edits and their reasons; a no-change result is valid. This example does not
-evaluate performance or bump the version automatically.
+## 3. Design the reflection
 
-When you are ready to deploy configuration, follow
-[installation into agent harnesses](../guides/metaagent.md#install-configuration).
-Review artifacts for sensitive information before sharing them.
+```python
+from typing import Annotated
+from pydantic import BaseModel, Field
+from thearc.resources import CategoricalScale, Ref, ReflectionSchema
+
+USEFULNESS = CategoricalScale("usefulness", {
+    "harmful": "made the work worse", "neutral": "no visible effect", "helpful": "made the work better",
+}, ordered=True)
+
+class Rated(BaseModel):
+    ref: Ref
+    usefulness: Annotated[str, USEFULNESS]
+
+class Lesson(BaseModel):
+    error_identification: str = Field(description="What specifically went wrong?")
+    key_insight: str = Field(description="What should be remembered?")
+    ratings: list[Rated]
+
+SCHEMA = ReflectionSchema(Lesson)
+```
+
+## 4. Reflect and record
+
+```python
+from thearc.reflection import Reflector
+
+reflection = Reflector("codex").handoff("Review the configuration against this session.", session, agent, SCHEMA)
+print(reflection.to_markdown())
+agent.add_reflection(reflection)          # ratings appended to journal.jsonl
+```
+
+`handoff` installs a copy of the session into the reflector's harness and forks it, so the
+reflector starts from that history.
+
+## 5. Curate and review
+
+```python
+from thearc.curation import Curator
+
+curation = Curator("codex").curate("Address the reflections.", [reflection], agent, scales=[USEFULNESS])
+for commit in curation.commits:
+    print(commit.sha[:10], commit.message.splitlines()[0], commit.changed)
+print(agent.diff(curation.candidate()))
+```
+
+The curator's candidate lands on branch `curation/<id>`; your branch is left as it was.
+To run several pipelines in parallel and merge them, see [merging](../guides/merging.md).

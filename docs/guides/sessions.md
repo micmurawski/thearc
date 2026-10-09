@@ -1,78 +1,45 @@
 # Index and select sessions
 
-Native transcripts are the source of evidence. `SessionStore` indexes them in
-SQLite and exposes provider-neutral sessions, runs, messages, and tool activity.
-Source files remain unchanged.
-
-## Ingest logs
+Sessions are read from each harness's transcripts into a local SQLite index.
 
 ```sh
-thearc sessions --index artifacts/sessions.sqlite index \
-  --source YOUR_SOURCE --source-id experiment --root /path/to/logs
-thearc sessions --index artifacts/sessions.sqlite list
-thearc sessions --index artifacts/sessions.sqlite search "graphify"
+thearc sessions --index sessions.sqlite add logs/codex-training
+thearc sessions --index sessions.sqlite list --harness codex
+thearc sessions --index sessions.sqlite trajectories <session>
+thearc sessions --index sessions.sqlite render <session> --trajectory 0
 ```
 
-`YOUR_SOURCE` is `antigravity`, `claude`, `codex`, or `pi`. Source IDs distinguish
-collections; canonical session IDs are scoped to sources. The provider's native
-session ID is not interchangeable with the canonical ID returned by `list`.
-The CLI `index` command registers a source and synchronizes all registered sources.
-Use `sync` to refresh them later.
-
-Python ingestion can target just one source:
+The same from Python:
 
 ```python
-from pathlib import Path
-from thearc.learning import SessionStore, SourceConfig
+from thearc.sessions import Sessions
 
-with SessionStore("artifacts/sessions.sqlite") as store:
-    report = store.ingest(SourceConfig(
-        id="experiment", harness="claude", root=Path("/path/to/logs"),
-    ))
-    print(report.warnings)
+with Sessions("sessions.sqlite") as sessions:
+    source = sessions.add("logs/claude-training")            # detects the harness, synchronizes
+    records = sessions.list(source=[source.id])               # newest first
+    session = sessions.get(records[0].id)                     # any ID, native ID, or unique prefix
 ```
 
-Here `claude` is an input-format example, not a choice of reflection backend.
-Indexing and queries never invoke a model. Inspect ingestion warnings: unsupported
-or incomplete records can leave gaps in the available evidence.
+## Trajectories
 
-## Select by date or source
+A **trajectory** is the agent's response to one user prompt. `session.trajectories` splits a
+session at its prompts; `session.through(trajectory)` is the session up to and including one.
+
+## Finding sessions
 
 ```python
-from datetime import datetime, timezone
-from thearc.learning import SearchFilters, SessionStore
+from thearc.sessions.scanner import ShellCommand, SkillUsage
 
-with SessionStore("artifacts/sessions.sqlite") as store:
-    evidence = store.snapshot(filters=SearchFilters(
-        source_ids=["experiment"],
-        started_before=datetime(2026, 9, 1, tzinfo=timezone.utc),
-    ))
+hits = sessions.search("SyntaxError", kind="tool_result", status="failure")
+used = {m.session_id for m in sessions.match(ShellCommand(contains="graphify query"))}
+records = [r for r in sessions.list() if r.id in used]
 ```
 
-`started_before` and `started_after` use exclusive bounds and require timezone-aware
-datetimes. Start time is the earliest valid timezone-aware timestamp among indexed
-events, not proof of a lifecycle boundary. Sessions without a known start do not
-match date filters. Selected sessions may contain events after the cutoff.
+`match` runs behavioural patterns over complete event sequences (loops, abandoned fixes, ignored
+instructions, shell commands, skill usage). A match is a signal to inspect, not proof of a cause.
 
-Dates are normalized to UTC before comparison. Older indexes rebuild session/run
-timestamp projections once from stored events when opened; raw event timestamps
-and source logs are unchanged. This migration advances the index revision.
+## Export and install
 
-`iter_sessions(filters)` enumerates all matches without a page limit.
-`list_sessions(filters, limit=100, offset=0)` is paginated, with a maximum page size
-of 1,000. Consume iterators before closing or writing through their store.
-
-## Search and inspect
-
-`SearchQuery(text="graphify", filters=SearchFilters(...))` supports literal and
-lexical search through `store.search()`. Filters include source, harness, session,
-run, event kind, role, tool, action, and status. Date filters in event queries select
-events belonging to matching sessions, not events occurring in a time range.
-
-CLI inspection uses `show EVENT_ID` for neighboring events and `trace RUN_ID` for
-recorded delegation relationships. These are observations, not replay commands.
-System/developer messages and internal records are excluded from normal search.
-
-Indexes retain previously read events when source logs disappear. Querying does
-not rescan the source. If you need a portable, fixed input, create an
-[evidence snapshot](evidence.md).
+`session.export("codex")` converts a session to another harness's transcript format;
+`session.install("claude")` writes a copy that harness can resume or fork. Reflection's handoff
+uses this to start a reflector from a session's history.

@@ -1,6 +1,6 @@
 # Package releases
 
-The `Package release` workflow tests Python 3.10 and 3.13, builds the wheel and
+The `Package release` workflow tests Python 3.11 and 3.13, builds the wheel and
 source distribution, validates metadata, and smoke-tests the installed wheel.
 Pull requests, pushes to `main`, and manual runs validate without publishing.
 Publishing a GitHub Release triggers a PyPI upload after all checks pass.

@@ -5,14 +5,14 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "thearc"
 version = "0.1.0"
-description = "Agent-agnostic plugin & skill installer system for Codex, Claude, and Antigravity"
+description = "Agent-independent session indexing, reflection, and configuration adaptation"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "click>=8.0.0",
     "pyyaml>=6.0",
     "pydantic>=2.0.0",
-    "tomli>=1.1.0; python_version < '3.11'",
+    "jsonschema>=4.23,<5",
 ]
 
 [project.scripts]
@@ -30,12 +30,14 @@ include = ["thearc*"]
 "thearc.flow" = ["viz.css", "viz.js"]
 
 [project.optional-dependencies]
+mcp = ["mcp>=2.2,<3"]
 docs = ["mkdocs>=1.6,<2"]
 codex = ["openai-codex==0.157.1"]
 antigravity = ["google-antigravity==0.1.19"]
-arrow = ["pyarrow>=14.0.0"]
 dev = [
+    "pytest>=8.0.0",
     "ruff>=0.8.0",
+    "mypy>=1.13",
 ]
 
 [tool.pytest.ini_options]
@@ -44,8 +46,19 @@ norecursedirs = [".*", "build", "dist", "*.egg", "node_modules", "venv", "fastap
 
 [tool.ruff]
 line-length = 120
-target-version = "py310"
-extend-exclude = ["tests/fastapi"]
+target-version = "py311"
+extend-exclude = ["tests/fastapi", "thearc/flow"]  # thearc/flow: copied from the old package, not yet linted.
 
 [tool.ruff.lint]
 extend-select = ["E501"]
+
+[tool.mypy]
+python_version = "3.11"
+files = ["thearc"]
+# thearc.flow was copied from the old package as it was and is not typed yet.
+exclude = ["thearc/flow/"]
+ignore_missing_imports = true
+check_untyped_defs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+warn_unused_ignores = true

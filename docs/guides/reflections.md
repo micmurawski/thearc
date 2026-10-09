@@ -1,69 +1,69 @@
 # Generate reflections
 
-A reflection is a collection of assessments of specific configuration parts.
-Each item identifies a resource or section, rates it `helpful`, `neutral`, or
-`harmful`, explains why, and cites delivered session/event IDs.
+A **reflection** is a reflector agent's review of a configuration against evidence of how an
+agent behaved. The reflector reads the configuration's files — without any ratings or IDs — and
+answers in the shape of a **reflection schema** you design.
 
-The reflector sees the configuration without historical ranks. Its runtime must
-inspect the supplied evidence **after receiving the reflection prompt** and produce
-structured findings. Ratings are not precomputed from tool exit codes or old scores.
-Unused or unassessable resources should be omitted, not automatically rated neutral.
+## The schema
 
-## Preview before execution
+thearc needs only two kinds of fields, found by type:
+
+- `Ref` — a file reference to configuration lines, `path#Lx` or `path#Lx-Ly`. Wherever it
+  appears, it must resolve.
+- A rating — `Annotated[str, scale]` (or `scale.field()`) — under any field name.
+
+**A rating always comes with a ref; a ref can stand alone; neither is required.** Everything else
+is yours.
 
 ```python
-from pathlib import Path
+from typing import Annotated
+from pydantic import BaseModel, Field
+from thearc.resources import CategoricalScale, NumericScale, Ref, ReflectionSchema
 
-from thearc import MetaAgent
-from thearc.learning import EvidenceSnapshot
-from thearc.learning.reflection import ReflectorConfig, create_reflector
+usefulness = CategoricalScale("usefulness", {"helpful": "…", "neutral": "…", "harmful": "…"}, ordered=True)
 
-agent = MetaAgent.from_workspace("artifacts/my-agent")
-evidence = EvidenceSnapshot.load("artifacts/evidence")
-reflector = create_reflector("YOUR_BACKEND", ReflectorConfig(model="YOUR_MODEL_ID"))
-reflector.artifact_dir = Path("artifacts/reflections")
+class Rated(BaseModel):
+    ref: Ref
+    usefulness: Annotated[str, usefulness]
 
-prepared = reflector.prepare_snapshot(evidence, agent)  # No inference.
-reflection = reflector.reflect_snapshot(evidence, agent)  # Calls the runtime.
+class Lesson(BaseModel):
+    """One lesson from a trajectory."""
+    root_cause_analysis: str = Field(description="Why did this error occur?")
+    key_insight: str = Field(description="What should be remembered?")
+    ratings: list[Rated]
+    see_also: list[Ref] = []
+
+schema = ReflectionSchema(Lesson)
 ```
 
-Select and authenticate an explicit [backend](../reference/runtimes.md). Previewing
-does not validate your account's model availability. Reflection does not mutate
-the MetaAgent or install its configuration.
+Scales are `CategoricalScale` (labels, optionally ordered, each with a meaning), `LabelScale`
+(open-ended tags), and `NumericScale` (bounded numbers). Descriptions of fields, labels, and the
+model reach the reflector through the schema. `ReflectionSchema(scale, Metadata)` is shorthand
+for a list of `{ref, rating, …}` items.
 
-## CLI
+## Running a reflector
 
-To prepare batches from an indexed source:
+```python
+from thearc.reflection import Reflector
 
-```sh
-thearc reflection run --agent artifacts/my-agent \
-  --index artifacts/sessions.sqlite --source-id experiment \
-  --backend YOUR_BACKEND --model YOUR_MODEL_ID \
-  --batch-size 2 --output artifacts/reflection-preview
+reflector = Reflector("codex")                                       # or "claude", "pi"
+reflection = reflector.reflect(PROMPT, agent, schema, evidence=text)  # evidence in the prompt
+reflection = reflector.handoff(PROMPT, session, agent, schema)       # evidence as forked history
 ```
 
-This previews by default. Add `--execute` with a new output directory to run live.
-`--resume --execute` can reuse compatible completed artifacts. Reuse checks include
-input, configuration, model/settings, and adapter identity/version; it is not
-native conversation continuation.
+The reflector hands its answer in through a `submit_reflection` tool connected for that run. The
+tool validates the whole output and resolves every ref; on any problem it returns the reasons by
+location (`/ratings/1/ref: …`) and the reflector fixes them in its own loop.
 
-`--batch-size` controls sessions per reflection, not parallel model calls.
-Input limits may split batches. Incomplete/no-evidence runs return nonzero.
+## Using the result
 
-## Read findings
-
-```sh
-thearc reflection show artifacts/reflections
+```python
+reflection.output          # the answer, exactly as the schema declares it
+reflection.items           # the ratings found in it: ref, value, scale, location
+print(reflection.to_markdown())
+reflection.dump_items_to_json("reflection.json")
+agent.add_reflection(reflection)   # Rated entries, one per section a ref covers; appended to journal.jsonl
 ```
 
-Each reflection artifact directory contains `input.json`, `reflection.json`,
-`report.md`, and `run.jsonl`. Read `items` in `reflection.json` for target-level
-ratings and citations. Input and run artifacts help distinguish model findings
-from execution failures; preview artifacts do not contain generated findings.
-
-An empty item list is valid when evidence is insufficient. Citations establish
-that evidence was supplied, not that the model's causal explanation is correct.
-Model input is bounded and inline; omissions are reported. `reflect_snapshot()`
-treats its snapshot as one batch, so do not assume a huge snapshot fits.
-
-To change configuration using the findings, continue with [curation](curation.md).
+`add_reflection` refuses a reflection of another revision, and adding the same one twice records
+nothing new.

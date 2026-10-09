@@ -1,39 +1,40 @@
 # thearc
 
-`thearc` helps you improve an agent's configuration using evidence from its past
-work. A **MetaAgent** holds skills, reference files, instructions, hooks, and MCP
-configuration independently of the agent harness that installs them.
+`thearc` improves an AI agent's configuration — its context files, skills, hooks, MCP servers,
+and extensions — from evidence of how the agent actually behaved. It is harness-independent:
+it reads sessions from Claude Code, Codex, Pi, OpenCode, and Antigravity, and installs
+configurations back into them.
 
-An ACE run has two learning steps:
+One learning cycle (ACE — agentic context engineering):
 
-1. **Reflect:** inspect recorded sessions and explain which configuration parts
-   were helpful, neutral, or harmful.
-2. **Curate:** use those findings and change history to produce an adapted MetaAgent.
+```text
+sessions ─▶ reflection ─▶ ratings in the journal ─▶ curation ─▶ candidate ─▶ merge ─▶ new version
+```
 
-You can review the resulting diff and install the configuration into another
-harness. A change is not proof of improvement: evaluation and release decisions
-remain your responsibility.
+- **Sessions** are indexed from each harness's transcripts and split into trajectories.
+- **Reflection**: a reflector agent reviews the configuration against a session — like a code
+  review where the evidence is what the agent did — and returns output in a schema you design,
+  with ratings on the lines it judged.
+- **The journal** records those ratings per section, together with every change to the
+  configuration and its reason, in a git-tracked workspace.
+- **Curation**: a curator agent edits the configuration in response to the reflections, one
+  commit per change, with the reason as the commit message.
+- **Merging**: candidates curated in parallel are combined section by section by a merger agent.
 
-## Start here
+```python
+from thearc.resources import MetaAgent
+from thearc.reflection import Reflector
+from thearc.curation import Curator
 
-[Install the project](start/installation.md), then follow
-[your first ACE run](start/first-ace.md). It starts with native session logs and
-ends with an adapted configuration—using ordinary Python calls, without a tracker.
+agent = MetaAgent.from_installation("codex", "path/to/project", name="graphify", version="1.0")
+agent = agent.init_workspace("artifacts/graphify")           # git-tracked, with a journal
 
-## Find the task you need
+reflection = Reflector("codex").handoff(PROMPT, session, agent, SCHEMA)
+agent.add_reflection(reflection)                             # ratings → journal
 
-| Task | Guide |
-| --- | --- |
-| Import, save, or install configuration | [MetaAgent](guides/metaagent.md) |
-| Index logs and select sessions by date | [Sessions](guides/sessions.md) |
-| Save portable evidence or prepare an offline handoff | [Evidence](guides/evidence.md) |
-| Inspect configuration without changing it | [Reflections](guides/reflections.md) |
-| Apply findings and inspect reasons behind edits | [Curation](guides/curation.md) |
-| Choose and configure a runtime | [Runtime support](reference/runtimes.md) |
+curation = Curator("codex").curate(CURATION_PROMPT, [reflection], agent, scales=[USEFULNESS])
+print(agent.diff(curation.candidate()))
+```
 
-The **source harness**, **reflection/curation runtime**, and **installation target**
-are separate choices. You do not need to convert or resume a native conversation
-to reflect on it using another runtime.
-
-These pages describe current behavior. Design proposals and experiment reports
-are kept outside the user documentation; see [development](development/index.md).
+Start with [installation](start/installation.md) and the [first ACE run](start/first-ace.md). The
+[glossary](https://github.com/micmurawski/thearc/blob/main/GLOSSARY.md) defines every concept.

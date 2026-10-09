@@ -1,0 +1,13 @@
+prune tests
+prune logs
+prune archive
+prune cookbook
+prune scripts
+prune docs
+prune prompts
+prune site
+prune .github
+prune .agents
+prune .codex
+prune .claude
+global-exclude *.py[cod] .DS_Store
