@@ -1,46 +1,36 @@
 # Curate changes
 
-`Curator` consumes reflection responses and proposes changes to a detached MetaAgent.
+A **curator** edits the configuration in response to reflections, like acting on a code review.
 
 ```python
-from thearc.resources import Curator
+from thearc.curation import Curator
 
-curator = Curator(implementation="codex", model="YOUR_MODEL_ID")
-result = curator.curate(
-    "Improve the instructions using the findings.", [reflection], agent=agent, output="artifacts/curation"
-)
-print(agent.diff(result.agent))
+curation = Curator("codex").curate(PROMPT, reflections, agent, scales=[usefulness])
+curation.commits      # one per change: sha, message (the reason), targets changed
+curation.entries      # the journal entries recording them
+curation.candidate()  # the curated configuration
 ```
 
-`CurationReport` is the default schema. Custom `CurationBaseModel` subclasses or
-JSON schemas need an explicit adapter to `CurationReport`. Changes are validated
-against the candidate in order. The input configuration stays unchanged.
+The reflections must already be in the agent's journal (`agent.add_reflection`). With `scales`,
+the workspace's markers are refreshed first, so the curator sees every section's ratings next to
+its text.
 
-Text reflections can support edits without creating ratings. To propagate ranks,
-request `ResourceAssessmentReport` and call `reflection.assessments(history)` to
-validate citations before passing the report to the curator. The report must refer
-to the evaluated configuration revision.
+## How the curator works
 
-Curation preserves assessment deduplication, resource restrictions, candidate
-replay checks, workspace validation, and transactional epoch commits. It edits prose
-resources; executable hooks, integrations, and scripts are excluded. Omitting
-`output` returns a detached result. Supplying it saves a committed epoch and
-failure artifacts. No-change results are valid.
+- It edits a clone of the workspace at the current commit — the **base** — and runs no commands.
+- It commits through a `commit_change(message)` tool: **one change per commit, the reason as the
+  message**. The tool refuses edits to `journal.jsonl` or `agent.json`, a workspace that no longer
+  reads back, and an empty message.
+- It ends with `finish(summary)`, which refuses while edits are uncommitted.
 
-## Saved reflections and epochs
+The prompt shows each reflection as Markdown, followed by its ratings with the IDs and current
+addresses of the sections they landed on.
 
-```sh
-thearc curation run --implementation codex --model YOUR_MODEL_ID \
-  --agent my-agent --reflections artifacts/reflections --prompt-file curate.md \
-  --output artifacts/curation
-thearc curation show artifacts/curation
-thearc curation history artifacts/curation
-thearc curation diff artifacts/curation
-```
+## The result
 
-The CLI accepts current `Reflection` artifacts. Reloading a result does not
-reconstruct its source history or automatically convert typed findings into rank
-assessments. Use the Python assessment adapter for rank updates.
+The commits after the base are recorded in the journal — Added, Modified, Moved, or Removed per
+changed section, with the commit message as the reason and the IDs of every section that commit
+touched. A curation that changes nothing records **Kept** entries with the curator's reason.
 
-See the [resource guide](resources.md#curate-a-revised-metaagent) for schemas,
-resource validation, and bounded evidence retrieval during Codex curation.
+The candidate lands on branch `curation/<id>` and your branch is left as it was — unless the agent
+is a worktree (see [merging](merging.md)), which then moves forward to the candidate.

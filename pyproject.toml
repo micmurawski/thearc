@@ -17,7 +17,6 @@ dependencies = [
 
 [project.scripts]
 thearc = "thearc.cli:main"
-thearcv2 = "thearcv2.cli:main"
 
 [project.urls]
 Repository = "https://github.com/micmurawski/thearc"
@@ -48,15 +47,16 @@ norecursedirs = [".*", "build", "dist", "*.egg", "node_modules", "venv", "fastap
 [tool.ruff]
 line-length = 120
 target-version = "py311"
-extend-exclude = ["tests/fastapi"]
+extend-exclude = ["tests/fastapi", "thearc/flow"]  # thearc/flow: copied from the old package, not yet linted.
 
 [tool.ruff.lint]
 extend-select = ["E501"]
 
 [tool.mypy]
 python_version = "3.11"
-files = ["thearcv2"]
-exclude = ["thearcv2/tests/"]
+files = ["thearc"]
+# thearc.flow was copied from the old package as it was and is not typed yet.
+exclude = ["thearc/flow/"]
 ignore_missing_imports = true
 check_untyped_defs = true
 disallow_untyped_defs = true

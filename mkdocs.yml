@@ -1,6 +1,6 @@
 site_name: thearc
 site_url: https://micmurawski.github.io/thearc/
-site_description: Agent-independent context engineering with sessions, evidence, reflections, and curated configurations.
+site_description: Improve AI agents' configurations from evidence of how they behaved — reflection, curation, and merging across harnesses.
 repo_url: https://github.com/micmurawski/thearc
 edit_uri: ''
 docs_dir: docs
@@ -40,19 +40,14 @@ nav:
   - Guides:
       - Manage configuration: guides/metaagent.md
       - Index and select sessions: guides/sessions.md
-      - Work with immutable sessions: guides/resources.md
-      - Migrate older integrations: guides/migration.md
-      - Freeze and inspect evidence: guides/evidence.md
       - Generate reflections: guides/reflections.md
       - Curate changes: guides/curation.md
-      - Merge adaptations: guides/merging.md
-      - More examples: examples/index.md
-      - Graphify adaptation recipes: examples/graphify.md
-      - Codex reflections through MCP: examples/codex.md
+      - Merge candidates: guides/merging.md
+      - Cookbook: examples/index.md
   - Reference:
-      - Runtime support and setup: reference/runtimes.md
+      - Runtime support: reference/runtimes.md
       - CLI: reference/cli.md
   - Development:
-      - Contributing and limits: development/index.md
+      - Contributing: development/index.md
       - Package releases: development/releases.md
       - Maintain these docs: development/documentation.md

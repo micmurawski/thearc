@@ -1,48 +1,22 @@
-# CLI reference
+# CLI
 
-Use `thearc --help` and `thearc GROUP COMMAND --help` for complete options.
-Commands are grouped by the object they work with:
-
-| Group | Commands | Calls a model? |
-| --- | --- | --- |
-| `sessions` | `add`, `sources`, `index`, `sync`, `list`, `search`, `show`, `trace`, `render` | No |
-| `evidence` | `snapshot`, `export`, `inspect` | No |
-| `reflection` | `run`, `handoff`, `show` | `run --execute` or `handoff --execute` |
-| `curation` | `run`, `show`, `history`, `diff` | `run` does |
-| `handoff` | `prepare`, `show` | No |
-
-`handoff prepare/show` save and read offline plans; `reflection show` reads
-reflection artifacts, including native handoff results.
-
-## Index placement
-
-The session and evidence groups take `--index` **before** the subcommand:
-
-```sh
-thearc sessions --index artifacts/sessions.sqlite list
-thearc evidence --index artifacts/sessions.sqlite snapshot \
-  --session-id CANONICAL_ID --output artifacts/evidence
+```text
+thearc sessions [--index PATH] COMMAND      (alias: thearc s)
 ```
 
-Repeat `--session-id` to select several sessions. Date-based snapshot selection is
-available through the [Python filter API](../guides/sessions.md#select-by-date-or-source).
-Reflection's `--index` belongs to its `handoff` command instead.
+The index defaults to `~/.thearc/learning.sqlite`.
 
-## Read saved artifacts
+| Command | Does |
+| --- | --- |
+| `add PATHS… [--harness H] [--format native\|dataclaw] [--source-id ID] [--no-sync]` | Register transcript directories and synchronize them. |
+| `sources` | Show registered sources. |
+| `sync [--source-id ID]` | Read new and changed transcripts. |
+| `list [--harness H] [--since T] [--until T] [--json]` | Indexed sessions, newest first. |
+| `search [TEXT] [--mode literal\|lexical] [--kind K] [--tool T] [--status S] [--json]` | Events matching text and filters. |
+| `show EVENT_ID [--context N]` | An event with its surrounding events. |
+| `trajectories SESSION` (alias `t`) | A session's trajectories. |
+| `render [SESSION] [--trajectory N] [--through] [--format F] [--best-effort]` | Markdown, or a harness's transcript format. |
+| `install [REFERENCES…] --to H [--trajectory N] [--through] [--all]` | Install sessions where a harness can resume or fork them. |
+| `trace RUN` | A run's sub-agent runs and delegations. |
 
-```sh
-thearc evidence export --snapshot artifacts/evidence \
-  --format markdown --output artifacts/readable-evidence
-thearc evidence inspect --snapshot artifacts/evidence \
-  --tool search_events --arguments '{"query":"graphify"}'
-thearc reflection show artifacts/reflections
-thearc curation diff artifacts/curation
-thearc handoff show artifacts/handoff
-```
-
-These commands do not replay sessions or invoke agents. `inspect` executes one
-local retrieval operation, not an agent inspection.
-
-For complete workflows, use the [session](../guides/sessions.md),
-[reflection](../guides/reflections.md), and [curation](../guides/curation.md) guides.
-Removed aliases and changed options are listed in the [migration guide](../guides/migration.md).
+Run any command with `--help` for every option.

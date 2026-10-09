@@ -1,72 +1,68 @@
 # Manage configuration
 
-A `MetaAgent` is a portable configuration, not a running agent. It holds named
-collections of skills, hooks, MCP servers, context documents, and agent-local
-rules, workflows, and commands. Skills include their bundled files, such as
-`references/query.md` and upstream version markers.
+A **MetaAgent** is a named, versioned agent configuration: skills (with their files), context
+documents such as `AGENTS.md`, rules, workflows, commands, hooks, MCP servers, and harness-only
+extensions. It also carries a **journal** — the history of every section.
 
-## Import or create
-
-```python
-from thearc import MetaAgent, Skill
-
-# Import an existing installation. Replace IMPLEMENTATION and the project path.
-agent = MetaAgent.from_project(
-    "IMPLEMENTATION",
-    "/path/to/project",
-    name="my-agent",
-)
-
-# Or construct a configuration in Python.
-agent = MetaAgent(
-    name="my-agent",
-    version="1.0.0",
-    skills={"review": Skill(name="review", instructions="Read relevant tests before editing.")},
-)
-```
-
-Implementations are `antigravity`, `claude`, `codex`, and `pi`. Direct construction
-requires a name. Import can discover installed identity; specifying `name=` makes
-your intended configuration identity explicit. Importing today's configuration
-does not prove that it was loaded during a historical session.
-
-## Save and compare
+## Import, edit, install
 
 ```python
-agent.to_workspace("artifacts/my-agent")
-restored = MetaAgent.from_workspace("artifacts/my-agent")
-print(agent.diff(restored))  # Empty when there are no differences.
+from thearc.resources import Hook, MetaAgent, Skill
+
+agent = MetaAgent.from_installation("claude", "path/to/project", name="graphify", version="1.0")
+agent.skills["retry"] = Skill(name="retry", description="Retry failing commands", instructions="# Retry\n…")
+agent.install("codex", "path/to/other-project")
 ```
 
-A canonical workspace stores `agent.json` and editable resource files. It is
-different from a harness installation. Use `before.diff(after)` to inspect changes;
-`include_ranks=True` includes assessment counters and `include_version=False` hides
-the top-level release label. Diffs can contain sensitive configuration text.
+Installation writes the configuration in each harness's own layout and records what it owns in
+a marker file, so reinstalling replaces exactly that. Context documents such as `CLAUDE.md` are
+merged by section, keeping the project's own sections.
 
-## Names and versions
+**Hooks per harness.** Matchers name a harness's own tools, so hooks often differ per harness:
+`Hook(…, harnesses=["claude"])` installs only into Claude. **Owned hooks** —
+`agent.owns_hooks = ["graphify *"]` — mark hook commands as the agent's wherever they appear: every
+install replaces them, including ones installed by hand, instead of adding copies.
 
-Names are nonempty, safe filename components. A version is an optional release
-label, not an automatically incremented number or proof of exact content.
-`MetaAgent(name="graphify", version="1.0.0")` writes `.graphify_version` alongside
-canonical metadata and in the target harness base directory when installed.
+## Revisions and diffs
 
-Installed `.thearc-agent.json` records identity. A nested
-`skills/graphify/.graphify_version` belongs to the upstream skill and is preserved
-independently of the complete MetaAgent version. Use content hashes and curation
-history for exact provenance. Set a release version explicitly when publishing.
+`agent.revision` is `version@rev_…`: the version plus a hash of the configuration files. A
+journal entry records the revision it applies to. `agent.diff(other)` is a unified diff of two
+configurations.
 
-## Install configuration
+## Workspaces
 
 ```python
-for implementation in ("antigravity", "claude", "codex", "pi"):
-    agent.install(implementation, path=f"artifacts/install/{implementation}")
+agent = agent.init_workspace("artifacts/graphify")   # git init, initial commit, journal seeded
+agent = MetaAgent.from_workspace("artifacts/graphify")
+light = MetaAgent.from_workspace("artifacts/graphify", journal=False)   # configuration only
 ```
 
-Each path above is a separate project root. Installation writes configuration,
-not agent executables. Matching files are overwritten by default; review the
-destination before targeting a real project. Conversion uses each harness's
-installer, but does not prove identical runtime behavior across harnesses.
+A workspace is the configuration as files plus `agent.json` (name, version) and
+`journal.jsonl`. Files carry **markers** — each section's lineage ID and, after
+`agent.annotate(scales)`, its rating summaries:
 
-`replace=False` requests merge behavior and records an unknown installed release
-version, because the combined result is not necessarily the incoming release.
-Installation is not an atomic transaction across all generated files.
+```markdown
+## Limits <!-- res_fd94… · usefulness: (harmful: 3, neutral: 0, helpful: 1) -->
+```
+
+Markers are stripped when a workspace is read, so revisions, installations, and the files
+reflectors read never contain them. While someone edits, a marker says which section is which:
+a heading that keeps its marker under a new title is a move, not a removal plus an addition.
+
+## The journal
+
+The journal is append-only. It holds **ratings** (from reflections) and **changes** (Added,
+Modified, Moved, Removed — from commits, each with the commit message as its reason).
+
+```python
+from thearc.resources import record_commits, agent_at
+
+record_commits("artifacts/graphify", agent.journal)        # commits not yet in the journal
+agent.journal.changes(target, subsections=True)            # a section's change log, across moves
+agent.journal.summaries(USEFULNESS)                        # rating summary per section
+before = agent_at("artifacts/graphify", "HEAD~3")          # the configuration at any commit
+```
+
+Rating policies decide which ratings count: `count_all`, `since_last_modification` (ratings of a
+section's current text), and `including_subsections(policy)` (a parent includes its subsections).
+`agent_outline(agent, USEFULNESS, ids=True)` prints every section with its ID and summary.

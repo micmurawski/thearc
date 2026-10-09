@@ -4,75 +4,60 @@
 
 Build agentic context-engineering pipelines on top of `thearc`: inspect sessions, extract reusable lessons and failures, curate versioned updates, evaluate their effect, and install the resulting capabilities into agent environments. The framework is designed to let these pipelines evolve as new artifacts and evaluation methods emerge, drawing direction from work on [agentic context engineering](https://arxiv.org/pdf/2510.04618), [meta-skill evolution](https://arxiv.org/pdf/2607.05297), [self-evolving agent skills](https://arxiv.org/pdf/2608.02636), [self-evolving agents](https://arxiv.org/html/2507.21046v4), and [meta context engineering](https://arxiv.org/pdf/2601.21557).
 
-## Sessions, reflection, and curation
+## The learning cycle
 
-Index existing logs first:
+```text
+sessions ─▶ reflection ─▶ ratings in the journal ─▶ curation ─▶ candidate ─▶ merge ─▶ new version
+```
+
+Index sessions from any supported harness:
 
 ```sh
-thearc sessions --index sessions.sqlite index --source codex --source-id experiment --root /path/to/logs
+thearc sessions --index sessions.sqlite add logs/codex-training
 thearc sessions --index sessions.sqlite list
 ```
 
-Use the immutable resource interface:
+Reflect, record, and curate:
 
 ```python
-from thearc import MetaAgent
-from thearc.resources import Curator, Reflector, SessionStore
+from typing import Annotated
+from pydantic import BaseModel
+from thearc.curation import Curator
+from thearc.reflection import Reflector
+from thearc.resources import CategoricalScale, MetaAgent, Ref, ReflectionSchema
+from thearc.sessions import Sessions
 
-agent = MetaAgent.from_workspace("my-agent")
-with SessionStore("sessions.sqlite") as store:
-    session = store.get(session_id)
-trajectory = session.split_into_trajectories()[0]
+usefulness = CategoricalScale("usefulness", ["harmful", "neutral", "helpful"], ordered=True)
 
-reflector = Reflector(implementation="codex", model="YOUR_MODEL_ID")
-reflection = reflector.handoff("Reflect on the task and suggest improvements.", trajectory, agent=agent)
-curator = Curator(implementation="codex", model="YOUR_MODEL_ID")
-result = curator.curate(
-    "Improve the guidance using these findings.", [reflection], agent=agent, output="artifacts/curation"
-)
-adapted = result.agent
-print(agent.diff(adapted))
+class Rated(BaseModel):
+    ref: Ref
+    usefulness: Annotated[str, usefulness]
+
+class Lesson(BaseModel):
+    key_insight: str
+    ratings: list[Rated]
+
+agent = MetaAgent.from_installation("codex", "path/to/project", name="my-agent", version="1.0")
+agent = agent.init_workspace("artifacts/my-agent")            # git-tracked, with a journal
+
+with Sessions("sessions.sqlite") as sessions:
+    session = sessions.get()                                  # the most recent session
+reflection = Reflector("codex").handoff("Review the configuration against this session.",
+                                        session, agent, ReflectionSchema(Lesson))
+agent.add_reflection(reflection)                              # ratings → journal
+
+curation = Curator("codex").curate("Address the reflections.", [reflection], agent, scales=[usefulness])
+print(agent.diff(curation.candidate()))
 ```
 
-For prompt reflection, compose evidence explicitly:
-`reflector.reflect(PROMPT + "\n\n" + trajectory.to_markdown(), agent=agent)`.
-Use `session.through(trajectory)` to include earlier conversation history in a handoff.
-Reflection is the reflector's response; the continued session is a separate artifact.
-
-Calls to reflection and curation invoke the selected runtime. The source history and
-input MetaAgent remain unchanged. See the [resource guide](docs/guides/resources.md)
-for schemas, validated resource assessments, activation support, and conversion limits.
-The [ACE recipe](cookbook/resource_ace.py) demonstrates explicit evidence, assessments,
-and a committed curation epoch. See [runtime setup](docs/reference/runtimes.md).
-
-To combine parallel curation results, use [Merger](docs/guides/merging.md).
-
-The old batch APIs and import aliases have been removed. See the
-[migration guide](docs/guides/migration.md) for replacement calls.
-
-### Install into multiple agents
-
-The same `MetaAgent` can be installed for different agent harnesses, independently
-of which backend produced it:
-
-```python
-for implementation in ("antigravity", "claude", "codex", "pi"):
-    adapted.install(implementation)
-```
-
-These are separate project directories; use your project's path to install there.
-Installation writes harness-specific configuration files, not agent executables,
-and overwrites matching files by default. Review the diff before installing.
+Run pipelines in parallel worktrees (`agent.to_worktree(path)`) and combine their candidates with
+`Merger("codex").merge(prompt, [candidate_1, candidate_2])`. Install the result into any
+harness with `agent.install("claude", "path/to/project")`.
 
 ## Further reading
 
-See the [glossary](GLOSSARY.md) for shared definitions of the main entities.
-
-Browse the [documentation](docs/index.md), or preview the MkDocs site locally:
-
-```sh
-python -m pip install -e '.[docs]'
-python -m mkdocs serve
-```
-
-For runnable evidence, reflection, and handoff examples, see the [cookbook](cookbook/README.md).
+- [Glossary](GLOSSARY.md) — every concept, kept in step with the code.
+- [Documentation](docs/index.md) — guides and reference; preview it with
+  `python -m pip install -e '.[docs]' && python -m mkdocs serve`.
+- [Cookbook](cookbook/) — `live_reflect.py`, `live_ace.py`, `live_ace_with_merge.py`.
+- [Parked problems](PARKED_PROBLEMS.md) — open questions.

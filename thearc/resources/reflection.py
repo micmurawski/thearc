@@ -1,496 +1,356 @@
-"""Reflection from prompts or history, with typed output or validated tool submission."""
+"""Reflection schema: the operator's contract for reflection output, and how ratings are found in it.
+
+A reflection schema is any Pydantic model (or type, such as a list of models). thearc looks for
+two kinds of fields, by type and never by name:
+
+- ``Ref`` — a file reference, ``path#Lx`` or ``path#Lx-Ly``. Wherever it appears (alone, in a
+  list, nested) it must resolve to lines of the agent files. On its own it only cites.
+- ``Annotated[str, scale]`` (or ``scale.field()``) — a rating on that scale. An object holding a
+  rating must also hold exactly one required ``Ref``: the lines the rating is about. That rule is
+  checked when the schema is built.
+
+    class Rated(BaseModel):
+        ref: Ref
+        usefulness: Annotated[str, usefulness]
+
+    class Lesson(BaseModel):
+        key_insight: str
+        ratings: list[Rated]
+
+    schema = ReflectionSchema(Lesson)
+
+Every object holding a rating yields a ``ReflectionItem`` per rating field: its ref, value,
+scale, location in the output, and the object's other fields. Everything else stays in the
+reflection's output. ``ReflectionSchema(scale, Metadata)`` is shorthand for a list of
+``{ref, rating, …Metadata}`` items.
+"""
 
 from __future__ import annotations
 
-import json
-from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Any
-from uuid import uuid4
+import copy
+import types
+import typing
+import uuid
+from collections.abc import Iterable, Iterator
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from typing import TYPE_CHECKING, Annotated, Any, get_args, get_origin
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError, create_model
 
-from thearc.learning.curation.models import AssessmentReport
-from thearc.learning.reflection.runtime import (
-    INSTRUCTIONS,
-    ExecutionConfig,
-    NativeSessionRef,
-    ReflectionError,
-    _hash,
-    resource_catalog,
-)
-from thearc.learning.sessions.models import Event
-from thearc.models import MetaAgent
+from thearc.resources.agent import MetaAgent
+from thearc.resources.files import AgentFiles, FileReference
+from thearc.resources.journal import Rated, derived_entry_id
+from thearc.resources.ratings import RatingScale, RatingValue
 
-from .formats import codex_items, provenance_only
-from .history import History, Session, SessionView
-from .immutable import freeze, thaw
-from .schemas import ResourceAssessmentReport, native_output_schema, parse_output, schema_for
+if TYPE_CHECKING:
+    from thearc.reflection import Reflection
+
+REFERENCE_PATTERN = r"^[^#\s]+#L[1-9][0-9]*(-L[1-9][0-9]*)?$"
+
+
+class _RefField:
+    """Marks a field of a reflection schema as a file reference."""
+
+
+Ref = Annotated[
+    str,
+    _RefField(),
+    Field(pattern=REFERENCE_PATTERN, description="Agent file lines: path#Lx or path#Lx-Ly (1-based, inclusive)."),
+]
 
 
 @dataclass(frozen=True)
-class Reflection:
-    id: str
-    text: str
-    output: Any
-    provenance: Any
-    execution: Any = field(default_factory=dict)
-    history: History | None = field(default=None, repr=False, compare=False)
+class ReflectionItem:
+    """One rating found in a reflection: the lines it is about, its value and scale, where it sits in the
+    output (a JSON pointer to the object holding it), and that object's other fields."""
 
-    @classmethod
-    def load(cls, path):
-        """Read a versioned artifact without importing its original schema class."""
-        data = json.loads(Path(path).read_text(encoding="utf-8"))
-        schema = schema_for(data.get("schema"))
-        manifest = data["provenance"]
-        if manifest.get("version") != 1 or manifest.get("schema_sha256") != (
-            _hash(schema) if schema is not None else None
-        ):
-            raise ValueError("Unsupported or inconsistent reflection artifact")
-        parsed = parse_output(data["text"], schema, schema)
-        saved = data["output"]
-
-        def preserves(original, value):
-            if isinstance(original, dict):
-                return isinstance(value, dict) and all(
-                    key in value and preserves(item, value[key]) for key, item in original.items()
-                )
-            if isinstance(original, list):
-                return (
-                    isinstance(value, list)
-                    and len(value) == len(original)
-                    and all(preserves(a, b) for a, b in zip(original, value, strict=True))
-                )
-            return original == value
-
-        if not preserves(parsed, saved):
-            raise ValueError("Saved output differs from the reflector response")
-        if schema is not None:
-            parse_output(json.dumps(saved), schema, schema)
-        return cls(data["id"], data["text"], saved, freeze(manifest), freeze(data["execution"]))
-
-    @property
-    def agent_revision(self):
-        return self.provenance.get("config_sha256")
-
-    @property
-    def agent_mode(self):
-        return self.provenance["agent_mode"]
-
-    def assessments(self, history):
-        if not isinstance(self.output, ResourceAssessmentReport):
-            raise TypeError("Automatic assessments require ResourceAssessmentReport or an explicit adapter")
-        if self.agent_revision is None:
-            raise ValueError("Assessments require the evaluated MetaAgent revision")
-        items = self.output.assessment_items(history)
-        events = history.selected_events if isinstance(history, History) else history
-        return AssessmentReport(
-            id=self.id,
-            summary=self.output.summary,
-            items=items,
-            limitations=self.output.limitations,
-            session_ids=list(dict.fromkeys(e.session_id for e in events)),
-            evidence_event_ids=list(dict.fromkeys(e.event_id for item in items for e in item.evidence)),
-            raw={"manifest": thaw(self.provenance)},
-        )
+    ref: FileReference
+    rating: RatingValue
+    metadata: dict[str, Any]
+    scale: str = ""
+    path: str = ""
 
 
-class Reflector:
-    """An evaluator. `agent=` on each call supplies the evaluated configuration.
+@dataclass(frozen=True)
+class Rejection:
+    index: int
+    item: Any
+    reason: str
 
-    A supplied runner is trusted application code with signature (prompt, schema,
-    config). Native history and activation use the verified built-in adapter only.
-    With ReflectionTools, reflect/handoff return the accepted list of Reflections.
-    Without tools they return a single Reflection containing the final response.
-    tool_transport="mcp" owns a temporary MCP endpoint; "host" uses scoped host tools.
-    """
 
-    def __init__(self, *, implementation, model, runner=None, artifact_dir=None, tool_transport="host", **settings):
-        if implementation not in {"codex", "claude", "antigravity", "custom"}:
-            raise ValueError(f"Unknown implementation: {implementation}")
-        if tool_transport not in {"host", "mcp"}:
-            raise ValueError("tool_transport must be host or mcp")
-        if tool_transport == "mcp" and (implementation != "codex" or runner is not None):
-            raise ReflectionError("capability", "Managed MCP reflection requires the built-in Codex adapter")
-        self.implementation = implementation
-        self.tool_transport = tool_transport
-        self.config = ExecutionConfig(model=model, **settings)
-        self.runner = runner
-        self.artifact_dir = Path(artifact_dir) if artifact_dir is not None else None
+@dataclass(frozen=True)
+class ReflectionResult:
+    """Rated entries to record, and the items that were rejected instead."""
 
-    def prepare(
-        self,
-        prompt,
-        *,
-        agent=None,
-        agent_mode="reference",
-        output_schema=None,
-        validate_resources=False,
-        tools=None,
-        include_catalog=True,
-    ):
-        """``include_catalog=False`` is for callers whose prompt already presents the agent."""
-        if self.tool_transport == "mcp" and tools is None:
-            raise ValueError("MCP reflection requires ReflectionTools")
-        if tools is not None:
-            from .reflection_tools import ReflectionTools
+    entries: tuple[Rated, ...]
+    rejected: tuple[Rejection, ...]
 
-            if not isinstance(tools, ReflectionTools):
-                raise TypeError("tools must be ReflectionTools")
-            if output_schema is not None or agent_mode != "reference":
-                raise ValueError("ReflectionTools owns the reflection schema and evaluated reference agent")
-            if agent is not None:
-                if not isinstance(agent, MetaAgent):
-                    raise TypeError("agent must be a MetaAgent")
-                if agent.without_ranks() != tools.agent:
-                    raise ValueError("ReflectionTools was prepared for a different MetaAgent")
-            if tools.accepted:
-                raise ValueError("Use a new ReflectionTools instance for each run")
-            if self.implementation != "codex" or self.runner is not None:
-                raise ReflectionError(
-                    "capability",
-                    "In-process reflection tools require built-in Codex; "
-                    "use the reflection MCP server with other harnesses",
-                )
-            agent = tools.agent
-        if not isinstance(prompt, str) or not prompt.strip():
-            raise ValueError("A nonempty prompt is required")
-        if agent_mode not in {"reference", "active"}:
-            raise ValueError("agent_mode must be reference or active")
-        if (validate_resources or agent_mode == "active") and agent is None:
-            raise ValueError("Resource validation and activation require a MetaAgent")
-        if agent is not None and not isinstance(agent, MetaAgent):
-            raise TypeError("agent must be a MetaAgent")
-        snapshot = agent.without_ranks() if agent is not None else None
-        schema = tools.schema if tools is not None else schema_for(output_schema)
-        if validate_resources and schema is None:
-            raise ValueError("Resource validation requires an output schema")
-        active = ""
-        if agent_mode == "active":
-            if self.implementation != "codex" or self.runner is not None:
-                raise ReflectionError("capability", "Activation is supported only by the built-in Codex adapter")
-            if (
-                snapshot.skills
-                or snapshot.hooks
-                or snapshot.mcps
-                or any(r.location != "rules" for r in snapshot.resources.values())
-            ):
-                raise ReflectionError(
-                    "capability",
-                    "Codex activation currently supports context and rules only; "
-                    "skills, hooks, MCPs, commands and workflows require additional adapters",
-                )
-            active = "\n\n".join(
-                [doc.content for doc in snapshot.context.values()] + [r.content for r in snapshot.resources.values()]
-            )
-        effective = prompt
-        if tools is not None:
-            effective += "\n\n" + tools.instructions
-        elif snapshot is not None and include_catalog:
-            effective += "\n\nAGENT RESOURCE CATALOG (reference data):\n" + json.dumps(
-                resource_catalog(snapshot),
-                ensure_ascii=False,
-            )
-        if schema is not None and tools is None:
-            effective += "\n\nReturn JSON matching this JSON Schema:\n" + json.dumps(schema, ensure_ascii=False)
-        if len(effective) + len(active) > self.config.max_input_chars:
-            raise ReflectionError("input_too_large", "Request exceeds input limit; select a smaller input explicitly")
-        return {
-            "prompt": effective,
-            "schema": schema,
-            "active_instructions": active,
-            **({"tools": tools} if tools is not None else {}),
-            "agent": snapshot,
-            "manifest": {
-                "version": 1,
-                "implementation": self.implementation,
-                "settings": self.config.model_dump(),
-                "agent_mode": agent_mode,
-                "activated_resources": [entry["target"] for entry in resource_catalog(snapshot)]
-                if agent_mode == "active"
-                else [],
-                "config_sha256": _hash(snapshot.model_dump(mode="json")) if snapshot is not None else None,
-                "configuration_provenance": "supplied snapshot; historical installation/loading is unverified",
-                "schema_sha256": _hash(schema) if schema is not None else None,
-                "prompt_sha256": _hash(effective),
-                **({"tool_transport": self.tool_transport} if tools is not None else {}),
-            },
-        }
 
-    def reflect(
-        self,
-        prompt,
-        *,
-        agent=None,
-        agent_mode="reference",
-        output_schema=None,
-        validate_resources=False,
-        tools=None,
-        include_catalog=True,
-    ):
-        prepared = self.prepare(
-            prompt,
-            agent=agent,
-            agent_mode=agent_mode,
-            output_schema=output_schema,
-            validate_resources=validate_resources,
-            tools=tools,
-            include_catalog=include_catalog,
-        )
-        return self._execute(prepared, output_schema, validate_resources)
+# --- reading a schema's types ---------------------------------------------------------------------------------------
 
-    def handoff(
-        self,
-        prompt,
-        history,
-        *,
-        agent=None,
-        agent_mode="reference",
-        output_schema=None,
-        validate_resources=False,
-        tools=None,
-    ):
-        if not isinstance(history, History):
-            raise TypeError("handoff requires a Session, Trajectory or SessionView")
-        prepared = self.prepare(
-            prompt,
-            agent=agent,
-            agent_mode=agent_mode,
-            output_schema=output_schema,
-            validate_resources=validate_resources,
-            tools=tools,
-        )
-        if self.implementation != "codex" or self.runner is not None:
-            raise ReflectionError("capability", "Historical handoff requires the built-in Codex adapter")
-        session = history if isinstance(history, Session) else history.session
-        selected = history.selected_events
-        if not selected:
-            raise ValueError("Cannot hand off empty history")
-        if tools is not None and not tools.matches_history(history):
-            raise ValueError("ReflectionTools evidence must match the handoff history")
-        streams = {(e.run_id, e.reference.path, e.reference.generation) for e in selected}
-        if len(streams) != 1:
-            raise ReflectionError("capability", "Handoff across multiple streams requires a known causal order")
-        prepared["manifest"]["history"] = {
-            "artifact_id": session.artifact_id,
-            "session_id": session.id,
-            "event_ids": [e.id for e in selected],
-        }
-        prepared["history_resource"] = history
-        # A prefix requires an exact recorded native turn; never fork 'latest'.
-        turn = history.native_turn_id if isinstance(history, SessionView) else None
-        if isinstance(history, Session):
-            trajectories = history.split_into_trajectories()
-            if trajectories and trajectories[-1].selected_events[-1].id == selected[-1].id:
-                turn = trajectories[-1].native_turn_id
-        native = (
-            isinstance(history, (Session, SessionView))
-            and session._archive is not None
-            and session.metadata.harness == "codex"
-            and turn
-        )
-        if native:
-            if tools is not None and self.tool_transport == "host":
-                raise ReflectionError(
-                    "capability",
-                    "The pinned Codex fork API cannot register host tools. "
-                    "Hand off a Trajectory for explicit history import, or attach the MCP server "
-                    "with tool_transport='mcp'.",
-                )
-            if any(e.parent_run_id for e in selected):
-                raise ReflectionError("capability", "Native prefix handoff requires one unambiguous main stream")
-            # Verify source bytes still contain the captured records before using a mutable native locator.
-            for record in selected:
-                event = Event.model_validate(record.model_dump())
-                with event.reference.path.open("rb") as stream:
-                    stream.seek(event.reference.byte_offset)
-                    raw = json.loads(stream.read(event.reference.byte_length))
-                if raw != event.raw:
-                    raise ReflectionError("source_changed", "Native source differs from the captured artifact")
-            prepared["fork_from"] = NativeSessionRef(
-                runtime="codex", session_id=session.metadata.native_id, through_turn_id=turn
-            )
-            prepared["manifest"]["mode"] = "native_fork"
+
+def _marker(metadata: Iterable[Any]) -> _RefField | RatingScale | None:
+    return next((m for m in metadata if isinstance(m, _RefField | RatingScale)), None)
+
+
+def _role(annotation: Any, metadata: Iterable[Any] = ()) -> tuple[str, Any]:
+    """``("ref" | "refs" | "rating" | "other", scale or None)`` for a field's type."""
+    marker = _marker(metadata)
+    if isinstance(marker, _RefField):
+        return "ref", None
+    if isinstance(marker, RatingScale):
+        return "rating", marker
+    if get_origin(annotation) is Annotated:
+        base, *extra = get_args(annotation)
+        return _role(base, extra)
+    if get_origin(annotation) in {typing.Union, types.UnionType}:
+        roles = [_role(arg) for arg in get_args(annotation) if arg is not type(None)]
+        return roles[0] if len(roles) == 1 else ("other", None)
+    if any(_role(arg)[0] in {"ref", "refs"} for arg in get_args(annotation)):
+        return "refs", None
+    return "other", None
+
+
+def _models(annotation: Any) -> Iterator[type[BaseModel]]:
+    """Every model reachable from a type (through lists, unions, dicts, and fields)."""
+    seen: set[type] = set()
+    pending = [annotation]
+    while pending:
+        current = pending.pop()
+        if isinstance(current, type) and issubclass(current, BaseModel):
+            if current in seen:
+                continue
+            seen.add(current)
+            yield current
+            pending += [info.annotation for info in current.model_fields.values()]
         else:
-            prepared["history_items"] = codex_items(selected)
-            if not prepared["history_items"]:
-                raise ReflectionError("capability", "Selection contains no model conversation items to import")
-            calls = {
-                item["call_id"]
-                for item in prepared["history_items"]
-                if item["type"] in {"function_call", "custom_tool_call"}
-            }
-            outputs = {
-                item["call_id"]
-                for item in prepared["history_items"]
-                if item["type"] in {"function_call_output", "custom_tool_call_output"}
-            }
-            if calls - outputs:
-                raise ReflectionError(
-                    "capability",
-                    "History import requires completed tool call/result pairs; "
-                    "use a larger explicit selection or an evidence prompt",
+            pending += list(get_args(current))
+
+
+def _inline(schema: dict[str, Any]) -> dict[str, Any]:
+    """The JSON Schema with local ``$ref``s replaced by their definitions (unless recursive), for models to read."""
+    definitions = schema.get("$defs", {})
+    recursive = False
+
+    def resolve(node: Any, trail: tuple[str, ...]) -> Any:
+        nonlocal recursive
+        if isinstance(node, dict):
+            reference = node.get("$ref")
+            if isinstance(reference, str) and reference.startswith("#/$defs/"):
+                name = reference.removeprefix("#/$defs/")
+                if name in trail:
+                    recursive = True
+                    return node
+                rest = {key: value for key, value in node.items() if key != "$ref"}
+                return {**resolve(copy.deepcopy(definitions[name]), (*trail, name)), **resolve(rest, trail)}
+            return {key: resolve(value, trail) for key, value in node.items() if key != "$defs"}
+        if isinstance(node, list):
+            return [resolve(value, trail) for value in node]
+        return node
+
+    result = resolve(schema, ())
+    return {**result, "$defs": definitions} if recursive else result
+
+
+def pointer(parts: Iterable[Any]) -> str:
+    """A JSON pointer, e.g. ``/ratings/2``."""
+    return "".join("/" + str(part).replace("~", "~0").replace("/", "~1") for part in parts)
+
+
+class ReflectionSchema:
+    """Validates reflection output and finds the ratings in it (see the module docstring)."""
+
+    def __init__(self, output: Any, metadata: type[BaseModel] | None = None):
+        if isinstance(output, RatingScale):
+            output = list[_item_model(output, metadata)]  # type: ignore[misc]
+        elif metadata is not None:
+            raise TypeError("metadata is only for ReflectionSchema(scale, metadata)")
+        self.output = output
+        self.adapter: TypeAdapter[Any] = TypeAdapter(output)
+        self.scales: dict[str, RatingScale] = {}
+        self._roles: dict[type[BaseModel], dict[str, tuple[str, Any]]] = {}
+        for model in _models(output):
+            roles = {name: _role(info.annotation, info.metadata) for name, info in model.model_fields.items()}
+            self._roles[model] = roles
+            ratings = [name for name, (role, _) in roles.items() if role == "rating"]
+            refs = [name for name, (role, _) in roles.items() if role == "ref"]
+            if ratings and (len(refs) != 1 or not model.model_fields[refs[0]].is_required()):
+                raise ValueError(
+                    f"{model.__name__}: a rating needs exactly one required Ref next to it "
+                    f"(ratings {ratings}, refs {refs})"
                 )
-            prepared["manifest"]["mode"] = "import"
-            prepared["manifest"]["conversion"] = {
-                "model_event_ids": [e.id for e in selected if not provenance_only(e.model_dump())],
-                "lifecycle_event_ids": [e.id for e in selected if provenance_only(e.model_dump())],
-                "lifecycle_storage": "captured artifact and history.json; not model-visible conversation items",
-            }
-        return self._execute(prepared, output_schema, validate_resources)
+            for name in ratings:
+                scale = roles[name][1]
+                if self.scales.setdefault(scale.name, scale) is not scale:
+                    raise ValueError(f"two different scales are named {scale.name!r}")
 
-    def _run(self, prepared, receipt):
-        if self.runner is not None:
-            return self.runner(prepared["prompt"], prepared["schema"], self.config)
-        if self.implementation == "codex":
-            from contextlib import nullcontext
+    @property
+    def scale(self) -> RatingScale:
+        """The schema's only scale."""
+        if len(self.scales) != 1:
+            raise ValueError(f"the schema has {len(self.scales)} scales: {sorted(self.scales)}")
+        return next(iter(self.scales.values()))
 
-            from thearc.learning.reflection.providers.codex import _run_isolated_sdk
+    @property
+    def is_list(self) -> bool:
+        return get_origin(self.output) in {list, tuple}
 
-            from .reflection_mcp import reflection_mcp_transport
+    def json_schema(self) -> dict[str, Any]:
+        """JSON Schema of the reflection output, with definitions inlined, e.g. for a tool or a prompt."""
+        return _inline(self.adapter.json_schema())
 
-            transport = (
-                reflection_mcp_transport(prepared["tools"]) if self.tool_transport == "mcp" else nullcontext(None)
-            )
-            with transport as servers:
-                return _run_isolated_sdk(
-                    prepared["prompt"],
-                    None if "tools" in prepared else native_output_schema(prepared["schema"]),
-                    self.config,
-                    instructions=INSTRUCTIONS,
-                    scoped_tools=prepared.get("tools") if self.tool_transport == "host" else None,
-                    fork_from=prepared.get("fork_from"),
-                    on_fork=lambda value: receipt(value.model_dump(mode="json")),
-                    history_items=prepared.get("history_items"),
-                    on_import=receipt,
-                    active_instructions=prepared["active_instructions"],
-                    **({"mcp_servers": servers} if servers is not None else {}),
-                )
-        if self.implementation in {"claude", "antigravity"}:
-            import importlib
-
-            name = self.implementation
-            module = importlib.import_module(f"thearc.learning.reflection.providers.{name}")
-            config_name = "ClaudeRuntimeConfig" if name == "claude" else "AntigravityRuntimeConfig"
-            config_class = getattr(module, config_name)
-            runner = getattr(module, f"_run_{name}")
-            schema = prepared["schema"]
-            if not isinstance(schema, dict) or schema.get("type") != "object":
-                raise ReflectionError("capability", f"{name} adapter requires an object output schema")
-            return runner(
-                prepared["prompt"], schema, config_class(**self.config.model_dump()), instructions=INSTRUCTIONS
-            )
-        raise ReflectionError("missing_runtime", "A custom implementation requires a runner")
-
-    def _execute(self, prepared, spec, validate_resources):
-        identifier = f"reflection-{uuid4().hex}"
-        directory = self.artifact_dir / identifier if self.artifact_dir is not None else None
-        manifest = prepared["manifest"]
-        receipt_value = None
-
-        def save(name, data):
-            if directory is not None:
-                with (directory / name).open("x", encoding="utf-8") as stream:
-                    json.dump(data, stream, ensure_ascii=False, indent=2)
-
-        def receipt(value):
-            nonlocal receipt_value
-            if receipt_value is not None:
-                raise ReflectionError("invalid_receipt", "Runtime reported more than one destination")
-            receipt_value = value
-            save("destination.json", value)
-
-        if directory is not None:
-            directory.mkdir(parents=True, exist_ok=False)
-        save("request.json", {"prompt": prepared["prompt"], "schema": prepared["schema"], "manifest": manifest})
-        if prepared.get("history_resource") is not None:
-            save("history.json", [e.model_dump() for e in prepared["history_resource"].selected_events])
-        if "tools" in prepared:
-            save("resources.json", prepared["tools"].resources.catalog())
-            if prepared["tools"].files is not None and directory is not None:
-                # The exact lines the reflector read, so cited path#Lx-Ly references stay checkable.
-                prepared["tools"].files.write(directory / "agent-files")
+    def validate(self, raw: Any) -> tuple[Any, list[ReflectionItem], list[tuple[str, FileReference]]]:
+        """The output as JSON, its ratings, and every ref with its location; ``ValueError`` lists every problem."""
         try:
-            response = self._run(prepared, receipt)
-            save("response.json", response)
-            if not isinstance(response, dict) or response.get("status") != "completed":
-                raise ReflectionError("incomplete", "Reflector did not complete")
-            if "tools" in prepared:
-                if "mode" in manifest and (
-                    receipt_value is None or response.get("thread_id") != receipt_value["session_id"]
-                ):
-                    raise ReflectionError("invalid_receipt", "Reflection does not belong to the prepared destination")
-                tools = prepared["tools"]
-                results = []
-                execution = {key: value for key, value in response.items() if key != "final_response"}
-                if receipt_value is not None:
-                    execution["destination"] = receipt_value
-                for reflection in tools.reflections:
-                    provenance = {**manifest, **thaw(reflection.provenance)}
-                    result = Reflection(
-                        reflection.id,
-                        reflection.text,
-                        reflection.output,
-                        freeze(provenance),
-                        freeze(execution),
-                        prepared.get("history_resource") or reflection.history,
-                    )
-                    if directory is not None:
-                        (directory / result.id).mkdir()
-                    save(
-                        f"{result.id}/reflection.json",
-                        {
-                            "id": result.id,
-                            "text": result.text,
-                            "schema": prepared["schema"],
-                            "output": json.loads(result.text),
-                            "provenance": provenance,
-                            "execution": execution,
-                        },
-                    )
-                    results.append(result)
-                save(
-                    "submission.json",
-                    {
-                        "accepted": True,
-                        "reflection_ids": [r.id for r in results],
-                        "resource_ids": tools.resources.mapping,
-                        "assessments": [r.model_dump(mode="json") for r in tools.assessments],
-                    },
+            value = self.adapter.validate_python(raw)
+        except ValidationError as error:
+            raise ValueError("\n".join(f"{pointer(e['loc']) or '/'}: {e['msg']}" for e in error.errors())) from None
+        items: list[ReflectionItem] = []
+        refs: list[tuple[str, FileReference]] = []
+        self._walk(value, (), items, refs)
+        return self.adapter.dump_python(value, mode="json"), items, refs
+
+    def check(self, raw: Any, files: AgentFiles) -> tuple[Any, list[ReflectionItem]]:
+        """``validate``, and every ref must resolve to lines of ``files``."""
+        output, items, refs = self.validate(raw)
+        errors = []
+        for where, ref in refs:
+            try:
+                files.resolve(ref)
+            except ValueError as error:
+                errors.append(f"{where}: {error}")
+        if errors:
+            raise ValueError("\n".join(errors))
+        return output, items
+
+    def _walk(
+        self, value: Any, at: tuple[Any, ...], items: list[ReflectionItem], refs: list[tuple[str, FileReference]]
+    ) -> None:
+        if isinstance(value, BaseModel):
+            roles = self._roles.get(type(value), {})
+            ref = None
+            ratings = []
+            for name, (role, scale) in roles.items():
+                field = getattr(value, name)
+                if role == "ref" and field is not None:
+                    ref = FileReference.parse(field)
+                    refs.append((pointer((*at, name)), ref))
+                elif role == "refs":
+                    self._refs(field, (*at, name), refs)
+                elif role == "rating":
+                    if field is not None:
+                        ratings.append((scale, field))
+                else:
+                    self._walk(field, (*at, name), items, refs)
+            if ratings and ref is not None:
+                skip = {name for name, (role, _) in roles.items() if role in {"ref", "rating"}}
+                metadata = value.model_dump(mode="json", include=set(roles) - skip)
+                metadata.update(value.model_extra or {})
+                items += [ReflectionItem(ref, rating, metadata, scale.name, pointer(at)) for scale, rating in ratings]
+        elif isinstance(value, list | tuple):
+            for index, element in enumerate(value):
+                self._walk(element, (*at, index), items, refs)
+        elif isinstance(value, dict):
+            for key, element in value.items():
+                self._walk(element, (*at, key), items, refs)
+
+    def _refs(self, value: Any, at: tuple[Any, ...], refs: list[tuple[str, FileReference]]) -> None:
+        if isinstance(value, str):
+            refs.append((pointer(at), FileReference.parse(value)))
+        elif isinstance(value, list | tuple):
+            for index, element in enumerate(value):
+                self._refs(element, (*at, index), refs)
+
+    # --- the item-list shorthand -------------------------------------------------------------------------------------
+
+    def validate_item(self, raw: Any) -> ReflectionItem:
+        """One element of an item-list schema."""
+        if not self.is_list:
+            raise TypeError("validate_item needs an item-list schema, e.g. ReflectionSchema(scale, metadata)")
+        _, items, _ = self.validate([raw])
+        if len(items) != 1:
+            raise ValueError("an item must hold exactly one rating")
+        return items[0]
+
+    def record(
+        self, items: Iterable[Any], agent: MetaAgent, *, at: datetime | None = None, **extra: Any
+    ) -> ReflectionResult:
+        """Validate an item list against ``agent`` (the revision that was judged) and build Rated entries.
+
+        Each valid item yields one entry per target its reference resolves to; those entries share an
+        ``item_id``. Invalid items are rejected, the rest recorded. Keyword arguments become ``extra``.
+        """
+        at = at or datetime.now(UTC)
+        files = agent.files()
+        entries: list[Rated] = []
+        rejected: list[Rejection] = []
+        for index, raw in enumerate(items):
+            try:
+                item = self.validate_item(raw)
+                targets = files.resolve(item.ref)
+            except ValueError as error:
+                rejected.append(Rejection(index, raw, str(error)))
+                continue
+            item_id = "item_" + uuid.uuid4().hex
+            entries += [
+                Rated(
+                    target=target,
+                    revision=agent.revision,
+                    at=at,
+                    extra=extra,
+                    scale=item.scale,
+                    value=item.rating,
+                    ref=str(item.ref),
+                    item_id=item_id,
+                    metadata=item.metadata,
                 )
-                return results
-            text = response.get("final_response")
-            if not isinstance(text, str) or not text.strip():
-                raise ReflectionError("invalid_output", "Reflector returned no final response")
-            if "mode" in manifest and (
-                receipt_value is None or response.get("thread_id") != receipt_value["session_id"]
-            ):
-                raise ReflectionError("invalid_receipt", "Reflection does not belong to the prepared destination")
-            output = parse_output(
-                text, spec, prepared["schema"], agent=prepared["agent"], validate_resources=validate_resources
+                for target in targets
+            ]
+        return ReflectionResult(tuple(entries), tuple(rejected))
+
+
+def _item_model(scale: RatingScale, metadata: type[BaseModel] | None) -> type[BaseModel]:
+    """``{ref, rating, …metadata}``: the item of ``ReflectionSchema(scale, metadata)``."""
+    fields: dict[str, Any] = {"ref": (Ref, ...), "rating": (scale.field(), ...)}
+    if metadata is None:  # Any further JSON fields are kept as they are.
+        return create_model("Item", __config__=ConfigDict(extra="allow"), **fields)
+    if clash := {"ref", "rating"} & set(metadata.model_fields):
+        raise ValueError(f"metadata fields cannot be named {sorted(clash)}")
+    fields |= {name: (info.annotation, info) for name, info in metadata.model_fields.items()}
+    return create_model(
+        metadata.__name__, __config__=ConfigDict(extra="forbid"), __doc__=metadata.__doc__, **fields
+    )
+
+
+def reflection_entries(reflection: Reflection, files: AgentFiles) -> list[Rated]:
+    """A reflection's Rated entries: each item once per target its reference resolves to in ``files``.
+
+    ``files`` must be the judged revision. IDs derive from the reflection, the item's location, its
+    scale and the target, so the same reflection always yields the same entries.
+    """
+    extra = {
+        "reflection": reflection.id,
+        "reflector": reflection.reflector.get("harness"),
+        **({"model": reflection.reflector["model"]} if reflection.reflector.get("model") else {}),
+        **reflection.extra,
+    }
+    entries = []
+    for item in reflection.items:
+        item_id = reflection.item_id(item)
+        entries += [
+            Rated(
+                id=derived_entry_id(reflection.at, item_id, item.scale, str(target)),
+                target=target,
+                revision=reflection.revision,
+                at=reflection.at,
+                extra=extra,
+                scale=item.scale,
+                value=item.rating,
+                ref=str(item.ref),
+                item_id=item_id,
+                metadata=item.metadata,
             )
-            execution = {key: value for key, value in response.items() if key != "final_response"}
-            if receipt_value is not None:
-                execution["destination"] = receipt_value
-            result = Reflection(
-                identifier, text, output, freeze(manifest), freeze(execution), prepared.get("history_resource")
-            )
-            serialized = output.model_dump(mode="json", by_alias=True) if isinstance(output, BaseModel) else output
-            save(
-                "reflection.json",
-                {
-                    "id": identifier,
-                    "text": text,
-                    "schema": prepared["schema"],
-                    "output": serialized,
-                    "provenance": manifest,
-                    "execution": execution,
-                },
-            )
-            return result
-        except BaseException as exc:
-            save("failure.json", {"error_type": type(exc).__name__, "code": getattr(exc, "code", None)})
-            raise
-        finally:
-            if "tools" in prepared:
-                prepared["tools"].close()
+            for target in files.resolve(item.ref)
+        ]
+    return entries
