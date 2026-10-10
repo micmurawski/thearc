@@ -28,6 +28,7 @@ include = ["thearc*"]
 
 [tool.setuptools.package-data]
 "thearc.flow" = ["viz.css", "viz.js"]
+"thearc.resources" = ["report.html"]
 
 [project.optional-dependencies]
 mcp = ["mcp>=2.2,<3"]

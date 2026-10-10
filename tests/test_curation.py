@@ -56,15 +56,6 @@ class ScriptedCurator(Runtime):
         yield Talk()
 
 
-@pytest.fixture
-def reviewed(agent, tmp_path):
-    """A workspace whose journal holds one reflection rating ``Retry > Limits`` harmful."""
-    workspace = agent.init_workspace(tmp_path / "ws")
-    reflection = Reflector(runtime=Scripted(answer(GOOD))).reflect("Review.", workspace, SCHEMA)
-    workspace.add_reflection(reflection)
-    return workspace, reflection
-
-
 def head(root, ref="HEAD"):
     return subprocess.run(["git", "-C", str(root), "rev-parse", ref], check=True, capture_output=True,
                           text=True).stdout.strip()

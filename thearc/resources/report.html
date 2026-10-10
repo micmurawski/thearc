@@ -1,0 +1,475 @@
+<title>__THEARC_TITLE__</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: a review desk — summary strip, then the section × revision grid as the working surface,
+   with the selected section's history beside it (stacked on narrow screens). */
+:root {
+  --bg: #f6f7f9;
+  --surface: #ffffff;
+  --sunken: #eef0f4;
+  --fg: #1d2330;
+  --muted: #5d6576;
+  --line: #d9dde5;
+  --accent: #3255c8;
+  --accent-soft: #e3e9fb;
+  --bad: #c2412d;
+  --bad-soft: #f7ddd7;
+  --mid: #8b93a3;
+  --good: #2f8a4f;
+  --good-soft: #d9efe0;
+  --add-bg: #e3f4e8;
+  --del-bg: #fbe4df;
+  --font-ui: "IBM Plex Sans", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  --radius: 6px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #12151c; --surface: #1a1e27; --sunken: #222733; --fg: #e4e7ee; --muted: #9aa2b3; --line: #2f3542;
+    --accent: #8ea6ff; --accent-soft: #263257; --bad: #ef7f6a; --bad-soft: #4a2620; --mid: #7d8597;
+    --good: #6cc98d; --good-soft: #1f3f2b; --add-bg: #1d3a26; --del-bg: #44221c; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #12151c; --surface: #1a1e27; --sunken: #222733; --fg: #e4e7ee; --muted: #9aa2b3; --line: #2f3542;
+  --accent: #8ea6ff; --accent-soft: #263257; --bad: #ef7f6a; --bad-soft: #4a2620; --mid: #7d8597;
+  --good: #6cc98d; --good-soft: #1f3f2b; --add-bg: #1d3a26; --del-bg: #44221c; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--fg); font: 14px/1.5 var(--font-ui); margin: 0; }
+.page { padding-inline: 16px; padding-block: 20px 48px; max-width: 1480px; margin: 0 auto; display: grid; gap: 20px; }
+h1, h2, h3 { margin: 0; text-wrap: balance; font-weight: 600; }
+h1 { font-size: 1.45rem; letter-spacing: -0.01em; }
+h2 { font-size: 1rem; }
+h3 { font-size: 0.95rem; }
+code, .mono { font-family: var(--font-mono); font-size: 0.85em; }
+.muted { color: var(--muted); }
+.eyebrow { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); font-weight: 500; }
+button { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Header and summary */
+header.top { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 12px 24px; }
+header.top .meta { display: flex; flex-wrap: wrap; gap: 6px 16px; color: var(--muted); font-size: 0.85rem; }
+.stats { display: flex; flex-wrap: wrap; gap: 8px; }
+.stat { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 8px 12px; min-width: 7.5rem; }
+.stat b { display: block; font-size: 1.15rem; font-variant-numeric: tabular-nums; }
+.scalebar { display: flex; height: 6px; border-radius: 3px; overflow: hidden; margin-top: 6px; background: var(--sunken); }
+
+/* Tabs */
+nav.tabs { display: flex; flex-wrap: wrap; gap: 4px; border-bottom: 1px solid var(--line); }
+nav.tabs button { background: none; border: 0; border-bottom: 2px solid transparent; padding: 8px 12px; cursor: pointer; color: var(--muted); font-weight: 500; }
+nav.tabs button[aria-selected="true"] { color: var(--fg); border-bottom-color: var(--accent); }
+
+/* Workbench: grid + detail */
+.bench { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); gap: 20px; align-items: start; }
+@media (max-width: 980px) { .bench { grid-template-columns: minmax(0, 1fr); } }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); min-width: 0; }
+.panel > .head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; padding: 10px 14px; border-bottom: 1px solid var(--line); }
+.panel > .body { padding: 12px 14px; display: grid; gap: 12px; min-width: 0; }
+.controls { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; font-size: 0.85rem; }
+.controls label { display: inline-flex; gap: 6px; align-items: center; color: var(--muted); }
+select { font: inherit; background: var(--surface); color: var(--fg); border: 1px solid var(--line); border-radius: 4px; padding: 3px 6px; max-width: 100%; }
+
+/* Heatmap */
+.scroll { overflow-x: auto; }
+table.grid { border-collapse: separate; border-spacing: 0; font-size: 0.82rem; width: max-content; min-width: 100%; }
+table.grid th, table.grid td { padding: 0; }
+table.grid thead th { position: sticky; top: 0; background: var(--surface); font-weight: 500; color: var(--muted); padding: 6px 4px; text-align: center; vertical-align: bottom; border-bottom: 1px solid var(--line); }
+table.grid thead th.name { text-align: left; padding-left: 10px; }
+.colhead { display: grid; gap: 2px; justify-items: center; cursor: pointer; border-radius: 4px; padding: 2px 4px; }
+.colhead:hover, .colhead.on { background: var(--accent-soft); color: var(--fg); }
+.colhead .v { font-family: var(--font-mono); font-size: 0.72rem; }
+.colhead .branch { font-size: 0.68rem; max-width: 7rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+td.name { position: sticky; left: 0; background: var(--surface); z-index: 1; border-right: 1px solid var(--line); max-width: 22rem; }
+td.name button { display: flex; gap: 6px; align-items: baseline; width: 100%; text-align: left; background: none; border: 0; padding: 4px 10px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+td.name .kind { font-size: 0.68rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+td.name .gone { text-decoration: line-through; color: var(--muted); }
+tr.sel td.name button { color: var(--accent); font-weight: 600; }
+tr:hover td { background-image: linear-gradient(var(--sunken), var(--sunken)); }
+td.cell { text-align: center; padding: 2px; }
+td.cell button { width: 3.4rem; height: 1.85rem; border: 1px solid transparent; border-radius: 4px; background: transparent; cursor: pointer; position: relative; font-family: var(--font-mono); font-size: 0.72rem; font-variant-numeric: tabular-nums; }
+td.cell button.rated { color: var(--fg); }
+td.cell button.sel { border-color: var(--accent); }
+td.cell .ev { position: absolute; top: 0; right: 2px; font-size: 0.7rem; line-height: 1; color: var(--accent); font-family: var(--font-ui); font-weight: 600; }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 0.78rem; color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; gap: 5px; }
+.swatch { width: 0.9rem; height: 0.9rem; border-radius: 3px; display: inline-block; border: 1px solid var(--line); }
+
+/* Section detail */
+.detail-empty { color: var(--muted); padding: 24px 14px; }
+.ident { display: grid; gap: 4px; }
+.ident .addr { font-family: var(--font-mono); font-size: 0.9rem; word-break: break-word; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { font-size: 0.72rem; border: 1px solid var(--line); border-radius: 999px; padding: 1px 8px; color: var(--muted); background: var(--sunken); }
+.chip.bad { color: var(--bad); background: var(--bad-soft); border-color: transparent; }
+.chip.good { color: var(--good); background: var(--good-soft); border-color: transparent; }
+.chip.kind { color: var(--accent); background: var(--accent-soft); border-color: transparent; }
+.spark { width: 100%; height: 72px; display: block; }
+.events { display: grid; gap: 10px; }
+.event { border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 12px; display: grid; gap: 6px; min-width: 0; background: var(--surface); }
+.event.rating { background: var(--sunken); border-color: transparent; }
+.event .row { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: baseline; font-size: 0.8rem; color: var(--muted); }
+.event .reason { white-space: pre-wrap; word-break: break-word; font-size: 0.86rem; }
+.event details summary { cursor: pointer; font-size: 0.8rem; color: var(--accent); }
+pre.diff, pre.text { margin: 6px 0 0; font: 0.78rem/1.45 var(--font-mono); background: var(--sunken); border-radius: 4px; padding: 8px 0; overflow-x: auto; }
+pre.diff span, pre.text span { display: block; padding: 0 10px; white-space: pre; }
+pre .add { background: var(--add-bg); }
+pre .del { background: var(--del-bg); }
+pre .hunk { color: var(--accent); }
+pre .ln { color: var(--muted); display: inline-block; width: 3.2em; text-align: right; margin-right: 10px; user-select: none; }
+pre .heading-note { color: var(--muted); font-style: italic; }
+.md { font-size: 0.86rem; display: grid; gap: 6px; max-width: 70ch; }
+.md h3, .md h4, .md h5 { font-size: 0.86rem; margin-top: 6px; }
+.md p { margin: 0; }
+.md table { border-collapse: collapse; font-size: 0.8rem; }
+.md td, .md th { border: 1px solid var(--line); padding: 2px 6px; text-align: left; }
+.md ul { margin: 0; padding-left: 1.2em; }
+
+/* Timeline */
+.lanes { display: grid; gap: 14px; }
+.lane { display: grid; grid-template-columns: minmax(9rem, 14rem) minmax(0, 1fr); gap: 12px; align-items: start; }
+@media (max-width: 640px) { .lane { grid-template-columns: minmax(0, 1fr); } }
+.lane .label { font-family: var(--font-mono); font-size: 0.8rem; word-break: break-all; }
+.lane .label .cur { color: var(--accent); font-family: var(--font-ui); font-size: 0.72rem; margin-left: 4px; }
+.commits { display: grid; gap: 4px; border-left: 2px solid var(--line); padding-left: 12px; min-width: 0; }
+.commit { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 10px; align-items: baseline; font-size: 0.82rem; position: relative; }
+.commit::before { content: ""; position: absolute; left: -17px; top: 0.45em; width: 8px; height: 8px; border-radius: 50%; background: var(--line); }
+.commit.config::before { background: var(--accent); }
+.commit .sha { font-family: var(--font-mono); font-size: 0.75rem; color: var(--muted); }
+.commit .msg { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.commit button.rev { background: none; border: 0; padding: 0; color: var(--accent); cursor: pointer; font-family: var(--font-mono); font-size: 0.72rem; }
+
+/* Documents */
+.docbar { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; }
+footer { color: var(--muted); font-size: 0.78rem; }
+@media (prefers-reduced-motion: no-preference) { td.cell button, .colhead { transition: background-color 0.12s, border-color 0.12s; } }
+</style>
+
+<div class="page">
+  <header class="top">
+    <div>
+      <div class="eyebrow">Agent evolution</div>
+      <h1 id="title"></h1>
+      <div class="meta" id="meta"></div>
+    </div>
+    <div class="stats" id="stats"></div>
+  </header>
+
+  <nav class="tabs" role="tablist">
+    <button role="tab" id="tab-sections" aria-selected="true" data-view="sections">Sections</button>
+    <button role="tab" id="tab-timeline" aria-selected="false" data-view="timeline">Timeline</button>
+    <button role="tab" id="tab-documents" aria-selected="false" data-view="documents">Documents</button>
+  </nav>
+
+  <section id="view-sections" class="bench">
+    <div class="panel">
+      <div class="head">
+        <h2>Ratings per section and revision</h2>
+        <div class="controls">
+          <label for="scale">Scale <select id="scale"></select></label>
+          <label for="active"><input type="checkbox" id="active" checked> Only sections with ratings or changes</label>
+          <label for="cumulative"><input type="checkbox" id="cumulative"> Count earlier revisions too</label>
+        </div>
+      </div>
+      <div class="body">
+        <div class="legend" id="legend"></div>
+        <div class="scroll"><table class="grid" id="grid"></table></div>
+      </div>
+    </div>
+    <div class="panel" id="detail"><div class="detail-empty">Select a section or a cell to see its history: every change with its reason and diff, and the ratings in between.</div></div>
+  </section>
+
+  <section id="view-timeline" class="panel" hidden>
+    <div class="head"><h2>Branches and commits</h2><span class="muted">Blue dots change the configuration; select a revision to open it in the grid.</span></div>
+    <div class="body"><div class="lanes" id="lanes"></div></div>
+  </section>
+
+  <section id="view-documents" class="panel" hidden>
+    <div class="head">
+      <h2>Configuration files</h2>
+      <div class="docbar">
+        <label for="doc-file" class="muted">File <select id="doc-file"></select></label>
+        <label for="doc-rev" class="muted">Revision <select id="doc-rev"></select></label>
+        <label for="doc-against" class="muted">Compare with <select id="doc-against"></select></label>
+      </div>
+    </div>
+    <div class="body"><div id="doc"></div></div>
+  </section>
+
+  <footer id="footer"></footer>
+</div>
+
+<script type="application/json" id="thearc-data">__THEARC_DATA__</script>
+<script>
+(function () {
+  "use strict";
+  const data = JSON.parse(document.getElementById("thearc-data").textContent);
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const short = (rev) => rev ? (rev.includes("@") ? rev.split("@")[0] + "@" + rev.split("@rev_")[1].slice(0, 7) : rev.slice(4, 11)) : "";
+  const sha = (c) => c ? c.slice(0, 8) : "—";
+  const when = (iso) => iso ? new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" }) : "";
+  const state = { scale: data.scales[0]?.name || null, active: true, cumulative: false, section: null, revision: null };
+  const revIndex = Object.fromEntries(data.revisions.map((r, i) => [r.revision, i]));
+  const sectionById = Object.fromEntries(data.sections.map((s) => [s.id, s]));
+  const reflectionsByRev = {};
+
+  // ---- scales and colour -------------------------------------------------------------------------------------------
+  function scaleOf(name) { return data.scales.find((s) => s.name === name); }
+  // Position of a label on its scale, from -1 (worst) to 1 (best); null when the scale has no order.
+  function position(scale, value) {
+    if (!scale) return null;
+    if (scale.numeric) {
+      const nums = scale.labels.map(Number); const lo = Math.min(...nums), hi = Math.max(...nums);
+      return hi === lo ? 0 : ((Number(value) - lo) / (hi - lo)) * 2 - 1;
+    }
+    const i = scale.labels.indexOf(String(value));
+    if (i < 0 || scale.labels.length < 2) return 0;
+    return (i / (scale.labels.length - 1)) * 2 - 1;
+  }
+  function balance(counts, scale) {
+    let total = 0, sum = 0;
+    for (const [value, n] of Object.entries(counts || {})) { const p = position(scale, value); total += n; sum += (p ?? 0) * n; }
+    return total ? { total, score: sum / total } : null;
+  }
+  function tint(score) {
+    if (score === null) return "transparent";
+    const pct = Math.round(Math.min(1, Math.abs(score)) * 85 + 15);
+    const hue = score < 0 ? "var(--bad)" : score > 0 ? "var(--good)" : "var(--mid)";
+    return `color-mix(in srgb, ${hue} ${score === 0 ? 30 : pct}%, var(--surface))`;
+  }
+  function labelColor(scale, value) { const p = position(scale, value); return p === null || p === 0 ? "var(--mid)" : p < 0 ? "var(--bad)" : "var(--good)"; }
+
+  // ---- header ------------------------------------------------------------------------------------------------------
+  $("title").textContent = `${data.agent.name}${data.agent.version ? " " + data.agent.version : ""}`;
+  $("meta").innerHTML = [`branch <code>${esc(data.head)}</code>`, `${data.revisions.length} revisions`,
+    `${data.branches.length} branches`, `generated ${esc(when(data.generated_at))}`].map((t) => `<span>${t}</span>`).join("");
+  function renderStats() {
+    const scale = scaleOf(state.scale);
+    const counts = {};
+    data.ratings.filter((r) => r.scale === state.scale).forEach((r) => { counts[r.value] = (counts[r.value] || 0) + 1; });
+    const total = Object.values(counts).reduce((a, b) => a + b, 0);
+    const bar = scale ? scale.labels.filter((l) => counts[l]).map((l) =>
+      `<span title="${esc(l)}: ${counts[l]}" style="flex:${counts[l]};background:${labelColor(scale, l)}"></span>`).join("") : "";
+    const changed = new Set(data.changes.filter((c) => c.kind !== "added" || revIndex[c.revision] > 0).map((c) => c.section));
+    $("stats").innerHTML = [
+      `<div class="stat"><span class="eyebrow">Ratings</span><b>${total}</b><div class="scalebar">${bar}</div></div>`,
+      `<div class="stat"><span class="eyebrow">Sections changed</span><b>${changed.size}</b><span class="muted">of ${data.sections.filter((s) => !s.removed).length}</span></div>`,
+      `<div class="stat"><span class="eyebrow">Reflections</span><b>${new Set(data.ratings.map((r) => r.reflection)).size}</b></div>`,
+      `<div class="stat"><span class="eyebrow">Curated commits</span><b>${new Set(data.changes.filter((c) => c.commit && revIndex[c.revision] > 0).map((c) => c.commit)).size}</b></div>`,
+    ].join("");
+  }
+
+  // ---- grid --------------------------------------------------------------------------------------------------------
+  const glyph = { modified: "✎", added: "+", removed: "✕", moved: "→", kept: "✓" };
+  function cellCounts(sectionId, revision) {
+    const cells = data.cells[sectionId] || {};
+    if (!state.cumulative) return cells[revision]?.ratings?.[state.scale] || {};
+    const upTo = revIndex[revision]; const total = {};
+    for (const [rev, cell] of Object.entries(cells)) {
+      if (revIndex[rev] > upTo) continue;
+      for (const [v, n] of Object.entries(cell.ratings?.[state.scale] || {})) total[v] = (total[v] || 0) + n;
+    }
+    return total;
+  }
+  function isActive(section) {
+    const cells = data.cells[section.id] || {};
+    return Object.entries(cells).some(([rev, cell]) => Object.keys(cell.ratings || {}).length ||
+      cell.events.some((e) => e !== "added" || revIndex[rev] > 0));
+  }
+  function renderGrid() {
+    const scale = scaleOf(state.scale);
+    const rows = data.sections.filter((s) => !state.active || isActive(s));
+    const head = `<thead><tr><th class="name">Section</th>${data.revisions.map((r, i) =>
+      `<th><div class="colhead${state.revision === r.revision ? " on" : ""}" data-rev="${esc(r.revision)}" title="${esc(r.message || r.revision)}">
+        <span class="v">${esc(short(r.revision))}</span><span class="branch">${esc(r.branches[0] || (i === 0 ? "base" : ""))}</span></div></th>`).join("")}</tr></thead>`;
+    const body = rows.map((s) => {
+      const label = s.section ? s.path[s.path.length - 1] : s.name;
+      const pad = s.depth * 14;
+      const cells = data.revisions.map((r) => {
+        const counts = cellCounts(s.id, r.revision);
+        const b = balance(counts, scale);
+        const events = (data.cells[s.id]?.[r.revision]?.events || []).filter((e) => e !== "added" || revIndex[r.revision] > 0);
+        const ev = events.length ? `<span class="ev" aria-hidden="true">${events.map((e) => glyph[e] || "•").join("")}</span>` : "";
+        const text = b ? Object.entries(counts).sort((a, c) => (position(scale, a[0]) ?? 0) - (position(scale, c[0]) ?? 0)).map(([, n]) => n).join("·") : "";
+        const desc = `${s.address} at ${short(r.revision)}: ${b ? Object.entries(counts).map(([v, n]) => `${n} ${v}`).join(", ") : "no ratings"}${events.length ? "; " + events.join(", ") : ""}`;
+        const sel = state.section === s.id && state.revision === r.revision ? " sel" : "";
+        return `<td class="cell"><button class="${b ? "rated" : ""}${sel}" style="background:${tint(b ? b.score : null)}" data-sec="${esc(s.id)}" data-rev="${esc(r.revision)}" aria-label="${esc(desc)}" title="${esc(desc)}">${text}${ev}</button></td>`;
+      }).join("");
+      return `<tr class="${state.section === s.id ? "sel" : ""}"><td class="name"><button data-sec="${esc(s.id)}" style="padding-left:${10 + pad}px" title="${esc(s.address)}">
+        ${s.depth ? "" : `<span class="kind">${esc(s.kind.replace("_", " "))}</span>`}<span class="${s.removed ? "gone" : ""}">${esc(label)}</span></button></td>${cells}</tr>`;
+    }).join("");
+    $("grid").innerHTML = head + `<tbody>${body || `<tr><td class="name"><span class="muted" style="padding:8px 10px;display:block">No section has ratings or changes yet.</span></td></tr>`}</tbody>`;
+    const leg = scale ? scale.labels.map((l) => `<span><i class="swatch" style="background:${tint(position(scale, l))}"></i>${esc(l)}</span>`).join("") : "";
+    $("legend").innerHTML = leg + Object.entries(glyph).map(([k, g]) => `<span><b style="color:var(--accent)">${g}</b>${k}</span>`).join("") +
+      `<span>numbers: ratings from worst to best</span>`;
+  }
+
+  // ---- section detail ----------------------------------------------------------------------------------------------
+  function markdown(md) {
+    const lines = String(md || "").split("\n"); const out = []; let i = 0;
+    const inline = (t) => esc(t).replace(/`([^`]+)`/g, "<code>$1</code>").replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>").replace(/\*([^*]+)\*/g, "<i>$1</i>");
+    while (i < lines.length) {
+      const line = lines[i];
+      if (!line.trim()) { i++; continue; }
+      const h = line.match(/^(#{1,6})\s+(.*)$/);
+      if (h) { const level = Math.min(5, h[1].length + 1); out.push(`<h${level}>${inline(h[2])}</h${level}>`); i++; continue; }
+      if (line.startsWith("|")) {
+        const rows = []; while (i < lines.length && lines[i].startsWith("|")) rows.push(lines[i++]);
+        const cells = (r) => r.replace(/^\||\|$/g, "").split(/(?<!\\)\|/).map((c) => c.trim().replace(/\\\|/g, "|"));
+        const body = rows.filter((r, k) => k !== 1);
+        out.push(`<div class="scroll"><table>${body.map((r, k) => `<tr>${cells(r).map((c) => k ? `<td>${inline(c)}</td>` : `<th>${inline(c)}</th>`).join("")}</tr>`).join("")}</table></div>`);
+        continue;
+      }
+      if (/^\s*(-|\d+\.)\s/.test(line)) {
+        const items = []; while (i < lines.length && /^\s*(-|\d+\.)\s/.test(lines[i])) items.push(lines[i++].replace(/^\s*(-|\d+\.)\s/, ""));
+        out.push(`<ul>${items.map((t) => `<li>${inline(t)}</li>`).join("")}</ul>`); continue;
+      }
+      const para = []; while (i < lines.length && lines[i].trim() && !/^(#|\|)/.test(lines[i])) para.push(lines[i++]);
+      out.push(`<p>${inline(para.join(" "))}</p>`);
+    }
+    return `<div class="md">${out.join("")}</div>`;
+  }
+  function diffHtml(text) {
+    return `<pre class="diff">${String(text || "").split("\n").map((l) => {
+      const cls = l.startsWith("@@") ? "hunk" : l.startsWith("+") && !l.startsWith("+++") ? "add" : l.startsWith("-") && !l.startsWith("---") ? "del" : "";
+      return `<span class="${cls}">${esc(l) || " "}</span>`;
+    }).join("")}</pre>`;
+  }
+  function sparkline(section) {
+    const scale = scaleOf(state.scale); if (!scale) return "";
+    const w = 100 / Math.max(1, data.revisions.length);
+    const per = data.revisions.map((r) => data.cells[section.id]?.[r.revision]?.ratings?.[state.scale] || {});
+    const max = Math.max(1, ...per.map((c) => Object.values(c).reduce((a, b) => a + b, 0)));
+    const bars = per.map((counts, i) => {
+      let y = 60; const x = i * w + w * 0.2; const bw = w * 0.6;
+      const stacked = scale.labels.filter((l) => counts[l]).map((l) => { const h = (counts[l] / max) * 52; y -= h;
+        return `<rect x="${x}" y="${y}" width="${bw}" height="${h}" fill="${labelColor(scale, l)}"><title>${esc(short(data.revisions[i].revision))}: ${counts[l]} ${esc(l)}</title></rect>`; }).join("");
+      const ev = (data.cells[section.id]?.[data.revisions[i].revision]?.events || []).filter((e) => e !== "added" || i > 0);
+      const mark = ev.length ? `<text x="${x + bw / 2}" y="70" text-anchor="middle" font-size="7" fill="var(--accent)">${ev.map((e) => glyph[e]).join("")}</text>` : "";
+      return stacked + mark;
+    }).join("");
+    return `<svg class="spark" viewBox="0 0 100 72" preserveAspectRatio="none" role="img" aria-label="Ratings of this section per revision">
+      <line x1="0" y1="60" x2="100" y2="60" stroke="var(--line)" stroke-width="0.5"></line>${bars}</svg>`;
+  }
+  function renderDetail() {
+    const s = sectionById[state.section]; const scale = scaleOf(state.scale);
+    if (!s) return;
+    const changes = data.changes.filter((c) => c.section === s.id && (c.kind !== "added" || revIndex[c.revision] > 0));
+    const ratings = data.ratings.filter((r) => r.section === s.id);
+    const items = [...changes.map((c) => ({ at: c.at, c })), ...ratings.map((r) => ({ at: r.at, r }))].sort((a, b) => a.at < b.at ? -1 : 1);
+    const counts = {}; ratings.filter((r) => r.scale === state.scale).forEach((r) => { counts[r.value] = (counts[r.value] || 0) + 1; });
+    const chips = Object.entries(counts).map(([v, n]) => { const p = position(scale, v); return `<span class="chip ${p < 0 ? "bad" : p > 0 ? "good" : ""}">${n} ${esc(v)}</span>`; }).join("");
+    const names = s.names.length ? `<div class="muted">Renamed: ${s.names.map((n) => `<code>${esc(n.previous)}</code> → <code>${esc(n.address)}</code>`).join("; ")}</div>` : "";
+    const events = items.map(({ c, r }) => {
+      if (c) {
+        const body = c.diff ? `<details${state.revision === c.revision ? " open" : ""}><summary>${c.kind === "kept" ? "Reason" : "Diff"}</summary>${c.kind === "kept" ? "" : diffHtml(c.diff)}</details>` : "";
+        return `<article class="event"><div class="row"><span class="chip kind">${esc(c.kind)}</span><span class="mono">${esc(short(c.revision))}</span>
+          <span class="mono">${esc(sha(c.commit))}</span><span>${esc(c.branches.join(", "))}</span><span>${esc(when(c.at))}</span>${c.author ? `<span>${esc(c.author)}</span>` : ""}</div>
+          ${c.reason ? `<div class="reason">${esc(c.reason)}</div>` : ""}${body}</article>`;
+      }
+      const ref = data.reflections[r.reflection];
+      const p = position(scaleOf(r.scale), r.value);
+      const meta = Object.keys(r.metadata || {}).length ? markdown(Object.entries(r.metadata).map(([k, v]) => `**${k}:** ${v}`).join("\n\n")) : "";
+      return `<article class="event rating"><div class="row"><span class="chip ${p < 0 ? "bad" : p > 0 ? "good" : ""}">${esc(r.value)}</span><span>${esc(r.scale)}</span>
+        <span class="mono">${esc(short(r.revision))}</span><code>${esc(r.ref)}</code><span>${esc(when(r.at))}</span></div>${meta}
+        ${ref ? `<details><summary>Reflection ${esc((r.reflection || "").slice(11, 19))} (${esc(ref.reflector?.harness || "")})</summary>${markdown(ref.markdown)}</details>`
+              : `<div class="muted mono">${esc(r.item || "")}</div>`}</article>`;
+    }).join("");
+    $("detail").innerHTML = `<div class="head"><div class="ident"><span class="eyebrow">${esc(s.kind.replace("_", " "))}${s.removed ? " · removed" : ""}</span>
+      <span class="addr">${esc(s.address)}</span><span class="mono muted">${esc(s.id)}</span></div><div class="chips">${chips}</div></div>
+      <div class="body">${names}${sparkline(s)}<div class="events">${events || `<div class="muted">No ratings or changes since the configuration was imported.</div>`}</div></div>`;
+  }
+
+  // ---- timeline ----------------------------------------------------------------------------------------------------
+  function renderTimeline() {
+    $("lanes").innerHTML = data.branches.map((b) => {
+      const seen = new Set();
+      const commits = b.commits.map((c) => {
+        const first = c.revision && !seen.has(c.revision) && data.revisions.some((r) => r.commit === c.commit);
+        if (c.revision) seen.add(c.revision);
+        return `<div class="commit${first ? " config" : ""}"><span class="sha">${esc(sha(c.commit))}</span>
+          <span class="msg" title="${esc(c.message)}">${esc(c.message)} ${first ? `<button class="rev" data-rev="${esc(c.revision)}">${esc(short(c.revision))}</button>` : ""}</span></div>`;
+      }).join("");
+      return `<div class="lane"><div class="label">${esc(b.name)}${b.current ? `<span class="cur">current</span>` : ""}</div><div class="commits">${commits}</div></div>`;
+    }).join("");
+  }
+
+  // ---- documents ---------------------------------------------------------------------------------------------------
+  function lineDiff(a, b) {
+    const x = a.split("\n"), y = b.split("\n"); const n = x.length, m = y.length;
+    if (n * m > 4e6) return null;
+    const dp = Array.from({ length: n + 1 }, () => new Uint32Array(m + 1));
+    for (let i = n - 1; i >= 0; i--) for (let j = m - 1; j >= 0; j--) dp[i][j] = x[i] === y[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+    const out = []; let i = 0, j = 0;
+    while (i < n && j < m) { if (x[i] === y[j]) { out.push([" ", y[j], j + 1]); i++; j++; } else if (dp[i + 1][j] >= dp[i][j + 1]) out.push(["-", x[i++], null]); else { out.push(["+", y[j], j + 1]); j++; } }
+    while (i < n) out.push(["-", x[i++], null]); while (j < m) { out.push(["+", y[j], j + 1]); j++; }
+    return out;
+  }
+  function renderDocuments() {
+    const rev = data.revisions.find((r) => r.revision === $("doc-rev").value) || data.revisions[data.revisions.length - 1];
+    const against = data.revisions.find((r) => r.revision === $("doc-against").value);
+    const path = $("doc-file").value; const text = rev?.files?.[path];
+    if (text === undefined) { $("doc").innerHTML = `<div class="muted">This file does not exist at ${esc(short(rev?.revision))}.</div>`; return; }
+    const notes = {};
+    for (const [id, [p, line]] of Object.entries(rev.spans || {})) {
+      if (p !== path) continue;
+      const counts = cellCounts(id, rev.revision); const b = balance(counts, scaleOf(state.scale));
+      if (b && sectionById[id]?.section) notes[line] = Object.entries(counts).map(([v, n]) => `${n} ${v}`).join(", ");
+    }
+    const note = (ln) => notes[ln] ? `  <span class="heading-note">← ${esc(notes[ln])}</span>` : "";
+    let html;
+    if (against && against.revision !== rev.revision) {
+      const diff = lineDiff(against.files?.[path] ?? "", text);
+      html = diff ? `<pre class="text">${diff.map(([op, l, ln]) =>
+        `<span class="${op === "+" ? "add" : op === "-" ? "del" : ""}"><span class="ln">${ln ?? ""}</span>${op === " " ? " " : op} ${esc(l)}${ln ? note(ln) : ""}</span>`).join("")}</pre>`
+        : `<div class="muted">The file is too large to compare here.</div>`;
+    } else {
+      html = `<pre class="text">${text.split("\n").map((l, k) => `<span><span class="ln">${k + 1}</span>${esc(l)}${note(k + 1)}</span>`).join("")}</pre>`;
+    }
+    $("doc").innerHTML = `<div class="muted">${esc(rev.message || "")} · <code>${esc(sha(rev.commit))}</code></div>${html}`;
+  }
+  function setupDocuments() {
+    const files = [...new Set(data.revisions.flatMap((r) => Object.keys(r.files || {})))].filter((p) => !p.endsWith(".graphify_version")).sort();
+    const changedFiles = new Set(data.changes.filter((c) => revIndex[c.revision] > 0).map((c) => {
+      for (const r of data.revisions) { const sp = r.spans?.[c.section]; if (sp) return sp[0]; } return null; }));
+    $("doc-file").innerHTML = files.map((p) => `<option value="${esc(p)}">${changedFiles.has(p) ? "● " : ""}${esc(p)}</option>`).join("");
+    const first = files.find((p) => changedFiles.has(p)); if (first) $("doc-file").value = first;
+    const opts = data.revisions.map((r) => `<option value="${esc(r.revision)}">${esc(short(r.revision))} ${esc((r.message || "").slice(0, 48))}</option>`).join("");
+    $("doc-rev").innerHTML = opts; $("doc-rev").value = data.revisions[data.revisions.length - 1]?.revision || "";
+    $("doc-against").innerHTML = `<option value="">— nothing —</option>` + opts;
+    if (data.revisions.length > 1) $("doc-against").value = data.revisions[0].revision;
+    ["doc-file", "doc-rev", "doc-against"].forEach((id) => $(id).addEventListener("change", renderDocuments));
+  }
+
+  // ---- wiring ------------------------------------------------------------------------------------------------------
+  function show(view) {
+    for (const v of ["sections", "timeline", "documents"]) { $("view-" + v).hidden = v !== view; $("tab-" + v).setAttribute("aria-selected", String(v === view)); }
+    try { localStorage.setItem("thearc-report-view", view); } catch (e) { /* storage may be unavailable */ }
+  }
+  document.querySelector("nav.tabs").addEventListener("click", (e) => { const b = e.target.closest("button[data-view]"); if (b) show(b.dataset.view); });
+  $("scale").innerHTML = data.scales.map((s) => `<option value="${esc(s.name)}">${esc(s.name)}</option>`).join("") || `<option>(no ratings yet)</option>`;
+  $("scale").addEventListener("change", (e) => { state.scale = e.target.value; renderAll(); });
+  $("active").addEventListener("change", (e) => { state.active = e.target.checked; renderGrid(); });
+  $("cumulative").addEventListener("change", (e) => { state.cumulative = e.target.checked; renderGrid(); renderDocuments(); });
+  $("grid").addEventListener("click", (e) => {
+    const col = e.target.closest(".colhead"); if (col) { state.revision = state.revision === col.dataset.rev ? null : col.dataset.rev; renderGrid(); if (state.section) renderDetail(); return; }
+    const b = e.target.closest("button[data-sec]"); if (!b) return;
+    state.section = b.dataset.sec; if (b.dataset.rev) state.revision = b.dataset.rev;
+    renderGrid(); renderDetail();
+  });
+  $("lanes").addEventListener("click", (e) => { const b = e.target.closest("button.rev"); if (!b) return; state.revision = b.dataset.rev; show("sections"); renderGrid(); });
+  function renderAll() { renderStats(); renderGrid(); if (state.section) renderDetail(); renderDocuments(); }
+
+  // Open on the most-rated section, so the page shows a history at rest.
+  const tally = {}; data.ratings.forEach((r) => { tally[r.section] = (tally[r.section] || 0) + 1; });
+  const busiest = Object.entries(tally).sort((a, b) => b[1] - a[1])[0];
+  if (busiest) state.section = busiest[0];
+  setupDocuments(); renderTimeline(); renderAll();
+  $("footer").textContent = `thearc report · ${data.sections.length} sections across ${data.revisions.length} revisions · ${data.ratings.length} ratings · ${data.changes.length} journal changes`;
+  try { const v = localStorage.getItem("thearc-report-view"); if (v && $("view-" + v)) show(v); } catch (e) { /* storage may be unavailable */ }
+})();
+</script>

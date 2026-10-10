@@ -19,4 +19,10 @@ The index defaults to `~/.thearc/learning.sqlite`.
 | `install [REFERENCES…] --to H [--trajectory N] [--through] [--all]` | Install sessions where a harness can resume or fork them. |
 | `trace RUN` | A run's sub-agent runs and delegations. |
 
+```text
+thearc report WORKSPACE [-o report.html] [--ref BRANCH …] [--reflections DIR]
+```
+
+Writes the [evolution report](../guides/report.md) of a workspace.
+
 Run any command with `--help` for every option.

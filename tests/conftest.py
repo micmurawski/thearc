@@ -42,3 +42,16 @@ def agent() -> MetaAgent:
 def human() -> dict:
     """Keyword arguments stored on journal entries as ``extra``."""
     return {"by": "tester"}
+
+
+@pytest.fixture
+def reviewed(agent, tmp_path):
+    """A workspace whose journal holds one reflection rating ``Retry > Limits`` harmful."""
+    from thearc.reflection import Reflector
+
+    from .test_reflection import GOOD, SCHEMA, Scripted, answer
+
+    workspace = agent.init_workspace(tmp_path / "ws")
+    reflection = Reflector(runtime=Scripted(answer(GOOD))).reflect("Review.", workspace, SCHEMA)
+    workspace.add_reflection(reflection)
+    return workspace, reflection

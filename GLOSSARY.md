@@ -416,6 +416,7 @@ lossless for configuration content.
 | Installation | The harness-native layout (e.g. `.claude/`, `.codex/`) produced by `install()` and read back by `from_installation()`. |
 | Agent files | The configuration as files, in the same layout as the workspace but **without markers**: `skills/<name>/SKILL.md`, `context/…`, `rules/…`, `hooks.json`, `mcp.json`, `owned_hooks.json`. What a reflector reads and cites, what installation writes from, and what the revision hashes. |
 | Revision | `version@rev_…` — the MetaAgent's version (when it has one) and a content hash of the agent files only (no name, journal, ratings, or markers), pinning which configuration a journal entry refers to. Without a version it is just `rev_…`. |
+| Evolution report | One HTML file (`thearc report`) showing a workspace's history across branches: ratings per section and revision, each section's changes with reasons, and the files at any revision. Built from the evolution dataset (`resources.evolution`). |
 
 ### Markers
 
