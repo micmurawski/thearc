@@ -27,6 +27,7 @@ const count = (id, pattern) => (elements[id]?.innerHTML.match(pattern) || []).le
 const result = {
   graphRows: count("graph", /class="grow/g),
   mergedFromEdges: count("graph", /stroke-dasharray:4 4/g),
+  idleRows: count("graph", /gchip muted">no change/g),
   gridCells: count("grid", /<td class="cell"/g),
   sectionVersions: count("section-view", /class="version"/g),
   changeCommits: count("changes", /class="change-commit"/g),

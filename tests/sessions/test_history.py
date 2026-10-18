@@ -443,3 +443,36 @@ def test_antigravity_adapter(tmp_path):
         tool_result = next(e for e in events if e.kind == "tool_result")
         assert tool_result.status == "success"
         assert "Benchmark passed" in tool_result.text
+
+
+def test_pi_system_prompt_sections_reach_the_export(tmp_path):
+    """Pi 1.x keeps its system prompt in ``sections`` with an empty ``content``: a handoff still shows the
+    project instructions and skills the session ran with."""
+    from thearc.sessions import Sessions
+
+    write(
+        tmp_path / "pi" / "session.jsonl",
+        [
+            {"type": "session", "version": 3, "id": "pi-session", "cwd": "/repo"},
+            {
+                "type": "message",
+                "id": "s",
+                "parentId": None,
+                "message": {"role": "system", "content": "", "sections": {
+                    "preamble": "You are pi.",
+                    "project_context": "<project_context>\nRead named sources first.\n</project_context>",
+                    "skills": "<available_skills>graphify</available_skills>",
+                    "empty": "",
+                }},
+            },
+            {"type": "message", "id": "u", "parentId": "s", "message": {"role": "user", "content": "Fix it"}},
+        ],
+    )
+    with Sessions(tmp_path / "index.sqlite") as sessions:
+        sessions.add(tmp_path / "pi", source_id="pi")
+        session = sessions.get("pi-session")
+        (system,) = [event for event in session.selected_events if event.role == "system"]
+        assert system.text == ("You are pi.\n\n<project_context>\nRead named sources first.\n</project_context>"
+                               "\n\n<available_skills>graphify</available_skills>")
+        exported = str(session.export("codex", strict=False))
+        assert "Read named sources first." in exported and "<available_skills>graphify" in exported

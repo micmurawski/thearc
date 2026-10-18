@@ -116,7 +116,8 @@ def evolution_graph(
     for ref in candidates:
         base_of_branch[ref] = base = base_of(ref)
         group_of[ref], name = _group(ref)
-        own = [r for r in ratings if ref in r.get("branches", []) and trunk not in r.get("branches", [])]
+        since = datetime.fromisoformat(time_of(base))  # Its own: recorded after it forked, merged on or not.
+        own = [r for r in ratings if ref in r.get("branches", []) and datetime.fromisoformat(r["at"]) >= since]
         reflections = {r.get("reflection") for r in own if r.get("reflection")}
         by_branch[ref] = {"branch": ref, "name": name, "head": tips[ref], "commits": commits(base, ref),
                           "ratings": len(own), "reflections": len(reflections), "merged_into": []}

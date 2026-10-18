@@ -179,6 +179,23 @@ def test_handoff_installs_the_history_and_forks_it(agent, tmp_path):
     assert again.evidence["handoff"] == reflection.evidence["handoff"]  # Same selection, same installed copy.
 
 
+def test_handoff_tells_the_reflector_what_the_record_leaves_out(agent, tmp_path, monkeypatch):
+    from thearc.reflection import reflector
+
+    plain = Scripted(answer(GOOD))
+    Reflector(runtime=plain, home=tmp_path).handoff("Review.", SESSION, agent, SCHEMA)
+    assert "How the session ran" not in plain.sent[0]
+
+    monkeypatch.setitem(reflector.UNRECORDED, SESSION.metadata.harness, "This record has no system prompt.")
+    runtime = Scripted(answer(GOOD))
+    reflection = Reflector(runtime=runtime, home=tmp_path).handoff(
+        "Review.", SESSION, agent, SCHEMA, provenance="demo 1 was installed for this session.")
+    assert "## How the session ran (not in its record)\n\nThis record has no system prompt.\n\n" \
+           "demo 1 was installed for this session." in runtime.sent[0]
+    assert reflection.evidence["provenance"] == "demo 1 was installed for this session."
+    assert "provenance" not in reflection.extra
+
+
 def test_harnesses_that_cannot_fork_refuse_handoff(agent):
     reflector = Reflector(runtime=Scripted(harness="antigravity", can_fork=False))
     with pytest.raises(ReflectionError, match="use reflect"):

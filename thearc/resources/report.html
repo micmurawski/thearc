@@ -592,6 +592,13 @@ footer::before { content: "$ "; color: var(--accent); }
         const row = { ...c, lane, li, seq, content, tag };
         rows.push(row); lane.rows.push(row);
       });
+      if (lane.kind === "candidate" && !lane.rows.length) {  // No change to show: one row says what it did.
+        const list = laneCommits(lane), tip = list[list.length - 1], n = lane.cand.ratings;
+        const row = { commit: tip ? tip.commit : `none:${lane.branch}`, at: tip ? tip.at : lane.run.at, none: !tip,
+          lane, li, seq: 0, content: false, idle: true,
+          message: n ? `No change: the curator kept every section (${n} rating${n === 1 ? "" : "s"})` : "No change: its reflections rated nothing" };
+        if (!seen.has(row.commit)) { seen.add(row.commit); rows.push(row); lane.rows.push(row); }
+      }
     });
     const trunk = branchCommits[G.trunk] || [];
     G.bases.forEach((b) => rows.push({ commit: b.commit, at: b.at, message: trunk.find((c) => c.commit === b.commit)?.message || "", base: b, li: -1, seq: 0 }));
@@ -636,13 +643,13 @@ footer::before { content: "$ "; color: var(--accent); }
       const changes = (changedIn[r.commit] || []).filter((c) => c.kind !== "rated");
       const sections = [...new Set(changes.map((c) => secLabel(c.section).split(" › ")[0]))];
       const chip = r.tag ? `<span class="gchip release">${esc(r.tag.version)}</span>` : r.base ? `<span class="gchip"><b>${esc(r.base.version || "base")}</b></span>`
-        : sections.length ? sections.map((s) => `<span class="gchip">${esc(s)}</span>`).join("") : `<span class="gchip muted">journal</span>`;
+        : r.idle ? `<span class="gchip muted">no change</span>` : sections.length ? sections.map((s) => `<span class="gchip">${esc(s)}</span>`).join("") : `<span class="gchip muted">journal</span>`;
       const label = r.base ? G.trunk : tops.has(r.commit) ? (r.lane.kind === "merge" ? (r.tag ? r.tag.branch : r.lane.branch) : r.lane.name + (r.lane.dead ? " · never merged" : "")) : "";
       const color = r.base ? "var(--muted)" : r.tag ? "var(--release)" : r.lane.color;
-      const message = changes[0]?.reason || r.message;
+      const message = r.idle ? r.message : changes[0]?.reason || r.message;
       const who = changes[0]?.author || (r.base || r.tag || !r.content ? "thearc" : "");
       return `<button class="grow${lstate.commit === r.commit ? " on" : ""}${r.lane?.dead ? " dead" : ""}${!r.content && !r.tag && !r.base ? " book" : ""}" data-commit="${esc(r.commit)}" style="height:${ROW}px">
-        <code>${esc(sha(r.commit).slice(0, 7))}</code><span class="chips">${chip}</span><span class="gmsg" title="${esc(message)}">${esc(message)}</span>
+        <code>${r.none ? "·······" : esc(sha(r.commit).slice(0, 7))}</code><span class="chips">${chip}</span><span class="gmsg" title="${esc(message)}">${esc(message)}</span>
         <span class="gbranch mono" style="color:${color}">${esc(label)}</span><span class="muted">${esc(who)}</span></button>`;
     }).join("");
     const counts = `${rows.filter((r) => r.content).length} change commits${lstate.bookkeeping ? "" : ` · bookkeeping hidden`}${hiddenEmpty ? ` · ${hiddenEmpty} empty branch${hiddenEmpty === 1 ? "" : "es"} hidden` : ""}`;
@@ -658,7 +665,14 @@ footer::before { content: "$ "; color: var(--accent); }
     const releases = G.releases.length ? `<div class="version"><h3>Releases</h3>${G.releases.map((rel) => `<div class="row" style="font-size:0.84rem"><b class="mono" style="color:var(--release)">${esc(rel.version)}</b><span class="muted">from ${esc(rel.parent_version || "—")} · ${esc(rel.merge || rel.branch)}</span></div>`).join("")}</div>` : "";
     let body = "";
     if (r?.base) body = `<div class="version"><h3><span class="mono">${esc(sha(r.commit))}</span> base ${esc(r.base.version || "")}</h3><div class="muted">${esc(r.message)} · on ${esc(G.trunk)}. ${runs.filter((x) => x.base === r.commit).length} run(s) fork here.</div></div>`;
-    else if (r) {
+    else if (r?.idle) {
+      const c = r.lane.cand;
+      body = `<article class="change-commit" style="border-left-color:${r.lane.color}"><div class="row"><span class="mono">${esc(r.lane.branch)}</span>
+        ${r.none ? "" : `<span class="mono">${esc(sha(r.commit))}</span><span>${esc(when(r.at))}</span>`}</div>
+        <div class="msg">${c.ratings ? `${c.ratings} rating${c.ratings === 1 ? "" : "s"} from ${c.reflections} reflection${c.reflections === 1 ? "" : "s"}; its curator changed nothing.`
+          : "Its reflections rated no section, so its curator had nothing to act on and nothing was recorded."}
+        ${c.merged_into.length ? ` Still a merge input: ${c.merged_into.map(esc).join(", ")}.` : ""}</div></article>`;
+    } else if (r) {
       const lane = r.lane, run = lane.run;
       const changes = (changedIn[r.commit] || []).filter((c) => c.kind !== "rated");
       let chips = "";

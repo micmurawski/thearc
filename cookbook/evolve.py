@@ -172,7 +172,10 @@ def curate(agent: MetaAgent, harness: Harness, session_ids: list[str], out: Path
             if saved.exists():
                 reflection = Reflection.load(saved, SCHEMA)
             else:
-                reflection = Reflector("codex").handoff(PROMPT, sessions.get(session_id), candidate, SCHEMA)
+                installed = f"The session ran where thearc had installed {agent.name} {agent.version} for {harness}: " \
+                            "the files you are given, loaded by the harness when the session started."
+                reflection = Reflector("codex").handoff(PROMPT, sessions.get(session_id), candidate, SCHEMA,
+                                                        provenance=installed)
                 reflection.dump_items_to_json(saved)
             candidate.add_reflection(reflection)
             reflections.append(reflection)

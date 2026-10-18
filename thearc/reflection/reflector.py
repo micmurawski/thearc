@@ -37,6 +37,13 @@ exactly the lines you judge. Hand in your reflection with the `{TOOL}` tool, com
 call (a reflection without ratings is valid). If it reports problems, fix them and submit the
 complete reflection again. You are done when it accepts."""
 
+# What a harness's session record leaves out, told to the reflector so absence is not read as evidence.
+UNRECORDED = {
+    "opencode": "OpenCode's session record does not include its system prompt: the project instructions (such as "
+    "AGENTS.md) and the skill list it started with are not visible in this history. Their absence from it does "
+    "not show that they were not loaded.",
+}
+
 
 @dataclass(frozen=True)
 class Reflection(Sequence[ReflectionItem]):
@@ -153,12 +160,21 @@ class Reflector:
         return self._run(task, agent, schema, fork=None, evidence={"attached": evidence is not None}, extra=extra)
 
     def handoff(
-        self, prompt: str, history: EventSequence, agent: MetaAgent, schema: ReflectionSchema, **extra: Any
+        self,
+        prompt: str,
+        history: EventSequence,
+        agent: MetaAgent,
+        schema: ReflectionSchema,
+        *,
+        provenance: str | None = None,
+        **extra: Any,
     ) -> Reflection:
         """Reflect from inside ``history`` (a session, trajectory, or session view), forked in the reflector's harness.
 
         The history is exported best-effort and installed as a copy; what the export had to
-        approximate is listed in ``Reflection.notes``.
+        approximate is listed in ``Reflection.notes``. ``provenance`` is what you know about how the
+        session ran that its record does not show — such as which configuration was installed for it;
+        the reflector gets it, with what the harness's record leaves out, under "How the session ran".
         """
         if not self.runtime.can_fork:
             raise ReflectionError("capability", f"{self.harness} cannot continue a session; use reflect()")
@@ -168,7 +184,12 @@ class Reflector:
             "handoff": installed.session_id,
             "events": len(history.selected_events),
             **({"session": session.id, "native_session": session.metadata.native_id} if session else {}),
+            **({"provenance": provenance} if provenance else {}),
         }
+        known = [UNRECORDED[session.metadata.harness]] if session and session.metadata.harness in UNRECORDED else []
+        known += [provenance] if provenance else []
+        if known:
+            prompt += "\n\n## How the session ran (not in its record)\n\n" + "\n\n".join(known)
         return self._run(
             prompt, agent, schema, fork=installed, evidence=evidence, extra=extra, notes=installed.transformations
         )

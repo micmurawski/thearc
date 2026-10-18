@@ -237,7 +237,7 @@ class OpenCodeAdapter(BaseAdapter):
 
 
 class PiAdapter(BaseAdapter):
-    version = "pi-2"
+    version = "pi-3"
 
     def normalize(self, source: SourceConfig, ref: SourceReference, data: dict, metadata: dict) -> list[Event]:
         if data.get("type") == "session":
@@ -246,18 +246,14 @@ class PiAdapter(BaseAdapter):
         if isinstance(message, dict):
             role = message.get("role")
             if role == "system":
-                # Pi records the system prompt it sent (sections, tools) — configuration, not conversation.
-                return [
-                    self.event(
-                        source,
-                        ref,
-                        data,
-                        metadata,
-                        kind="metadata",
-                        role="system",
-                        text=text_content(message.get("content")),
-                    )
-                ]
+                # The system prompt Pi sent. Pi 1.x keeps it in ``sections`` (preamble, tools, project context
+                # with AGENTS.md, skills, …) and leaves ``content`` empty: the text is what shows a reader, such as
+                # a reflector, which instructions the session ran with.
+                sections = message.get("sections")
+                text = text_content(message.get("content")) or (
+                    "\n\n".join(value for value in sections.values() if isinstance(value, str) and value.strip())
+                    if isinstance(sections, dict) else "")
+                return [self.event(source, ref, data, metadata, kind="message", role="system", text=text)]
             if role == "toolResult":
                 return [
                     self.event(
