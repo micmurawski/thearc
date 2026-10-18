@@ -28,7 +28,7 @@ from thearc.sessions.models import (
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value INTEGER NOT NULL);
 INSERT OR IGNORE INTO settings VALUES ('revision', 0);
-INSERT OR IGNORE INTO settings VALUES ('schema_version', 1);
+INSERT OR IGNORE INTO settings VALUES ('schema_version', 2);
 CREATE TABLE IF NOT EXISTS sources(id TEXT PRIMARY KEY, config TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS artifacts(
  source_id TEXT NOT NULL, path TEXT NOT NULL, generation INTEGER NOT NULL,
@@ -114,7 +114,14 @@ class SessionIndex:
                 raise RuntimeError("Session indexing requires SQLite with FTS5 support") from exc
             raise
         version = self.connection.execute("SELECT value FROM settings WHERE key='schema_version'").fetchone()[0]
-        if version != 1:
+        if version == 1:  # Sessions were keyed by source and native ID; re-read every transcript under native IDs.
+            with self.connection:
+                for table in ("event_text", "events", "diagnostics", "artifacts", "runs", "sessions"):
+                    self.connection.execute(f"DELETE FROM {table}")
+                self.connection.execute("UPDATE settings SET value=2 WHERE key='schema_version'")
+                self.connection.execute("UPDATE settings SET value=value+1 WHERE key='revision'")
+            version = 2
+        if version != 2:
             self.connection.close()
             raise RuntimeError(f"Unsupported session index schema version: {version}")
         # Backfill older projections once from indexed events, not source files.
@@ -265,6 +272,7 @@ class SessionIndex:
                 offset, line = row["offset"], row["line"]
                 meta = json.loads(row["metadata"])
         added, skipped, partial = 0, 0, False
+        owners: dict[str, str | None] = {}  # Session → the other source that indexed it first, if any.
         observed = prefix_hasher(path, offset)
         if row and not rewrite and observed.hexdigest() != row["digest"]:
             raise OSError("Source changed during checkpoint validation; retry sync")
@@ -307,8 +315,22 @@ class SessionIndex:
                         )
                         continue
                     for subrecord, event in enumerate(events):
-                        self._insert(event, subrecord)
-                        added += 1
+                        if event.session_id not in owners:
+                            other = self.connection.execute(
+                                "SELECT source_id FROM events WHERE session_id=? AND source_id!=? LIMIT 1",
+                                (event.session_id, source.id),
+                            ).fetchone()
+                            owners[event.session_id] = other[0] if other else None
+                            if other:
+                                message = (f"Session {event.session_id} is already indexed from source {other[0]}; "
+                                           "kept that copy")
+                                report.warnings.append(f"{message} (skipped {path})")
+                                self.connection.execute(
+                                    "INSERT INTO diagnostics VALUES (?,?,?,?)", (source.id, str(path), line, message)
+                                )
+                        if owners[event.session_id] is None:
+                            self._insert(event, subrecord)
+                            added += 1
             if prefix_digest(path, offset) != observed.hexdigest():
                 raise OSError("Source changed during ingestion; transaction rolled back; retry sync")
             meta["_partial"] = partial

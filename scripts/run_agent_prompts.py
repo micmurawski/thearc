@@ -17,7 +17,6 @@ import shutil
 import signal
 import subprocess
 import sys
-from contextlib import closing
 from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
@@ -28,11 +27,12 @@ from scripts.prompt_harnesses import (
     capture_session,
     command_for,
     inspect_output,
+    install_skills,
     opencode_completed,
+    skills_advertised,
     snapshot_agent,
 )
-from thearc.learning.sessions.models import SearchFilters, SourceConfig
-from thearc.learning.sessions.store import SessionStore
+from thearc.sessions import Sessions
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 TOOL_ITEMS = {"command_execution", "file_change", "mcp_tool_call", "web_search", "collab_tool_call"}
@@ -138,6 +138,7 @@ def collect(prompt: str, label: str, args: argparse.Namespace, output: Path) -> 
     worktree = output / "worktrees" / run_id
     git(args.cwd, "worktree", "add", "--detach", str(worktree), args.base_commit)
     (run_dir / "prompt.txt").write_text(prompt, encoding="utf-8")
+    installed_skills = install_skills(args, worktree)  # Pi/OpenCode: the canonical skills, where they read them.
     save(run_dir / "agent-before.json", snapshot_agent(args, worktree).model_dump(mode="json"))
     command = command_for(args, run_dir)
     result = {
@@ -152,6 +153,7 @@ def collect(prompt: str, label: str, args: argparse.Namespace, output: Path) -> 
         "command": command,
         "git_head": git(worktree, "rev-parse", "HEAD"),
         "git_status_before": git(worktree, "status", "--porcelain"),
+        "skills_installed": installed_skills,
         "status": "running",
     }
     save(run_dir / "manifest.json", result)
@@ -206,19 +208,20 @@ def collect(prompt: str, label: str, args: argparse.Namespace, output: Path) -> 
         with transcript.open("rb") as source, destination.open("xb") as target:
             shutil.copyfileobj(source, target)
         result["transcript"] = str(destination)
-        with SessionStore(output / "index.sqlite") as history:
-            history.register_source(
-                SourceConfig(id=f"{args.harness}-prompts", harness=args.harness, root=output / "sessions")
-            )
-            history.sync()
-            with closing(history.iter_sessions(SearchFilters(source_ids=[f"{args.harness}-prompts"]))) as sessions:
-                session = next((s for s in sessions if s.native_id == result["thread_id"]), None)
+        # Which skills the harness actually offered the model (None: its transcripts do not record it).
+        result["skills_advertised"] = skills_advertised(args.harness, destination)
+        with Sessions(output / "index.sqlite") as history:
+            history.add(output / "sessions", harness=args.harness, source_id=f"{args.harness}-prompts")
+            try:
+                session = history.get(result["thread_id"]) if result["thread_id"] else None  # IDs are native IDs.
+            except LookupError:
+                session = None
             if session:
-                events = list(history.iter_events(SearchFilters(session_ids=[session.id])))
+                events = list(session.events)
                 result["indexed_tool_events"] = sum(e.kind in {"tool_call", "tool_result"} for e in events)
                 result["indexed_activity_events"] = sum(
                     e.kind in {"tool_call", "tool_result"}
-                    or (e.kind == "message" and e.role == "assistant" and bool(e.text.strip()))
+                    or (e.kind == "message" and e.role == "assistant" and bool((e.text or "").strip()))
                     for e in events
                 )
     activity = result["tool_items"] > 0 or result["assistant_messages"] > 0

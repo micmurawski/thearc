@@ -1,12 +1,13 @@
 """Curation: a curator edits a MetaAgent's workspace in response to reflection items, one commit per change.
 
-The curator works in a clone of the workspace at a base commit ``B`` (annotated, so it sees every
-section's lineage ID and ratings). It edits files directly and commits through thearc's
-``commit_change`` tool — one change per commit, the reason as its message — and ends with
-``finish``. Recording the commits after ``B`` (or Kept entries, when there are none) extends the
-journal; the candidate lands in the workspace as branch ``curation/<id>``. The current branch is
-left as it was — unless the agent is a worktree (``agent.to_worktree``), which then moves forward
-to the curated result: a candidate's worktree *is* its pipeline's outcome.
+The curator works in a clone of the workspace at a base commit ``B``, whose markers give every
+section's lineage ID; with ``scales``, its prompt adds every section's ratings so far. It edits
+files directly and commits through thearc's ``commit_change`` tool — one change per commit, the
+reason as its message — and ends with ``finish``. Recording the commits after ``B`` (or Kept
+entries, when there are none) extends the journal; the candidate lands in the workspace as branch
+``curation/<id>``. The current branch is left as it was — unless the agent is a worktree
+(``agent.to_worktree``), which then moves forward to the curated result: a candidate's worktree
+*is* its pipeline's outcome.
 """
 
 from __future__ import annotations
@@ -26,10 +27,11 @@ from thearc.resources.agent import MetaAgent
 from thearc.resources.changes import detect_changes
 from thearc.resources.git import _git, agent_at, commit, commit_journal, is_worktree, record_commits
 from thearc.resources.journal import Entry, Journal, Kept
-from thearc.resources.ratings import RatingPolicy, RatingScale
+from thearc.resources.ratings import RatingPolicy, RatingScale, since_last_modification
 from thearc.resources.reflection import ReflectionItem
 from thearc.resources.targets import ResourceTarget
-from thearc.resources.workspace import JOURNAL_FILE, MANIFEST, read_workspace
+from thearc.resources.views import agent_outline
+from thearc.resources.workspace import JOURNAL_FILE, MANIFEST, mark_new_targets, read_workspace
 
 PROTECTED = (JOURNAL_FILE, MANIFEST, ".gitattributes")
 
@@ -41,9 +43,9 @@ when the items do not justify a change. Do not invent behaviour the items do not
 
 WORKSPACE = """The configuration is in `{workspace}`; edit its files there. You cannot run commands.
 
-Every section heading, code file, and hooks/MCP entry carries a marker with the section's ID and its
-ratings so far — `<!-- res_… · usefulness: (…) -->` after a heading, `# res_…` on a code file's first
-line, `// res_…` after a JSONC entry's key. Keep a section's marker on its heading when you edit, move,
+Every section heading, code file, and hooks/MCP entry carries a marker with the section's ID —
+`<!-- res_… -->` after a heading, `# res_…` on a code file's first line, `// res_…` after a JSONC
+entry's key. Keep a section's marker on its heading when you edit, move,
 or rename it: that is how the section's history follows it. A new section needs no marker; deleting a
 section deletes its marker; never copy a marker. `journal.jsonl` (the history of every section) may be
 read but not edited; neither may `agent.json`."""
@@ -124,6 +126,9 @@ class CurationTools:
         except ValueError as exc:
             raise ValueError(f"{note}Nothing was committed: the configuration does not read back ({exc}). Fix it "
                              "and commit again.") from None
+        if marked := mark_new_targets(self.clone):  # So a later rename is a move, not a new history.
+            note += ("Marked " + ", ".join(f"{target} as {identifier}" for target, identifier in marked.items())
+                     + "; keep these markers. ")
         before = agent_at(self.clone, "HEAD")
         _git(self.clone, "add", "-A")
         sha = commit(self.clone, message.strip(), author=self.author, email="curator@thearc.local")
@@ -187,12 +192,13 @@ class Curator:
     ) -> Curation:
         """Curate ``agent``'s workspace in response to ``reflections`` (already added to its journal).
 
-        With ``scales``, the markers' ratings are refreshed first. Uncommitted journal entries are
-        committed, so the curator reads the current journal. ``extra`` is stored on every entry.
+        With ``scales``, the prompt lists every section with its ratings so far on them (under
+        ``policy``, default ``since_last_modification``). Uncommitted journal entries are committed,
+        so the curator reads the current journal. ``extra`` is stored on every entry.
         """
         root = agent.checked_workspace("curate")
-        if scales:
-            agent.annotate(scales, policy=policy)
+        policy = policy or since_last_modification
+        outline = agent_outline(agent, scales, ids=True, policy=policy) if scales else None
         commit_journal(root)
         if dirty := [line for line in _git(root, "status", "--porcelain").decode().splitlines() if line.strip()]:
             raise ValueError(f"commit or undo the workspace's pending edits first: {dirty}")
@@ -209,7 +215,7 @@ class Curator:
             _git(clone, "checkout", "-q", "-b", branch, base)
             tools = CurationTools(clone, f"curator ({self.harness})")
             with serve(tools.specs()) as endpoint, self.runtime.conversation(clone, endpoint, edit=True) as talk:
-                talk.send(_message(prompt, reflections, items, clone))
+                talk.send(_message(prompt, reflections, items, clone, outline))
             if tools.summary is None:
                 raise CurationError("no_finish", f"The curator ended without calling finish "
                                     f"({len(tools.commits)} commit(s) made)")
@@ -264,7 +270,8 @@ def _kept_targets(items: list[_Item], journal: Journal) -> list[ResourceTarget]:
                               if not removed and target in live))
 
 
-def _message(prompt: str, reflections: Sequence[Reflection], items: list[_Item], workspace: Path) -> str:
+def _message(prompt: str, reflections: Sequence[Reflection], items: list[_Item], workspace: Path,
+             outline: str | None = None) -> str:
     blocks = []
     for reflection in reflections:
         lines = [f"### `{reflection.id}` (on revision {reflection.revision})", "",
@@ -279,5 +286,7 @@ def _message(prompt: str, reflections: Sequence[Reflection], items: list[_Item],
                          f"(`{entry.item.ref}`): {where}")
         blocks.append("\n".join(lines))
     listed = "\n\n".join(blocks) or "(no reflections)"
+    ratings = (f"\n\n## Ratings so far\n\nEvery section with its ID and the ratings of its current text:\n\n"
+               f"{outline.rstrip()}") if outline else ""
     return (f"{INSTRUCTIONS}\n\n## Task\n\n{prompt}\n\n## Reflections\n\n{listed}\n\n## The configuration\n\n"
-            f"{WORKSPACE.format(workspace=workspace)}\n\n## Committing\n\n{COMMITTING}")
+            f"{WORKSPACE.format(workspace=workspace)}{ratings}\n\n## Committing\n\n{COMMITTING}")

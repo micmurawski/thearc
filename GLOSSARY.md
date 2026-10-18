@@ -96,9 +96,9 @@ classDiagram
 A MetaAgent is identified by a **name** and an optional **version**. The name is
 a single safe filename component, so it can name directories and version markers
 on disk. The version is a free-form, single-line label; it carries no ordering
-semantics. Installation writes both, together with the revision, into the target
-as an **identity marker** so an installed configuration can be traced back to the
-exact MetaAgent configuration it came from.
+semantics. Installation records both, together with the revision, in the project's
+**install record** so an installed configuration can be traced back to the exact
+MetaAgent configuration it came from, and stamps the version into the files it writes.
 
 ### Installation
 
@@ -106,12 +106,18 @@ exact MetaAgent configuration it came from.
 skills as `SKILL.md` with YAML frontmatter, rules/workflows/commands into their
 directories, context documents at the project root, and hooks and MCP servers
 merged into the harness's own configuration files. Supported harnesses are
-`claude`, `codex`, `antigravity`, and `pi`.
+`claude`, `codex`, `antigravity`, `pi`, and `opencode`.
 
-An installation **owns** what it wrote; the identity marker lists those files,
-context sections, hooks, and MCP servers. Reinstalling replaces exactly what it
-owns and leaves everything else in the project alone. Importing an installation
-reads the harness layout back into a MetaAgent.
+An installation **owns** what it wrote. The **install record**
+(`.thearc/installed.json`, one per project) lists, per installed MetaAgent, the
+context sections it owns and, per harness, its version, revision, files, hooks, and
+MCP servers. Context documents belong to the agent, not to a harness: several
+harnesses read the same `AGENTS.md`, so uninstalling the agent from one harness
+keeps its sections while another still has it. Reinstalling replaces exactly what
+the agent owns and leaves everything else in the project alone; installing another
+agent over a file, entry, or section takes its ownership over. **Uninstalling**
+removes what the agent installed for that harness. Importing an installation reads
+the harness layout back into a MetaAgent.
 
 - **Rebuilt files** — skills, rules, workflows, commands, and hook scripts are
   written whole. Overwriting a file the MetaAgent does not own is a conflict
@@ -374,6 +380,10 @@ It returns the workspace's MetaAgent without changing the original object.
 If the workspace already exists, its identity and configuration must match;
 the returned agent carries its saved journal. Reopening a committed workspace
 does not commit pending edits. `agent.to_workspace(path)` only writes files.
+An agent read from or initialized in a workspace remembers it (`agent.workspace`)
+and the lineage IDs its markers gave (`agent.identities`); `add_reflection`,
+`release`, and `to_worktree` act on that repository after checking that nobody
+edited its files since the agent was read.
 
 Changes reach the journal through commits. Whoever edits the workspace — a
 curator agent, a person, a process — commits each change with **its reason as
@@ -413,38 +423,37 @@ lossless for configuration content.
 | --- | --- |
 | Model | The in-memory Python object (`MetaAgent`). |
 | Workspace | A canonical, editable, git-tracked directory: the agent files **with markers** (`hooks`, `mcp` and `owned_hooks` as `.jsonc`), an `agent.json` manifest (name, version), and `journal.jsonl` with one entry per line (union-merged by git); harness-independent. |
-| Installation | The harness-native layout (e.g. `.claude/`, `.codex/`) produced by `install()` and read back by `from_installation()`. |
+| Installation | The harness-native layout (e.g. `.claude/`, `.codex/`) produced by `install()` and read back by `MetaAgent.from_installation()`. |
 | Agent files | The configuration as files, in the same layout as the workspace but **without markers**: `skills/<name>/SKILL.md`, `context/…`, `rules/…`, `hooks.json`, `mcp.json`, `owned_hooks.json`. What a reflector reads and cites, what installation writes from, and what the revision hashes. |
 | Revision | `version@rev_…` — the MetaAgent's version (when it has one) and a content hash of the agent files only (no name, journal, ratings, or markers), pinning which configuration a journal entry refers to. Without a version it is just `rev_…`. |
-| Evolution report | One HTML file (`thearc report`) showing a workspace's history across branches: ratings per section and revision, each section's changes with reasons, and the files at any revision. Built from the evolution dataset (`resources.evolution`). |
+| Evolution report | One HTML file (`thearc report`) showing a workspace's history across branches: the evolution graph, each section's versions across a run, every change with its reason, ratings per section and revision, and the files at any revision. Built from the evolution dataset (`resources.evolution`). |
+| Evolution graph | The report's view of a workspace's history as the agent's evolution: each change commit a node, candidates as branches from their base, merges joined to the candidates they drew on (from the journal — dashed where git has no edge), releases as tags; bookkeeping commits hidden. Not a plain git commit graph. |
 
 ### Markers
 
-The workspace shows each target's **lineage ID** and, once refreshed, its
-**rating summaries** on the line that starts it, so people and curators see them
-where they edit:
+The workspace shows each target's **lineage ID** on the line that starts it, so
+people and curators see which section is which where they edit:
 
 ```text
-## Limits <!-- res_fd94… · usefulness: (harmful: 3, neutral: 0, helpful: 1) -->   section heading
-echo hi  # res_0eeb… · usefulness: (helpful: 1)                                  code file, first line
-  "guard": {  // res_8c1f…                                                      hooks.jsonc / mcp.jsonc entry
+## Limits <!-- res_fd94… -->    section heading
+echo hi  # res_0eeb…            code file, first line
+  "guard": {  // res_8c1f…      hooks.jsonc / mcp.jsonc entry
 ```
 
-Markers are the journal drawn into the files, never a source of truth for
-ratings: reading a workspace strips them, so the MetaAgent, its revision, its
-installations, and every reflector's workspace are free of IDs and ratings, and
-a marker never changes a line number. Ratings in markers are as current as the
-last **`agent.annotate(scales)`**, which rewrites them from the journal (under
-`since_last_modification` by default) and commits the result; such a commit
-changes no content and records nothing. Pipelines annotate where the files are
-read — before a curation or a review — rather than after every reflection.
+Reading a workspace strips markers, so the MetaAgent, its revision, its
+installations, and every reflector's workspace are free of IDs, and a marker
+never changes a line number. **Ratings are not in the files**: they are derived
+from the journal and shown by the **outline view** (`agent_outline(agent, scales,
+ids=True)`) — in a curator's prompt, and as `RATINGS.md` in a release.
 
 While a workspace is edited, the ID in a marker is what says **which section is
 which**: a heading that keeps its marker under a new title is a certain move
 (even if its text changed too), a heading without a marker is new, and a marker
 that disappears means its section was removed. A marker copied onto a second
 heading is an error. A whole Markdown resource has no marker line; its ID and
-ratings appear in the outline view.
+ratings appear in the outline view. When a curator or merger commits a new
+section, `commit_change` writes its marker first (`mark_new_targets`), so the
+section's first commit already carries its ID and a later rename is a move.
 
 ## Sessions
 
@@ -484,10 +493,11 @@ One recorded conversation with an agent, as the harness stored it: its
 identity, metadata (title, working directory, start and end), and its events in
 recorded order. A session can contain several runs, including delegated work.
 
-A session has two IDs: its **native ID**, assigned by the harness, and its
-**canonical ID**, assigned by the index and scoped to the source. APIs that
-resume or fork a native session need the native ID; queries use the canonical
-ID.
+A session's ID is its **native ID** — the one its harness assigned and the
+transcript carries — so it is the same in every index and stays the same when
+log folders move or are renamed; its runs and events derive their IDs from it.
+The same session found in a second source is a copy: it is indexed once, from
+the source that first had it, and the sync reports the other.
 
 ### Run
 
@@ -659,16 +669,16 @@ accepted call fails the reflection.
 ### Committing a reflection
 
 A finished reflection holds its output exactly as the schema declares it, plus
-what it judged (revision, time, reflector, evidence); it stores no entries. `agent.add_reflection(reflection)` commits it: the agent must be the
+what it judged (revision, time, reflector, evidence); it stores no entries.
+`agent.add_reflection(reflection)` commits it to the agent's journal: the agent must be the
 judged revision, and each item becomes one Rated entry per target its reference
 resolves to (see Reflection schema), stamped with the reflection's ID and the
 reflector's harness and model. Entry IDs derive from the reflection, the item's
 location, scale, and target, so adding the same reflection again — or a saved
 one, `Reflection.load(path, schema)` — records nothing new.
 
-An agent read from or initialized in a workspace remembers it (`agent.workspace`)
-and `add_reflection` also **appends** the new entries to its `journal.jsonl`
-without reading the file; committing to git stays separate. The journal file is
+For an agent with a workspace it also **appends** the new entries to its
+`journal.jsonl` without reading the file; committing to git stays separate. The journal file is
 only ever touched through `Journal.load(path)`, `Journal.append(path, entries)`
 and `journal.dump(path)`: reading collapses repeated lines (a replayed append, a
 union merge) and skips an unfinished last line, and `dump` rewrites the file at
@@ -696,9 +706,9 @@ reflector. Unlike the reflector it **edits**: every resource of the MetaAgent
 (skills and their files, context documents, rules, workflows, commands, hooks,
 MCP servers, extensions, owned hooks), but not `journal.jsonl`, which it may
 only read, nor the agent's identity (`agent.json`), which versioning owns. It
-works in its own clone of the annotated workspace, refreshed at `B`, so it sees
-every section's lineage ID and ratings next to the text it decides to keep,
-rewrite, or delete. It edits files but runs no commands; it commits and finishes
+works in its own clone of the workspace at `B`, whose markers give every section's
+lineage ID; its prompt lists each section's ratings so far by that ID, so it can
+weigh them against the text it decides to keep, rewrite, or delete. It edits files but runs no commands; it commits and finishes
 through thearc's tools (see Curation tools). Codex, Claude, and Pi can curate.
 
 ### Curation prompt
@@ -754,7 +764,7 @@ the curation's ID and the curator's harness and model.
 
 | Concept | Python |
 | --- | --- |
-| Curation | `curation.Curator(harness).curate(prompt, reflections, agent, scales=…)` → `Curation` (`branch`, `commits`, `entries`, `summary`, `candidate()`) |
+| Curation | `curation.Curator(harness).curate(prompt, reflections, workspace, scales=…)` → `Curation` (`branch`, `commits`, `entries`, `summary`, `candidate()`) |
 | Kept | `journal.Kept`; `journal.kept()` |
 
 ## Merging
@@ -809,10 +819,27 @@ took, combined, or left out is told by the merger's commit messages, not by
 separate entries. (Whether the merged journal should keep more of the
 candidates' history is parked — see `PARKED_PROBLEMS.md`.)
 
+### Versioning
+
+The step after merging: the merged candidate becomes the agent's next **version**.
+`agent.release()` bumps the version (patch by default: `0.9.68` → `0.9.69`, or
+`part="minor"` / `"major"`, or an explicit `version=`), commits that change to
+`agent.json` alone as "Release <name> <version>", and points a new branch
+`release/<version>` at the commit. The configuration's content and its markers
+are unchanged, so no journal entries are added; the revision changes with the
+version. With `include_scales=True`, the release also writes `RATINGS.md`: every
+section with its lineage ID and its ratings (of its current text) on every scale
+the journal's ratings use. It is a view, not configuration: reading the workspace
+ignores it, so it changes no revision. With
+`push="origin"`, the release branch is pushed to that remote; nothing is ever
+pushed otherwise. The branch the agent is on is not otherwise moved: whether a
+release becomes `main` or is installed is the pipeline's decision.
+
 ### In code
 
 | Concept | Python |
 | --- | --- |
 | Candidate worktree | `agent.to_worktree(path, branch=…)` → an agent bound to a new worktree on its own branch |
 | Merging | `curation.Merger(harness).merge(prompt, [candidate, …], into=…)` → `Merge` (`agent`, `branch`, `base`, `commits`, `entries`, `proposals`, `summary`) |
+| Versioning | `agent.release(version=None, part="patch", branch=None, include_scales=False, push=None)` → the agent at its new version; `resources.bump_version` |
 

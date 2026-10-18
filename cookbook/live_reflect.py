@@ -86,10 +86,10 @@ Do not execute Graphify, hooks, or scripts, and do not edit the configuration.""
 
 
 SOURCES = (
-    Path("/Users/micmur/GITHUB/thearc/logs/pi-traning"),
-    Path("/Users/micmur/GITHUB/thearc/logs/opencode-training"),
-    Path("/Users/micmur/GITHUB/thearc/logs/claude-training"),
-    Path("/Users/micmur/GITHUB/thearc/logs/codex-training"),
+    Path("/Users/micmur/GITHUB/thearc/logs/pi-traning/sessions"),
+    Path("/Users/micmur/GITHUB/thearc/logs/opencode-training/sessions"),
+    Path("/Users/micmur/GITHUB/thearc/logs/claude-training/sessions"),
+    Path("/Users/micmur/GITHUB/thearc/logs/codex-training/sessions"),
 )
 
 PROJECT_PATH = Path("/Users/micmur/GITHUB/thearc/tests/fastapi")

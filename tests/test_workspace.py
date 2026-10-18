@@ -1,27 +1,34 @@
 import json
+import subprocess
 
 import pytest
 
-from thearc.resources import Journal, MetaAgent, detect_changes, read_workspace, write_workspace
+from thearc.resources import (
+    Journal,
+    MetaAgent,
+    detect_changes,
+    read_workspace,
+    write_workspace,
+)
 from thearc.resources.git import _git
 from thearc.resources.journal import Rated
 
 
 def test_round_trip_with_journal(agent, human, tmp_path):
     agent.journal.record(*detect_changes(None, agent, **human))
-    root = write_workspace(agent, tmp_path / "ws")
+    root = agent.to_workspace(tmp_path / "ws")
     assert read_workspace(root) == agent
 
 
 def test_without_journal_for_reflection(agent, human, tmp_path):
     agent.journal.record(*detect_changes(None, agent, **human))
-    root = write_workspace(agent, tmp_path / "ws", journal=False)
+    root = agent.to_workspace(tmp_path / "ws", journal=False)
     assert not (root / "journal").exists()
     assert len(read_workspace(root).journal) == 0
 
 
 def test_hand_edited_skill_is_read(agent, tmp_path):
-    root = write_workspace(agent, tmp_path / "ws")
+    root = agent.to_workspace(tmp_path / "ws")
     path = root / "skills/retry/SKILL.md"
     path.write_text(path.read_text().replace("max 3", "max 5"))
     assert "max 5" in read_workspace(root).skills["retry"].instructions
@@ -29,7 +36,7 @@ def test_hand_edited_skill_is_read(agent, tmp_path):
 
 def test_overwrite_syncs_config_and_keeps_journal(agent, human, tmp_path):
     agent.journal.record(*detect_changes(None, agent, **human))
-    root = write_workspace(agent, tmp_path / "ws")
+    root = agent.to_workspace(tmp_path / "ws")
     (root / ".git").mkdir()
     smaller = agent.model_copy(deep=True)
     smaller.resources = {}
@@ -41,7 +48,7 @@ def test_overwrite_syncs_config_and_keeps_journal(agent, human, tmp_path):
 
 def test_journal_entries_cannot_be_rewritten(agent, human, tmp_path):
     agent.journal.record(*detect_changes(None, agent, **human))
-    root = write_workspace(agent, tmp_path / "ws")
+    root = agent.to_workspace(tmp_path / "ws")
     rewritten = agent.model_copy(deep=True)
     rewritten.journal.entries[0] = rewritten.journal.entries[0].model_copy(update={"revision": "rev_x"})
     with pytest.raises(ValueError, match="differs from the recorded one"):
@@ -50,11 +57,11 @@ def test_journal_entries_cannot_be_rewritten(agent, human, tmp_path):
 
 def test_journal_is_one_jsonl_file_with_union_merge(agent, human, tmp_path):
     agent.journal.record(*detect_changes(None, agent, **human))
-    root = write_workspace(agent, tmp_path / "ws")
+    root = agent.to_workspace(tmp_path / "ws")
     lines = (root / "journal.jsonl").read_text().splitlines()
     assert [json.loads(line)["id"] for line in lines] == [entry.id for entry in agent.journal.entries]
     assert (root / ".gitattributes").read_text() == "journal.jsonl merge=union\n"
-    write_workspace(agent, root, overwrite=True)
+    agent.to_workspace(root, overwrite=True)
     assert (root / ".gitattributes").read_text() == "journal.jsonl merge=union\n"
 
 
@@ -69,7 +76,7 @@ def test_union_merged_journal_is_read(agent, human, tmp_path):
         item_id="item_1",
     )
     agent.journal.record(*detect_changes(None, agent, **human), rated)
-    root = write_workspace(agent, tmp_path / "ws")
+    root = agent.to_workspace(tmp_path / "ws")
     path = root / "journal.jsonl"
     lines = path.read_text().splitlines(keepends=True)
     path.write_text("".join([lines[-1], *lines, lines[0]]))  # Out of order and duplicated, as git may leave it.
@@ -81,7 +88,7 @@ def test_union_merged_journal_is_read(agent, human, tmp_path):
 
 def test_reflection_export_leaves_the_recorded_journal_alone(agent, human, tmp_path):
     agent.journal.record(*detect_changes(None, agent, **human))
-    root = write_workspace(agent, tmp_path / "ws")
+    root = agent.to_workspace(tmp_path / "ws")
     before = (root / "journal.jsonl").read_text()
     write_workspace(agent.model_copy(update={"journal": type(agent.journal)()}), root, journal=False, overwrite=True)
     assert (root / "journal.jsonl").read_text() == before
@@ -90,23 +97,23 @@ def test_reflection_export_leaves_the_recorded_journal_alone(agent, human, tmp_p
 @pytest.mark.parametrize(
     "mutate",
     [
-        lambda root: (root / "stray.txt").write_text("x"),
+        lambda root: (root / "skills" / "stray.txt").write_text("x"),  # A top-level stray belongs to the repo.
         lambda root: (root / "skills/empty").mkdir() or (root / "skills/empty/notes.md").write_text("x"),
         lambda root: (root / "hooks.json").write_text(json.dumps({"guard": {"bogus": 1}})),
         lambda root: (root / "agent.json").write_text(json.dumps({"schema_version": 1, "name": "a", "version": None})),
     ],
 )
 def test_invalid_workspaces_are_rejected(agent, tmp_path, mutate):
-    root = write_workspace(agent, tmp_path / "ws")
+    root = agent.to_workspace(tmp_path / "ws")
     mutate(root)
     with pytest.raises(ValueError):
         read_workspace(root)
 
 
 def test_refuses_existing_directory_without_overwrite(agent, tmp_path):
-    write_workspace(agent, tmp_path / "ws")
+    agent.to_workspace(tmp_path / "ws")
     with pytest.raises(FileExistsError):
-        MetaAgent.to_workspace(agent, tmp_path / "ws")
+        agent.to_workspace(tmp_path / "ws")
 
 
 def test_init_workspace_seeds_journal_and_commits_without_mutating_agent(agent, tmp_path):
@@ -204,7 +211,7 @@ def _reflection(agent):
 
 def test_add_reflection_appends_to_the_workspace_journal(agent, tmp_path):
     workspace = agent.init_workspace(tmp_path / "ws")
-    assert workspace.workspace == tmp_path / "ws" and agent.workspace is None
+    assert workspace.workspace == tmp_path / "ws"
     journal = tmp_path / "ws" / "journal.jsonl"
     before = journal.read_text().splitlines()
     reflection = _reflection(workspace)
@@ -215,10 +222,10 @@ def test_add_reflection_appends_to_the_workspace_journal(agent, tmp_path):
     assert MetaAgent.from_workspace(tmp_path / "ws").journal.ratings() == [entry]
 
 
-def test_a_configuration_only_agent_appends_without_reading_the_journal(agent, tmp_path):
+def test_a_configuration_only_workspace_appends_without_reading_the_journal(agent, tmp_path):
     agent.init_workspace(tmp_path / "ws")
     light = MetaAgent.from_workspace(tmp_path / "ws", journal=False)
-    assert light.journal.entries == [] and light.workspace == tmp_path / "ws"
+    assert light.journal.entries == []
     reflection = _reflection(light)
     light.add_reflection(reflection)
     MetaAgent.from_workspace(tmp_path / "ws", journal=False).add_reflection(reflection)  # Replayed: a repeated line.
@@ -228,11 +235,10 @@ def test_a_configuration_only_agent_appends_without_reading_the_journal(agent, t
 
 def test_add_reflection_refuses_a_workspace_holding_another_configuration(agent, tmp_path):
     workspace = agent.init_workspace(tmp_path / "ws")
-    changed = workspace.model_copy(deep=True)
-    changed.context["AGENTS.md"].content += "More.\n"
-    changed._workspace = workspace.workspace
+    with (workspace.workspace / "context/AGENTS.md").open("a") as stream:
+        stream.write("More.\n")  # Edited after the workspace was read.
     with pytest.raises(ValueError, match="another configuration"):
-        changed.add_reflection(_reflection(changed))
+        workspace.add_reflection(_reflection(workspace))
 
 
 def test_journal_load_dump_and_an_unfinished_last_line(agent, tmp_path):
@@ -256,3 +262,70 @@ def test_the_byte_limit_covers_configuration_not_the_journal(agent, tmp_path):
                and f.name not in {"journal.jsonl", ".gitattributes"})
     assert (root / "journal.jsonl").stat().st_size > 100
     assert MetaAgent.from_workspace(root, max_bytes=size).journal == workspace.journal
+
+
+def test_a_workspace_repository_may_hold_its_own_files(agent, tmp_path):
+    from thearc.resources import agent_at
+
+    workspace = agent.init_workspace(tmp_path / "ws")
+    root = workspace.workspace
+    (root / "README.md").write_text("# My agent\n")
+    (root / "LICENSE").write_bytes(b"\x89PNG not text")
+    (root / "docs").mkdir()
+    (root / "docs" / "notes.md").write_text("notes\n")
+    subprocess.run(["git", "-C", str(root), "add", "-A"], check=True)
+    subprocess.run(["git", "-C", str(root), "-c", "user.name=t", "-c", "user.email=t@x", "commit", "-qm", "Docs"],
+                   check=True)
+    assert MetaAgent.from_workspace(root).revision == workspace.revision
+    assert agent_at(root, "HEAD").revision == workspace.revision
+    (root / "skills" / "retry" / "stray").mkdir(parents=True)  # Inside a configuration folder: still an error.
+    (root / "skills" / "unknown.txt").write_text("x")
+    with pytest.raises(ValueError, match="unexpected workspace file"):
+        MetaAgent.from_workspace(root)
+
+
+def test_bump_version():
+    from thearc.resources import bump_version
+
+    assert bump_version("0.9.68") == "0.9.69"
+    assert bump_version("0.9.68", "minor") == "0.10.0" and bump_version("0.9.68", "major") == "1.0.0"
+    assert bump_version("2") == "2.0.1"
+    with pytest.raises(ValueError, match="cannot bump"):
+        bump_version("1.0-beta")
+
+
+def test_release_bumps_the_version_and_adds_a_branch(agent, tmp_path):
+    workspace = agent.model_copy(update={"version": "0.9.68"}).init_workspace(tmp_path / "ws")
+    root, before = workspace.workspace, workspace
+    released = workspace.release()
+    assert released.version == "0.9.69" and released.revision.startswith("0.9.69@")
+    assert released.files().revision == before.files().revision  # Same content, new version.
+    branches = subprocess.run(["git", "-C", str(root), "branch", "--format=%(refname:short)"], check=True,
+                              capture_output=True, text=True).stdout.split()
+    assert "release/0.9.69" in branches
+    log = subprocess.run(["git", "-C", str(root), "log", "-1", "--format=%s", "release/0.9.69"], check=True,
+                         capture_output=True, text=True).stdout.strip()
+    assert log == "Release demo 0.9.69"
+    assert MetaAgent.from_workspace(root).version == "0.9.69"
+    with pytest.raises(ValueError, match="already exists"):
+        workspace.model_copy(update={"version": "0.9.69"}).release(version="0.9.69")
+
+
+def test_release_writes_ratings_and_pushes(reviewed, tmp_path):
+    workspace, _ = reviewed
+    root = workspace.workspace
+    remote = tmp_path / "remote.git"
+    subprocess.run(["git", "init", "-q", "--bare", str(remote)], check=True)
+    subprocess.run(["git", "-C", str(root), "remote", "add", "origin", str(remote)], check=True)
+    released = workspace.release(include_scales=True, push="origin")
+    branch = f"release/{released.version}"
+    ratings = subprocess.run(["git", "-C", str(root), "show", f"{branch}:RATINGS.md"], check=True,
+                             capture_output=True, text=True).stdout
+    assert ratings.startswith(f"# {released.name} {released.version}\n")
+    assert "- Limits `skills/retry/SKILL.md#L15-L17` [res_" in ratings and "] (harmful: 1)" in ratings
+    assert MetaAgent.from_workspace(root).revision == released.revision  # A view, not configuration.
+    pushed = subprocess.run(["git", "--git-dir", str(remote), "rev-parse", branch], check=True,
+                            capture_output=True, text=True).stdout.strip()
+    local = subprocess.run(["git", "-C", str(root), "rev-parse", branch], check=True,
+                           capture_output=True, text=True).stdout.strip()
+    assert pushed == local

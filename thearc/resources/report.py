@@ -2,9 +2,10 @@
 
     write_report("artifacts/graphify", "report.html", reflections="artifacts/reflections")
 
-The page embeds the evolution dataset (``thearc.resources.evolution``) and renders four views:
-ratings per section and revision, each section's history (changes with reasons and diffs, ratings
-with their reflections), branches and commits, and the configuration files at any revision.
+The page embeds the evolution dataset (``thearc.resources.evolution``) and renders its views: the
+evolution graph (candidates, merges and releases, each change with its reason and diff), one
+section's versions across a run, every change per branch, ratings per section and revision with
+each section's history, and the configuration files at any revision.
 """
 
 from __future__ import annotations

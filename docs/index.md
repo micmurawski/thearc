@@ -27,10 +27,10 @@ from thearc.reflection import Reflector
 from thearc.curation import Curator
 
 agent = MetaAgent.from_installation("codex", "path/to/project", name="graphify", version="1.0")
-agent = agent.init_workspace("artifacts/graphify")           # git-tracked, with a journal
+agent = agent.init_workspace("artifacts/graphify")      # git-tracked, with a journal
 
 reflection = Reflector("codex").handoff(PROMPT, session, agent, SCHEMA)
-agent.add_reflection(reflection)                             # ratings → journal
+agent.add_reflection(reflection)                         # ratings → journal
 
 curation = Curator("codex").curate(CURATION_PROMPT, [reflection], agent, scales=[USEFULNESS])
 print(agent.diff(curation.candidate()))

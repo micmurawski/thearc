@@ -151,3 +151,39 @@ def test_cli_best_effort_lists_transformations_on_stderr(tmp_path):
     assert best.exit_code == 0, best.output
     assert "[Historical thinking record]\\nHmm" in best.stdout
     assert "note: " in best.stderr and "has no Claude signature" in best.stderr
+
+
+def test_a_codex_copy_is_a_self_contained_rollout():
+    """Newer Codex sessions keep paginated history in Codex's own store; a copy has only the file."""
+
+    def native(number, record):
+        return event(number, "codex", kind="metadata", role=None, raw=record)
+
+    original = "11111111-1111-4111-8111-111111111111"
+    session = Session.from_events([
+        native(0, {"type": "session_meta", "payload": {"id": original, "session_id": original,
+                                                         "history_mode": "paginated", "cwd": "/w", "source": "exec"}}),
+        native(1, {"type": "event_msg", "payload": {"type": "task_started", "turn_id": "t1"}}),
+        event(2, "codex", role="user", text="Patch it"),
+        event(3, "codex", text="Done"),
+        native(4, {"type": "event_msg", "payload": {"type": "task_complete", "turn_id": "t1"}}),
+    ])
+    export = session.export("codex", strict=False)
+    header = json.loads(export.text.splitlines()[0])
+    assert header["type"] == "session_meta" and "history_mode" not in header["payload"]
+    assert header["payload"]["id"] == header["payload"]["session_id"] != original
+    assert any("history_mode dropped" in note for note in export.transformations)
+
+
+def test_codex_reasoning_keeps_the_id_its_encrypted_content_is_bound_to():
+    reasoning = {"type": "reasoning", "id": "rs_1", "summary": [], "encrypted_content": "gAAA"}
+    call = {"type": "custom_tool_call", "id": "ctc_1", "call_id": "p", "name": "apply_patch", "input": "x"}
+    session = Session.from_events([
+        event(0, "codex", role="user", text="Patch it"),
+        event(1, "codex", kind="metadata", role=None, raw={"type": "response_item", "payload": reasoning}),
+        event(2, "codex", kind="metadata", role=None, raw={"type": "response_item", "payload": call}),
+    ])
+    items = [json.loads(line)["payload"] for line in session.export("codex").text.splitlines()
+             if json.loads(line).get("type") == "response_item"]
+    assert next(i for i in items if i["type"] == "reasoning")["id"] == "rs_1"  # The API checks the pairing.
+    assert "id" not in next(i for i in items if i["type"] == "custom_tool_call")

@@ -78,11 +78,12 @@ class BaseAdapter:
 
     def event(self, source: SourceConfig, ref: SourceReference, data: dict, meta: dict, **fields: Any) -> Event:
         native_session = meta.get("session", ref.path.stem)
-        session = identity(source.id, native_session)
+        # The session's own ID, as its harness wrote it: the same in every index and wherever the logs move.
+        session = str(native_session)
         run = identity(session, meta.get("agent", "main"))
         return Event(
             id=identity(
-                source.id,
+                session,
                 str(ref.path.relative_to(source.root)),
                 ref.generation,
                 ref.byte_offset,
@@ -375,7 +376,7 @@ class CodexAdapter(BaseAdapter):
                 if isinstance(subagent, dict):
                     spawned = subagent.get("thread_spawn", {})
                     if isinstance(spawned, dict) and spawned.get("parent_thread_id"):
-                        metadata["parent_run_id"] = identity(identity(source.id, spawned["parent_thread_id"]), "main")
+                        metadata["parent_run_id"] = identity(str(spawned["parent_thread_id"]), "main")
         if data.get("type") == "response_item":
             kind = payload.get("type")
             if kind == "message":

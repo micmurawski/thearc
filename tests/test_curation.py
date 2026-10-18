@@ -93,7 +93,7 @@ def test_a_curation_commits_each_change_on_its_own_branch_and_records_it(reviewe
     assert MetaAgent.from_workspace(root).journal.changes()[-1] == entry  # …the candidate's does.
 
 
-def test_the_prompt_lists_items_by_lineage_id_and_the_clone_shows_ratings(reviewed):
+def test_the_prompt_lists_items_and_ratings_by_lineage_id(reviewed):
     workspace, reflection = reviewed
     seen = {}
 
@@ -109,7 +109,37 @@ def test_the_prompt_lists_items_by_lineage_id_and_the_clone_shows_ratings(review
            f"skill:retry#Retry > Limits" in prompt
     assert "| `skills/retry/SKILL.md#L17` | harmful | The limit looped. |" in prompt and "commit_change" in prompt
     assert "```json" not in prompt
-    assert f"## Limits <!-- {limits} · usefulness: (harmful: 1, neutral: 0, helpful: 0) -->" in seen["skill"]
+    assert f"- Limits `skills/retry/SKILL.md#L15-L17` [{limits}] (harmful: 1, neutral: 0, helpful: 0)" in prompt
+    assert f"## Limits <!-- {limits} -->" in seen["skill"]  # The files carry IDs only.
+
+
+def test_a_new_section_gets_its_marker_so_a_later_rename_is_a_move(agent, tmp_path):
+    candidate = agent.init_workspace(tmp_path / "ws").to_worktree(tmp_path / "c")
+    folder = candidate.workspace
+    skill = folder / "skills/retry/SKILL.md"
+    replies = []
+
+    def curate(change, message):
+        def script(root, tool):
+            change(root / "skills/retry/SKILL.md")
+            replies.append(tool("commit_change", message=message)["text"])
+            tool("finish", summary="Done.")
+        return Curator(runtime=ScriptedCurator(script)).curate("Fix it.", [], MetaAgent.from_workspace(folder))
+
+    curate(lambda file: file.write_text(file.read_text() + "\n## Backoff\n\nwait 2s\n"), "Add a backoff")
+    added = {t.section: i for t, i in MetaAgent.from_workspace(folder).journal.ids().items()}
+    backoff = added["Retry > Backoff"]
+    assert f"## Backoff <!-- {backoff} -->" in skill.read_text()  # Committed with the section.
+    assert f"Marked skill:retry#Retry > Backoff as {backoff}" in replies[0]
+    assert "Committed" in replies[0] and "Added skill:retry#Retry > Backoff" in replies[0]
+
+    curation = curate(lambda file: file.write_text(file.read_text().replace("## Backoff", "## Waiting")),
+                      "Rename the backoff")
+    (moved,) = curation.entries
+    assert moved.kind == "moved" and moved.target.section == "Retry > Waiting"
+    ids = {t.section: i for t, i in MetaAgent.from_workspace(folder).journal.ids().items()}
+    assert ids["Retry > Waiting"] == backoff and "Retry > Backoff" not in ids  # One history, across the rename.
+    assert "Marked" not in replies[1]
 
 
 def test_nothing_changed_is_recorded_as_kept(reviewed):

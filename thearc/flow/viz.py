@@ -51,23 +51,22 @@ def _extract_graph(start_node):
 
 
 # HTML
+# Styled like resources/report.html: viz.css holds the theme tokens and the SVG only carries classes, so the graph
+# follows the light/dark toggle too.
 
-_NW, _NH = 150, 64
-_SO = 6
-_CW, _RH = 270, 120
+_NW, _NH = 176, 64
+_SO = 5  # offset of the stacked cards behind a batch node
+_SH = 4  # hard drop shadow under a card
+_CW, _RH = 264, 112
 _PAD = 44
-_COLORS = {
-    "pending": ("#2d333b", "#444c56", "#adbac7"),
-    "running": ("#0d2d6b", "#1f6feb", "#cae8ff"),
-    "success": ("#0d3320", "#238636", "#aff5b4"),
-    "failed": ("#4b1113", "#da3633", "#ffa198"),
-    "skipped": ("#161b22", "#30363d", "#484f58"),
-}
-
-
-def _darken(h):
-    h = h.lstrip("#")
-    return "#" + "".join(f"{max(0, int(h[i : i + 2], 16) - 20):02x}" for i in range(0, 6, 2))
+_LABEL_CHARS = 21
+_DASH, _DOT = "\u2013", " \u00b7 "
+_STATUSES = ("pending", "running", "success", "failed", "skipped")
+_FONTS = (
+    '<link rel="preconnect" href="https://fonts.googleapis.com">\n'
+    '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>\n'
+    '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap">\n'
+)
 
 
 def _bezier(x1, y1, x2, y2):
@@ -80,6 +79,35 @@ def _disp(nid, state, done):
     return "skipped" if (done and st == "pending") else st
 
 
+def _kind(n):
+    if n["is_flow"]:
+        return "flow"
+    if n["is_parallel"]:
+        return "parallel batch"
+    if n["is_batch"]:
+        return "async batch" if n["is_async"] else "batch"
+    return "async" if n["is_async"] else "node"
+
+
+def _items_summary(items):
+    if not items:
+        return ""
+    ok = sum(1 for item in items if item["status"] == "success")
+    bad = sum(1 for item in items if item["status"] == "failed")
+    running = sum(1 for item in items if item["status"] == "running")
+    sub = f"{ok}/{len(items)}"
+    if running:
+        sub += f" ↻{running}"
+    if bad:
+        sub += f" ✗{bad}"
+    return sub
+
+
+def _elapsed(s):
+    st, et = s.get("start_ts"), s.get("end_ts")
+    return f"{(et or time.time()) - st:.1f}s" if st else ""
+
+
 def _layout(graph):
     ids = [n["id"] for n in graph["nodes"]]
     if not ids:
@@ -89,7 +117,7 @@ def _layout(graph):
     for e in graph["edges"]:
         out.setdefault(e["from"], []).append(e["to"])
 
-    # dfs to classify black edges
+    # dfs to classify back edges
     WHITE, GRAY, BLACK = range(3)
     color = {n: WHITE for n in ids}
     back = set()
@@ -139,15 +167,28 @@ def _layout(graph):
     return {n: (col[n], row[n]) for n in ids}, back
 
 
+def _edge_label(x, y, act, src, tgt, src_anchor, tgt_anchor, attrs, back=False):
+    cls = "edge-label back" if back else "edge-label"
+    return (
+        f'<text class="{cls}" x="{x:.0f}" y="{y:.0f}" text-anchor="middle" data-edge="1" {attrs}'
+        f'data-src="{src}" data-src-anchor="{src_anchor}" data-tgt="{tgt}" data-tgt-anchor="{tgt_anchor}">'
+        f"{_html.escape(act)}</text>"
+    )
+
+
 def _render_svg(graph, state, done, pos, back):
     nmap = {n["id"]: n for n in graph["nodes"]}
     if not pos:
-        return '<svg xmlns="http://www.w3.org/2000/svg" width="100" height="40" ></svg>'
+        return '<svg id="flow-svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 40"></svg>'
     mc = max(c for c, _ in pos.values())
     mr = max(r for _, r in pos.values())
-    n_back = sum(1 for e in graph["edges"] if (e["from"], e["to"]) in back)
-    W = _PAD + (mc + 1) * _CW + _PAD
-    H = _PAD + (mr + 1) * _RH + _PAD + (n_back * 55 if n_back else 10)
+    # A back edge between two top-row nodes loops above the graph; any other loops below it, clear of the cards.
+    back_edges = [(e["from"], e["to"]) for e in graph["edges"] if (e["from"], e["to"]) in back]
+    over = {edge for edge in back_edges if pos[edge[0]][1] == 0 and pos[edge[1]][1] == 0}
+    n_over, n_under = len(over), len(back_edges) - len(over)
+    top = _PAD + (n_over * 40 + 20 if n_over else 0)
+    W = _PAD + mc * _CW + _NW + _PAD + 2 * _SO
+    H = top + mr * _RH + _NH + _PAD + (n_under * 40 + 30 if n_under else 0)
     graph_signature = _json.dumps(
         {
             "nodes": [(node["id"], node["label"]) for node in graph["nodes"]],
@@ -159,13 +200,13 @@ def _render_svg(graph, state, done, pos, back):
 
     def xy(nid):
         c, r = pos[nid]
-        return _PAD + c * _CW, _PAD + r * _RH
+        return _PAD + c * _CW, top + r * _RH
 
     def rc(nid):  # right center of front card
         x, y = xy(nid)
         return x + _NW, y + _NH // 2
 
-    def lc(nid):  # left center of back card
+    def lc(nid):  # left center of front card
         x, y = xy(nid)
         return x, y + _NH // 2
 
@@ -173,163 +214,119 @@ def _render_svg(graph, state, done, pos, back):
         x, y = xy(nid)
         return x + _NW // 2, y + _NH
 
+    def tc(nid):  # top center of card
+        x, y = xy(nid)
+        return x + _NW // 2, y
+
     p = [
         (
             f'<svg id="flow-svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {W} {H}" '
-            f'data-storage-key="{storage_key}" '
-            f'style="width:100%;height:100%;'
-            f'background:#161b22;border-radius:8px;display:block;cursor:grab;">'
+            f'preserveAspectRatio="xMidYMid meet" data-storage-key="{storage_key}" '
+            f'data-node-w="{_NW}" data-node-h="{_NH}" role="img" aria-label="Flow graph">'
         ),
         "<defs>",
-        # Standard arrowhead
-        ('<marker id="arr" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">'),
-        '<polygon points="0 0,10 3.5,0 7" fill="#8b939e"/></marker>',
-        # smaller arrowhead for parrallel triple lines
-        ('<marker id="arr-triple" markerWidth="8" markerHeight="6" refX="7" refY="2.5" orient="auto">'),
-        '<polygon points="0 0,8 3,0 6" fill="#8b939e"/></marker>',
-        # back-edge arrowhead (dimmer)
         (
-            '<marker id="arr-bk" markerWidth="10" markerHeight="7" '
-            'refX="9" refY="3.5" orient="auto">'
-            '<polygon points="0 0,10 3.5,0 7" fill="#6e7681"/></marker>'
+            '<pattern id="dots" width="16" height="16" patternUnits="userSpaceOnUse">'
+            '<rect class="grid-dot" x="0" y="0" width="1.5" height="1.5"/></pattern>'
+        ),
+        (
+            '<marker id="arr" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">'
+            '<polygon class="arrow" points="0 0,10 3.5,0 7"/></marker>'
+        ),
+        (
+            '<marker id="arr-triple" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">'
+            '<polygon class="arrow" points="0 0,8 3,0 6"/></marker>'
+        ),
+        (
+            '<marker id="arr-bk" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">'
+            '<polygon class="arrow-bk" points="0 0,10 3.5,0 7"/></marker>'
         ),
         "</defs>",
+        '<rect x="-5000" y="-5000" width="10000" height="10000" fill="url(#dots)" id="vp-bg"/>',
         '<g id="vp">',
     ]
-    # edges / draw first, behind nodes
-    bdrop = 0
+    # edges first, so cards stay above connectors
+    n_drawn_over = n_drawn_under = 0
     for e in graph["edges"]:
         src, tgt, act = e["from"], e["to"], e.get("action", "default")
         if src not in pos or tgt not in pos:
             continue
-        is_back = (src, tgt) in back
-        if is_back:
-            bx, by = bc(src)
-            tx, ty = bc(tgt)
-            drop = _PAD + (mr + 1) * _RH + 22 + bdrop + 40
-            d = f"M {bx},{by} C {bx},{drop} {tx},{drop} {tx},{ty}"
-            p.append(
-                f'<path d="{d}" fill="none" stroke="#6e7681" stroke-width="1.5" '
-                f'stroke-dasharray="5,3" marker-end="url(#arr-bk)" '
-                f'data-edge="1" data-back="1" data-drop="{drop}" '
-                f'data-src="{src}" data-src-anchor="b" '
-                f'data-tgt="{tgt}" data-tgt-anchor="b"/>'
-            )
-            if act not in ("default", "start"):
-                p.append(
-                    f'<text x="{(bx + tx) / 2:.0f}>" y="{drop + 14}" '
-                    f'text-anchor="middle" fill="#6e7681" '
-                    f'font-size="11" font-family="monospace" '
-                    f'data-edge="1" data-back="1" data-drop="{drop}" data-label-dy="14" '
-                    f'data-src="{src}" data-src-anchor="b" '
-                    f'data-tgt="{tgt}" data-tgt-anchor="b" '
-                    f"{_html.escape(act)}</text>"
-                )
-            bdrop += 1
-        else:
-            rx, ry = rc(src)
-            lx, ly = lc(tgt)
-            is_par = nmap.get(src, {}).get("is_parallel", False)
-
-            if is_par:
-                for dy in (-10, 0, 10):
-                    d = _bezier(rx, ry + dy, lx, ly + dy)
-                    p.append(
-                        f'<path d="{d}" fill="none" '
-                        f'stroke="#8b949e" stroke-width="1.2" '
-                        f'marker-end="url(#arr-triple)" '
-                        f'data-edge="1" data-curve="1" '
-                        f'data-src="{src}" data-src-anchor="r" data-src-dy="{dy}" '
-                        f'data-tgt="{tgt}" data-tgt-anchor="l" data-tgt-dy="{dy}"/>'
-                    )
-                if act not in ("default", "start"):
-                    mx, my = (rx + lx) / 2, min(ry, ly) - 6
-                    p.append(
-                        f'<text x="{mx:.0f}" y="{my:.0f}" text-anchor="middle" '
-                        f'fill="#8b949e" font-size="11" font-family="monospace" '
-                        f'data-edge="1" data-label-dy="6" '
-                        f'data-src="{src}" data-src-anchor="r" '
-                        f'data-tgt="{tgt}" data-tgt-anchor="l" '
-                        f"{_html.escape(act)}</text>"
-                    )
+        labelled = act not in ("default", "start")
+        if (src, tgt) in back:
+            if (src, tgt) in over:
+                anchor, (bx, by), (tx, ty) = "t", tc(src), tc(tgt)
+                drop = top - 30 - n_drawn_over * 40
+                n_drawn_over += 1
             else:
-                d = _bezier(rx, ry, lx, ly)
-                p.append(
-                    f'<path d="{d}" fill="none" stroke="#8b949e" stroke-width="1.5" '
-                    f'marker-end="url(#arr)" data-edge="1" data-curve="1" '
-                    f'data-src="{src}" data-src-anchor="r" data-tgt="{tgt}" data-tgt-anchor="l"/>'
-                )
-                if act not in ("default", "start"):
-                    mx, my = (rx + lx) / 2, min(ry, ly) - 6
-                    p.append(
-                        f'<text x="{mx:.0f}" y="{my:.0f}" text-anchor="middle" fill="#8b949e" '
-                        f'font-size="11" font-family="monospace" data-edge="1" data-label-dy="6" '
-                        f'data-src="{src}" data-src-anchor="r" data-tgt="{tgt}" data-tgt-anchor="l">'
-                        f"{_html.escape(act)}</text>"
-                    )
-    # Nodes render after every edge so cards stay above connectors.
+                anchor, (bx, by), (tx, ty) = "b", bc(src), bc(tgt)
+                drop = top + mr * _RH + _NH + 30 + n_drawn_under * 40
+                n_drawn_under += 1
+            d = f"M {bx},{by} C {bx},{drop} {tx},{drop} {tx},{ty}"
+            back_attrs = f'data-back="1" data-drop="{drop}" data-label-dy="4" '
+            p.append(
+                f'<path class="edge back" d="{d}" marker-end="url(#arr-bk)" data-edge="1" {back_attrs}'
+                f'data-src="{src}" data-src-anchor="{anchor}" data-tgt="{tgt}" data-tgt-anchor="{anchor}"/>'
+            )
+            if labelled:
+                apex = 0.125 * (by + ty) + 0.75 * drop  # the curve's midpoint
+                p.append(_edge_label((bx + tx) / 2, apex - 4, act, src, tgt, anchor, anchor, back_attrs, back=True))
+            continue
+        rx, ry = rc(src)
+        lx, ly = lc(tgt)
+        is_par = nmap.get(src, {}).get("is_parallel", False)
+        for dy in (-10, 0, 10) if is_par else (0,):
+            p.append(
+                f'<path class="edge" d="{_bezier(rx, ry + dy, lx, ly + dy)}" '
+                f'marker-end="url({"#arr-triple" if is_par else "#arr"})" data-edge="1" '
+                f'data-src="{src}" data-src-anchor="r" data-src-dy="{dy}" '
+                f'data-tgt="{tgt}" data-tgt-anchor="l" data-tgt-dy="{dy}"/>'
+            )
+        if labelled:
+            dy = 16 if is_par else 6
+            p.append(_edge_label((rx + lx) / 2, (ry + ly) / 2 - dy, act, src, tgt, "r", "l", f'data-label-dy="{dy}" '))
+
     for n in graph["nodes"]:
         nid = n["id"]
         x, y = xy(nid)
         st = _disp(nid, state, done)
-        fill, stroke, tc = _COLORS.get(st, _COLORS["pending"])
-        sw = "2.5" if st == "running" else "1.5"
-        is_batch = n["is_batch"]
+        s = state.get(nid, {})
         meta = n.get("metadata")
         meta_attr = ""
         if meta:
             meta_json = _html.escape(_json.dumps(meta, indent=2), quote=True)
             meta_attr = f' data-metadata="{meta_json}"'
         p.append(
-            f'<g class="node" data-node-id="{nid}" data-x="{x}" data-y="{y}"{meta_attr} transform="translate({x},{y})">'
+            f'<g class="node {st}" data-node-id="{nid}" data-x="{x}" data-y="{y}"{meta_attr} '
+            f'transform="translate({x},{y})">'
         )
+        full = n["label"]
+        title = f"{full} — {st}" + (f": {s['error']}" if s.get("error") else "")
+        p.append(f"<title>{_html.escape(title)}</title>")
+        depth = 2 * _SO if n["is_batch"] else 0
+        p.append(f'<rect class="n-shadow" x="{_SH}" y="{_SH}" width="{_NW + depth}" height="{_NH + depth}"/>')
+        if n["is_batch"]:
+            for o in (2 * _SO, _SO):
+                p.append(f'<rect class="n-stack" x="{o}" y="{o}" width="{_NW}" height="{_NH}"/>')
+        p.append(f'<rect class="n-card" x="0" y="0" width="{_NW}" height="{_NH}"/>')
+        p.append(f'<rect class="n-bar" x="0" y="0" width="4" height="{_NH}"/>')
 
-        if is_batch:
-            for ox, oy, front in ((2 * _SO, 2 * _SO, False), (_SO, _SO, False), (0, 0, True)):
-                cf = fill if front else _darken(fill)
-                cs = stroke if front else _darken(stroke)
-                p.append(
-                    f'<rect x="{ox}" y="{oy}" width="{_NW}" height="{_NH}" rx="8" '
-                    f'fill="{cf}" stroke="{cs}" stroke-width="{sw if front else "1.5"}"/>'
-                )
-        else:
-            p.append(
-                f'<rect x="0" y="0" width="{_NW}" height="{_NH}" rx="8" '
-                f'fill="{fill}" stroke="{stroke}" stroke-width="{sw}"/>'
-            )
-
-        cx, cy = _NW // 2, _NH // 2
-        items = state.get(nid, {}).get("items", [])
-        sub = ""
-        if items:
-            ok = sum(1 for item in items if item["status"] == "success")
-            bad = sum(1 for item in items if item["status"] == "failed")
-            running = sum(1 for item in items if item["status"] == "running")
-            sub = f"{ok}/{len(items)}"
-            if running:
-                sub += f" \u21bb{running}"
-            if bad:
-                sub += f" \u2717{bad}"
-
-        label = _html.escape(n["label"])
-        label_y = cy - 9 if sub else cy
-        p.append(
-            f'<text x="{cx}" y="{label_y}" text-anchor="middle" dominant-baseline="middle" '
-            f'font-family="-apple-system,BlinkMacSystemFont,monospace" font-size="13" '
-            f'font-weight="bold" fill="{tc}">{label}</text>'
-        )
-        if sub:
-            p.append(
-                f'<text x="{cx}" y="{cy + 12}" text-anchor="middle" font-family="monospace" '
-                f'font-size="10" fill="{tc}" opacity="0.8">{sub}</text>'
-            )
+        label = full if len(full) <= _LABEL_CHARS else full[: _LABEL_CHARS - 1] + "…"
+        sub_parts = [st]
+        if items := _items_summary(s.get("items", [])):
+            sub_parts.append(items)
+        if elapsed := _elapsed(s):
+            sub_parts.append(elapsed)
+        p.append(f'<text class="n-kind" x="14" y="18">{_html.escape(_kind(n))}</text>')
+        p.append(f'<text class="n-label" x="14" y="36">{_html.escape(label)}</text>')
+        p.append(f'<text class="n-sub" x="14" y="53">{_html.escape(" · ".join(sub_parts))}</text>')
         p.append("</g>")
     p.append("</g>")
     p.append("</svg>")
     return "\n".join(p)
 
 
-_LOG_LEVELS = ("debug", "info", "warning", "error")
+_LOG_LEVELS = {"debug": "debug", "info": "info", "warning": "warning", "error": "error",
+               "critical": "error", "exception": "error"}  # fmt: skip
 
 
 def _render_logs(logs):
@@ -337,38 +334,51 @@ def _render_logs(logs):
         return '<div class="log-empty">No log entries yet.</div>'
     lines = []
     for entry in logs:
-        level = entry["level"] if entry["level"] in _LOG_LEVELS else "info"
+        level = _LOG_LEVELS.get(entry["level"], "info")
         ts = time.strftime("%H:%M:%S", time.localtime(entry["ts"]))
         node = _html.escape(entry["node"] or "")
         msg = _html.escape(entry["message"])
         node_html = f'<span class="log-node">[{node}]</span>' if node else ""
         lines.append(
             f'<div class="log-entry {level}"><span class="log-ts">{ts}</span>'
+            f'<span class="log-lvl">{_html.escape(entry["level"])}</span>'
             f'{node_html}<span class="log-msg">{msg}</span></div>'
         )
     return "".join(lines)
 
 
-def _render_html(graph, state, refresh_interval, done, logs=None):
+def _render_stats(counts, total):
+    cells = []
+    for st in ("success", "running", "failed", "pending", "skipped"):
+        if not counts[st] and not (st == "pending" and not total):
+            continue
+        cells.append(f'<div class="stat {st}"><div class="eyebrow">{st}</div><b>{counts[st]}</b></div>')
+    bar = "".join(
+        f'<i class="{st}" style="width:{100 * counts[st] / total:.2f}%"></i>'
+        for st in ("success", "failed", "running", "skipped")
+        if total and counts[st]
+    )
+    stats = f'<div class="stats" title="{total} nodes">{"".join(cells)}</div>'
+    return f'<div>{stats}<div class="scalebar">{bar}</div></div>' if bar else stats
+
+
+def _render_html(graph, state, refresh_interval, done, logs=None, title="Flow run"):
     logs = logs or []
     pos, back = _layout(graph)
     svg = _render_svg(graph, state, done, pos, back)
 
-    counts: dict = {
-        "pending": 0,
-        "running": 0,
-        "success": 0,
-        "failed": 0,
-        "skipped": 0,
-    }
-
+    counts = dict.fromkeys(_STATUSES, 0)
     for n in graph["nodes"]:
         counts[_disp(n["id"], state, done)] += 1
 
-    badges = "".join(f'<span class="badge {st}">{cnt} {st}</span>' for st, cnt in counts.items() if cnt > 0)
-
-    done_text = '<span class="done">Complete</span>' if done else ""
     meta_refresh = "" if done else f'<meta http-equiv="refresh" content="{refresh_interval}">'
+    run_state = (
+        '<span class="done">complete</span>'
+        if done
+        else f'<span class="live">live · refresh {refresh_interval}s</span>'
+    )
+    updated = time.strftime("%Y-%m-%d %H:%M:%S")
+    n_errors = sum(1 for e in logs if _LOG_LEVELS.get(e["level"]) == "error")
 
     rows = []
     for n in graph["nodes"]:
@@ -377,61 +387,79 @@ def _render_html(graph, state, refresh_interval, done, logs=None):
         st = _disp(nid, state, done)
         err = s.get("error") or ""
         items: list[dict] = s.get("items", [])
-        st2, et2 = s.get("start_ts"), s.get("end_ts")
-        elapsed = f"{(et2 or time.time()) - st2:.1f}s" if st2 else "-"
 
         item_html = ""
         if items:
             item_html = (
                 '<div class="irow">'
                 + "".join(
-                    f'<span class="ib {i["status"]}" title="{_html.escape(i.get("error") or "")}">#{i["idx"]}</span>'
+                    f'<span class="ib {i["status"]}" title="{_html.escape(i.get("error") or i["status"])}">'
+                    f"#{i['idx']}</span>"
                     for i in items
                 )
                 + "</div>"
             )
-        err_html = f'<div class="err">{_html.escape(err[:120])}</div>' if err else ""
+        err_html = f'<div class="err">{_html.escape(err[:300])}</div>' if err else ""
         rows.append(
             f'<tr class="{st}">'
-            f"<td>{_html.escape(n['label'])}</td>"
-            f'<td><span class="pill {st}">{st}</span></td>'
-            f"<td>{elapsed}</td>"
+            f'<td class="name">{_html.escape(n["label"])}<span class="kind">{_kind(n)}</span></td>'
+            f'<td><span class="chip {st}">{st}</span></td>'
+            f'<td class="num">{_elapsed(s) or "–"}</td>'
+            f'<td class="num">{_items_summary(items) or "–"}</td>'
             f"<td>{item_html}{err_html}</td>"
             "</tr>"
         )
+    legend = "".join(f'<span><i class="swatch {st}"></i>{st}</span>' for st in _STATUSES)
     log_html = _render_logs(logs)
+    esc_title = _html.escape(title)
     return (
-        "<!DOCTYPE html>\n<html>\n<head>\n"
+        '<!DOCTYPE html>\n<html lang="en">\n<head>\n'
         '<meta charset="utf-8">\n'
-        "<title>AI Pipeline Viz</title>\n"
+        '<meta name="viewport" content="width=device-width, initial-scale=1">\n'
+        f"<title>{esc_title}</title>\n"
         f"{meta_refresh}\n"
+        f"{_FONTS}"
         f"<style>\n{_CSS}\n</style>\n"
         "</head>\n<body>\n"
-        '<header class="page-header"><div><p class="eyebrow">Orchestration</p>'
-        "<h1>AI Pipeline Visualizer</h1></div>"
-        f'<div class="run-summary">{badges}{done_text}</div></header>\n'
-        '<div class="graph-box">'
+        '<div class="page">\n'
+        '<header class="top"><div>'
+        '<div class="eyebrow">Flow run</div>'
+        f"<h1>{esc_title}</h1>"
+        f'<div class="meta">{run_state}<span>{len(graph["nodes"])} nodes</span>'
+        f"<span>{len(graph['edges'])} edges</span><span>updated {updated}</span></div>"
+        "</div>"
+        '<div class="topright">'
+        '<button id="theme" type="button" class="theme-toggle" aria-pressed="false">◐ light</button>'
+        f"{_render_stats(counts, len(graph['nodes']))}"
+        "</div></header>\n"
+        '<section class="panel"><div class="head"><h2>Graph</h2>'
+        f'<div class="legend">{legend}</div></div>'
+        '<div class="body"><div class="graph-box">'
         '<div class="zoom-bar">'
-        '<button class="zoom-btn" onclick="window._flowViz&&window._flowViz.zoomIn()" title="Zoom In">+</button>'
-        '<button class="zoom-btn" onclick="window._flowViz&&window._flowViz.zoomOut()" title="Zoom Out">\u2212</button>'
-        '<button class="zoom-btn" onclick="window._flowViz&&window._flowViz.reset()" '
-        'title="Reset zoom" style="font-size:10px">\u229e</button>'
-        f"</div>{svg}</div>\n"
-        '<div class="tabs">'
-        '<button class="tab-btn" data-tab="status" '
-        "onclick=\"window._flowViz&&window._flowViz.showTab('status')\">Status</button>"
-        '<button  class="tab-btn" data-tab="logs" '
-        f"onclick=\"window._flowViz&&window._flowViz.showTab('logs')\">Logs ({len(logs)})</button>"
+        '<button class="zoom-btn" type="button" onclick="window._flowViz&&window._flowViz.zoomIn()" '
+        'title="Zoom in">+</button>'
+        '<button class="zoom-btn" type="button" onclick="window._flowViz&&window._flowViz.zoomOut()" '
+        'title="Zoom out">−</button>'
+        '<button class="zoom-btn" type="button" onclick="window._flowViz&&window._flowViz.reset()" '
+        'title="Reset view and node positions">⊞</button>'
+        f"</div>{svg}</div>"
+        '<div class="muted" style="font-size:0.74rem">drag to pan · scroll to zoom · drag a node to move it'
+        " · hover a node for its metadata</div></div></section>\n"
+        '<nav class="tabs" role="tablist">'
+        '<button role="tab" type="button" data-tab="status" aria-selected="true">Status</button>'
+        f'<button role="tab" type="button" data-tab="logs" aria-selected="false">Logs ({len(logs)}'
+        f"{f' · {n_errors} error' + ('s' if n_errors > 1 else '') if n_errors else ''})</button>"
+        "</nav>\n"
+        '<section id="tab-status" class="panel tab-panel"><div class="head"><h2>Node status</h2>'
+        '<span class="muted">One row per node, in graph order</span></div>'
+        '<div class="body"><div class="scroll"><table class="status">'
+        "<thead><tr><th>Node</th><th>Status</th><th>Elapsed</th><th>Items</th><th>Details</th></tr></thead>"
+        f"<tbody>{''.join(rows)}</tbody></table></div></div></section>\n"
+        '<section id="tab-logs" class="panel tab-panel" hidden><div class="head"><h2>Logs</h2>'
+        '<span class="muted">shared["log"].info(...) from any node</span></div>'
+        f'<div class="body"><div class="log-box">{log_html}</div></div></section>\n'
+        f"<footer>thearc.flow · {esc_title} · {updated}</footer>\n"
         "</div>\n"
-        '<div id="tab-status" class="tab-panel">'
-        "<table>\n"
-        " <thead><tr>"
-        "<th>Node</th><th>Status</th><th>Elapsed</th><th>Details</th>"
-        "</tr></thead>\n"
-        f" <tbody>{''.join(rows)}</tbody>\n"
-        "</table>\n"
-        "</div>\n"
-        f'<div id="tab-logs" class="tab-panel"><div class="log-box">{log_html}</div></div>\n'
         f"<script>{_JS}</script>\n"
         "</body>\n</html>"
     )
@@ -476,8 +504,9 @@ class FlowLogger:
 
 # flow tracker
 class FlowTracker:
-    def __init__(self, flow: Flow, output="flow_status.html", refresh_interval=2):
+    def __init__(self, flow: Flow, output="flow_status.html", refresh_interval=2, title=None):
         self._flow = flow
+        self._title = title or type(flow).__name__
         self._output = output
         self._refresh_interval = refresh_interval
         self._flow_done = False
@@ -506,6 +535,8 @@ class FlowTracker:
             return
         s["status"] = status
         s["error"] = error
+        if status == "failed":
+            self._logs.append({"ts": time.time(), "level": "error", "message": error or "failed", "node": s["label"]})
         if status == "running":
             s["start_ts"] = time.time()
         elif status in ("success", "failed", "skipped"):
@@ -525,7 +556,7 @@ class FlowTracker:
 
     def _write_html(self):
         done = self._flow_done or all(s["status"] in ("success", "failed") for s in self._state.values())
-        html = _render_html(self._graph, self._state, self._refresh_interval, done, self._logs)
+        html = _render_html(self._graph, self._state, self._refresh_interval, done, self._logs, self._title)
         with open(self._output, "w", encoding="utf-8") as f:
             f.write(html)
 

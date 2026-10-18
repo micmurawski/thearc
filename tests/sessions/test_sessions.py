@@ -96,3 +96,31 @@ def test_collects_multiple_harnesses_into_one_index(tmp_path, claude_dir, codex_
 def test_index_must_stay_outside_source(claude_dir):
     with Sessions(claude_dir / "index.sqlite") as sessions, pytest.raises(ValueError, match="outside"):
         sessions.add(claude_dir)
+
+
+def test_sessions_are_indexed_under_their_own_ids_and_copies_once(claude_dir, tmp_path):
+    copy = tmp_path / "copy-of-claude"
+    write_jsonl(copy / "project" / "11111111-aaaa.jsonl", claude_session("11111111-aaaa"))
+    with Sessions(tmp_path / "index.sqlite") as sessions:
+        first = sessions.add(claude_dir)
+        second = sessions.add(copy, sync=False)
+        report = sessions.sync(source_ids=[second.id])
+        assert any("11111111-aaaa" in w and "already indexed" in w for w in report.warnings)
+        ids = sorted(record.id for record in sessions.list())
+        assert ids == ["11111111-aaaa", "22222222-bbbb"]  # The native IDs; the copy is not indexed twice.
+        assert sessions.get("11111111-aaaa").metadata.source_id == first.id  # The first copy is kept.
+
+
+def test_an_index_with_source_scoped_ids_is_rebuilt(claude_dir, tmp_path):
+    import sqlite3
+
+    path = tmp_path / "index.sqlite"
+    with Sessions(path) as sessions:
+        sessions.add(claude_dir)
+    with sqlite3.connect(path) as connection:  # Pretend it was written before session IDs were native.
+        connection.execute("UPDATE settings SET value=1 WHERE key='schema_version'")
+        connection.execute("UPDATE events SET session_id='old-' || session_id")
+    with Sessions(path) as sessions:
+        assert sessions.list() == []  # Cleared on opening…
+        sessions.sync()
+        assert sorted(record.id for record in sessions.list()) == ["11111111-aaaa", "22222222-bbbb"]  # …and re-read.

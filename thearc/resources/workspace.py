@@ -10,14 +10,15 @@ file references, workspace paths, and git diffs agree. Next to it:
     .gitattributes              ``journal.jsonl merge=union``: branches that each appended
                                 entries merge without conflicts
 
-Top-level entries starting with ``.`` (such as ``.git``) are ignored; any other
-unknown file is an error. Resources are never executed. ``init_workspace`` also
+Top-level entries starting with ``.`` (such as ``.git``) are ignored, and so are other top-level
+files the workspace does not manage (a repository's ``README.md`` or ``LICENSE``); an unknown file
+inside a configuration folder is an error. Resources are never executed. ``init_workspace`` also
 initializes git and commits the initial configuration and journal.
 
 Configuration files carry **markers** (see ``thearc.resources.markers``): each
-target's lineage ID and, after ``agent.annotate(…)``, its rating summaries.
-Reading a workspace strips them, so the MetaAgent — and its revision, its
-installations, and the files reflectors read — never contains them.
+target's lineage ID. Reading a workspace strips them, so the MetaAgent — and its
+revision, its installations, and the files reflectors read — never contains them.
+Ratings are not in the files; ``agent_outline`` renders them (``RATINGS.md`` on release).
 """
 
 from __future__ import annotations
@@ -29,11 +30,18 @@ from typing import Any
 from pydantic import ValidationError
 
 from thearc.resources import markers
-from thearc.resources.agent import MCP, SKILL_FILE, AgentResource, ContextDocument, Extension, Hook, MetaAgent
+from thearc.resources.agent import (
+    MCP,
+    SKILL_FILE,
+    AgentResource,
+    ContextDocument,
+    Extension,
+    Hook,
+    MetaAgent,
+)
 from thearc.resources.files import HOOKS_FILE, MCP_FILE, OWNED_HOOKS_FILE
 from thearc.resources.journal import Journal, dump_journal, load_journal
 from thearc.resources.markdown import split_frontmatter
-from thearc.resources.ratings import RatingPolicy, RatingScale, count_all
 from thearc.resources.targets import ResourceTarget
 
 MANIFEST = "agent.json"
@@ -42,9 +50,9 @@ GITATTRIBUTES = ".gitattributes"
 UNION_MERGE = f"{JOURNAL_FILE} merge=union"
 SCHEMA_VERSION = 2
 CONFIG_DIRS = ("skills", "context", "rules", "workflows", "commands", "extensions")
-# Agent files whose workspace copy is JSONC, so entries can carry markers; the plain names are still read.
+# Agent files whose workspace copy is JSONC, so entries can carry markers.
 JSONC = {HOOKS_FILE: "hooks.jsonc", MCP_FILE: "mcp.jsonc", OWNED_HOOKS_FILE: "owned_hooks.jsonc"}
-_AGENT_NAME = {workspace: agent for agent, workspace in JSONC.items()} | {name: name for name in JSONC}
+_AGENT_NAME = {workspace: agent for agent, workspace in JSONC.items()}
 
 
 def _root(path: str | Path) -> Path:
@@ -54,30 +62,38 @@ def _root(path: str | Path) -> Path:
     return root
 
 
-def marker_labels(
-    agent: MetaAgent, scales: tuple[RatingScale, ...] = (), policy: RatingPolicy = count_all
-) -> dict[ResourceTarget, str]:
-    """Each target's marker text: its lineage ID, then a summary per scale it has ratings on."""
+def lineage_ids(agent: MetaAgent) -> dict[ResourceTarget, str]:
+    """Each target's lineage ID: the journal's, else its marker's, else a new one from its address."""
     ids = {**agent.identities, **agent.journal.ids()}
-    summaries = [(scale, agent.journal.summaries(scale, policy)) for scale in scales]
-    labels = {}
-    for target in agent.files().targets:
-        ratings = [f"{scale.name}: {scale.render(by_target[target])}" for scale, by_target in summaries
-                   if target in by_target]
-        labels[target] = " · ".join([ids.get(target, target.id), *ratings])
-    return labels
+    return {target: ids.get(target, target.id) for target in agent.files().targets}
 
 
-def workspace_files(
-    agent: MetaAgent,
-    *,
-    journal: bool = True,
-    scales: tuple[RatingScale, ...] = (),
-    policy: RatingPolicy = count_all,
-) -> dict[str, str]:
-    """Every workspace file as text, with markers: IDs always, rating summaries for ``scales``."""
+def mark_new_targets(path: str | Path) -> dict[ResourceTarget, str]:
+    """Write a marker for every target in the workspace at ``path`` that has none yet — a section a curator or
+    merger just wrote — holding the lineage ID the journal will record for it; returns them. Without a marker,
+    a section's ID depends on its address, so a later rename would start a new history instead of a move."""
+    root = _root(path)
+    agent = read_workspace(root)
+    ids = lineage_ids(agent)
+    taken = set(agent.identities.values())
+    new = {target: ids[target] for target in ids if target not in agent.identities and ids[target] not in taken}
+    if not new:
+        return {}
+    marked: dict[ResourceTarget, str] = {}
+    for relative, text in markers.annotate(agent.files(), {**agent.identities, **new}).items():
+        file = root / JSONC.get(relative, relative)
+        current = file.read_text(encoding="utf-8")
+        added = set(markers.strip(relative, text)[1].values()) - set(markers.strip(relative, current)[1].values())
+        if added:
+            file.write_text(text, encoding="utf-8")
+            marked.update({target: identifier for target, identifier in new.items() if identifier in added})
+    return marked
+
+
+def workspace_files(agent: MetaAgent, *, journal: bool = True) -> dict[str, str]:
+    """Every workspace file as text, with a marker holding each target's lineage ID."""
     manifest: dict[str, Any] = {"schema_version": SCHEMA_VERSION, "name": agent.name, "version": agent.version}
-    annotated = markers.annotate(agent.files(), marker_labels(agent, scales, policy))
+    annotated = markers.annotate(agent.files(), lineage_ids(agent))
     files = {
         MANIFEST: json.dumps(manifest, indent=2, ensure_ascii=False) + "\n",
         **{JSONC.get(path, path): text for path, text in annotated.items()},
@@ -132,9 +148,10 @@ def init_workspace(
     return saved
 
 
-def _is_managed(relative: str) -> bool:
+def is_managed(relative: str) -> bool:
+    """Whether a workspace path belongs to the agent: its manifest, structured files, or configuration folders."""
     top = relative.split("/", 1)[0]
-    return relative in {MANIFEST, *_AGENT_NAME} or top in CONFIG_DIRS
+    return relative in {MANIFEST, *_AGENT_NAME, *JSONC} or top in CONFIG_DIRS  # Plain JSON names: read to refuse.
 
 
 def write_workspace(
@@ -143,8 +160,6 @@ def write_workspace(
     *,
     journal: bool = True,
     overwrite: bool = False,
-    scales: tuple[RatingScale, ...] = (),
-    policy: RatingPolicy = count_all,
 ) -> Path:
     """Write the workspace.
 
@@ -155,7 +170,7 @@ def write_workspace(
     neither writes nor touches the journal.
     """
     root = _root(path)
-    files = workspace_files(agent, journal=journal, scales=scales, policy=policy)
+    files = workspace_files(agent, journal=journal)
     if root.exists() and not overwrite:
         raise FileExistsError(f"workspace already exists: {root}")
     journal_path = root / JOURNAL_FILE
@@ -168,7 +183,7 @@ def write_workspace(
     if overwrite and root.exists():
         for item in sorted(root.rglob("*"), reverse=True):
             relative = item.relative_to(root).as_posix()
-            if relative.startswith(".") or not _is_managed(relative):
+            if relative.startswith(".") or not is_managed(relative):
                 continue
             if item.is_symlink() or item.is_file():
                 if relative not in files:
@@ -196,12 +211,23 @@ def _ensure_union_merge(path: Path) -> None:
 def read_workspace(
     path: str | Path, *, journal: bool = True, max_bytes: int = 10_000_000, max_files: int = 10_000
 ) -> MetaAgent:
-    """Read a workspace written by ``write_workspace`` or edited by hand; the agent remembers it as its workspace.
+    """Read a workspace written by ``write_workspace`` or edited by hand; the agent remembers it as its workspace,
+    and the lineage IDs its markers gave (``agent.identities``).
 
     The limits apply to the configuration. The journal is read separately and may be any size;
     ``journal=False`` leaves it unread (the agent's journal is then empty, and ``add_reflection``
     only appends to the file).
     """
+    agent, identities = _read(path, journal=journal, max_bytes=max_bytes, max_files=max_files)
+    agent._workspace = _root(path)
+    agent._identities = identities
+    return agent
+
+
+def _read(
+    path: str | Path, *, journal: bool = True, max_bytes: int = 10_000_000, max_files: int = 10_000
+) -> tuple[MetaAgent, dict[ResourceTarget, str]]:
+    """The agent in a workspace and the lineage IDs its markers give."""
     if max_bytes < 1 or max_files < 1:
         raise ValueError("workspace limits must be positive")
     root = _root(path)
@@ -210,8 +236,8 @@ def read_workspace(
     texts: dict[str, str] = {}
     remaining = max_bytes
     for item in sorted(root.iterdir()):
-        if item.name.startswith(".") or item.name == JOURNAL_FILE:
-            continue
+        if item.name.startswith(".") or item.name == JOURNAL_FILE or not is_managed(item.name):
+            continue  # The repository's own files (README, LICENSE, …) are not the agent's.
         for node in [item, *sorted(item.rglob("*"))] if item.is_dir() else [item]:
             if node.is_symlink() or not (node.is_file() or node.is_dir()):
                 raise ValueError(f"workspace contains a symlink or special file: {node}")
@@ -232,12 +258,11 @@ def read_workspace(
     else:
         recorded = Journal()
     try:
-        agent = parse_workspace(texts)
+        agent, identities = parse_workspace(texts)
     except (ValidationError, json.JSONDecodeError, KeyError, TypeError) as error:
         raise ValueError(f"invalid workspace: {error}") from error
     agent.journal = recorded
-    agent._workspace = root
-    return agent
+    return agent, identities
 
 
 def _object(text: str, path: str) -> dict[str, Any]:
@@ -247,21 +272,21 @@ def _object(text: str, path: str) -> dict[str, Any]:
     return data
 
 
-def parse_workspace(texts: dict[str, str]) -> MetaAgent:
-    """Build a MetaAgent from workspace files given as ``{relative path: text}`` (dot-files excluded)."""
+def parse_workspace(texts: dict[str, str]) -> tuple[MetaAgent, dict[ResourceTarget, str]]:
+    """Build a MetaAgent from workspace files given as ``{relative path: text}`` (dot-files excluded), with the
+    lineage IDs its markers give."""
     texts = dict(texts)
     if MANIFEST not in texts:
         raise ValueError(f"missing {MANIFEST}")
     manifest = _object(texts.pop(MANIFEST), MANIFEST)
-    required = {"schema_version", "name", "version"}  # ``owns_hooks`` here is the layout before owned_hooks.jsonc.
-    if not required <= set(manifest) <= required | {"owns_hooks"} or manifest["schema_version"] != SCHEMA_VERSION:
+    if set(manifest) != {"schema_version", "name", "version"} or manifest["schema_version"] != SCHEMA_VERSION:
         raise ValueError(f"unsupported {MANIFEST}")
     found: dict[str, dict[int, str]] = {}
+    for plain, workspace_name in JSONC.items():
+        if plain in texts:
+            raise ValueError(f"{plain}: a workspace keeps it as {workspace_name}")
     for workspace_name in [name for name in texts if name in _AGENT_NAME]:
-        name = _AGENT_NAME[workspace_name]
-        if name in texts and name != workspace_name:
-            raise ValueError(f"both {workspace_name} and {name} exist")
-        texts[name] = texts.pop(workspace_name)
+        texts[_AGENT_NAME[workspace_name]] = texts.pop(workspace_name)
     for relative in list(texts):
         if relative != JOURNAL_FILE:
             texts[relative], found[relative] = markers.strip(relative, texts[relative])
@@ -269,7 +294,7 @@ def parse_workspace(texts: dict[str, str]) -> MetaAgent:
     context, resources, extensions, entries = [], [], [], []
     hooks = [Hook(name=name, **fields) for name, fields in _object(texts.pop(HOOKS_FILE, "{}"), HOOKS_FILE).items()]
     mcps = [MCP(name=name, **fields) for name, fields in _object(texts.pop(MCP_FILE, "{}"), MCP_FILE).items()]
-    owned = json.loads(texts.pop(OWNED_HOOKS_FILE, "null")) or manifest.get("owns_hooks", [])
+    owned = json.loads(texts.pop(OWNED_HOOKS_FILE, "[]"))
     for relative, text in sorted(texts.items()):
         top, _, rest = relative.partition("/")
         if top == "skills" and "/" in rest:
@@ -297,8 +322,9 @@ def parse_workspace(texts: dict[str, str]) -> MetaAgent:
             extensions.append(Extension.model_validate({"harness": harness, "path": path, "content": text}))
         elif relative == JOURNAL_FILE:
             entries = load_journal(text)
-        else:
+        elif "/" in relative and top in CONFIG_DIRS:
             raise ValueError(f"unexpected workspace file: {relative}")
+        # Anything else (a README, a LICENSE, a docs folder) belongs to the repository, not the agent.
     for name, skill in skills.items():
         if not skill.pop("has_instructions", False):
             raise ValueError(f"skills/{name} has no {SKILL_FILE}")
@@ -316,5 +342,5 @@ def parse_workspace(texts: dict[str, str]) -> MetaAgent:
             "journal": Journal(entries=entries),
         }
     )
-    agent._identities = markers.identities(agent.files(), found)
-    return agent
+    return agent, markers.identities(agent.files(), found)
+

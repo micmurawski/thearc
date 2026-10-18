@@ -8,12 +8,15 @@ that ran Graphify: a Codex reflector reflects on each session with the Lesson sc
 curator acts on that pipeline's reflections, moving the worktree forward to its candidate. A Codex
 merger then combines the candidates section by section into a merged candidate, checked out in a
 worktree of its own. Every run gets its own directory under artifacts/live-reflection/runs/ and its
-own branch names, so runs never collide. The run ends with the diff from the base to the merged
-configuration.
+own branch names, so runs never collide. The run prints the diff from the base to the merged
+configuration, then releases it: the version gets a patch bump (0.9.68 -> 0.9.69) and a new branch
+release/<version> appears in the workspace repository, with RATINGS.md listing every section's ratings.
+With --push [REMOTE] (default origin) the release branch is pushed too.
 """
 
 from __future__ import annotations
 
+import argparse
 import subprocess
 import sys
 from datetime import UTC, datetime
@@ -31,7 +34,7 @@ from thearc.sessions import Sessions
 from thearc.sessions.scanner import ShellCommand
 
 PIPELINES = 2  # Parallel pipelines, each its own worktree and candidate.
-SESSIONS_PER_PIPELINE = 2  # Sessions each pipeline reflects on before curating.
+SESSIONS_PER_PIPELINE = 3  # Sessions each pipeline reflects on before curating.
 
 MERGE_PROMPT = """Merge the candidates into the best Graphify configuration. Each pipeline reflected on different
 sessions, so a change one candidate makes and another does not is usually new evidence, not a disagreement.
@@ -55,10 +58,10 @@ def pipeline(name: str, candidate: MetaAgent, session_ids: list[str], sessions: 
         print(f"[{name}]   {commit.sha[:10]} {commit.message.splitlines()[0]}")
 
 
-def run() -> int:
+def run(push: str | None = None) -> int:
     out = REPOSITORY / "artifacts" / "live-reflection"
     out.mkdir(parents=True, exist_ok=True)
-    workspace = graphify_agent(out)
+    agent = graphify_agent(out)
     stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
     run_dir = out / "runs" / stamp
     (run_dir / "reflections").mkdir(parents=True)
@@ -77,7 +80,7 @@ def run() -> int:
         candidates = []
         for index in range(PIPELINES):
             name = f"p{index + 1}"
-            candidate = workspace.to_worktree(run_dir / name, branch=f"candidate/{stamp}/{name}")
+            candidate = agent.to_worktree(run_dir / name, branch=f"candidate/{stamp}/{name}")
             share = selected[index * SESSIONS_PER_PIPELINE:(index + 1) * SESSIONS_PER_PIPELINE]
             pipeline(name, candidate, share, sessions, run_dir)
             candidates.append(candidate)
@@ -90,18 +93,29 @@ def run() -> int:
         for changed in commit.changed:
             print(f"      {changed}")
     print(f"Summary: {merge.summary}")
-    base = agent_at(workspace.checked_workspace("diff"), merge.base)
+    base = agent_at(agent.checked_workspace("diff"), merge.base)
     assert base is not None
     diff = base.diff(merge.agent)  # Clean configurations: content changes only, no markers.
     print(f"\nDiff of the configuration, {merge.base[:10]} -> {merge.branch}:\n")
     print(diff or "(no changes)")
     print(f"Merged worktree: {merge.agent.workspace}")
+
+    # Versioning: the merged candidate becomes the next version, on a branch of its own.
+    released = merge.agent.release(part="patch", include_scales=True, push=push)
+    print(f"\nReleased {released.name} {merge.agent.version} -> {released.version} "
+          f"on branch release/{released.version} ({released.revision})")
+    if push:
+        print(f"Pushed release/{released.version} to {push}")
     return 0
 
 
 def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--push", nargs="?", const="origin", metavar="REMOTE",
+                        help="Push the release branch to REMOTE (default origin) after releasing.")
+    args = parser.parse_args(argv)
     try:
-        return run()
+        return run(push=args.push)
     except (ValueError, OSError, GitError, subprocess.CalledProcessError) as exc:
         print(f"live_ace_with_merge: {exc}", file=sys.stderr)
         raise

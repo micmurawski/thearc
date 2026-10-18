@@ -20,7 +20,7 @@ def archive(tmp_path):
     write(
         pi / "session.jsonl",
         [
-            {"type": "session", "version": 3, "id": "same-id", "cwd": "/repo"},
+            {"type": "session", "version": 3, "id": "pi-session", "cwd": "/repo"},
             {
                 "type": "message",
                 "id": "u",
@@ -62,19 +62,19 @@ def archive(tmp_path):
     )
     claude = tmp_path / "claude"
     write(
-        claude / "project" / "same-id.jsonl",
+        claude / "project" / "claude-session.jsonl",
         [
             {
                 "type": "user",
                 "uuid": "u",
-                "sessionId": "same-id",
+                "sessionId": "claude-session",
                 "cwd": "/repo",
                 "message": {"role": "user", "content": "Fix permission denied"},
             },
             {
                 "type": "assistant",
                 "uuid": "a",
-                "sessionId": "same-id",
+                "sessionId": "claude-session",
                 "message": {
                     "role": "assistant",
                     "content": [
@@ -85,11 +85,11 @@ def archive(tmp_path):
         ],
     )
     write(
-        claude / "project" / "same-id" / "subagents" / "agent-child.jsonl",
+        claude / "project" / "claude-session" / "subagents" / "agent-child.jsonl",
         [
             {
                 "type": "assistant",
-                "sessionId": "same-id",
+                "sessionId": "claude-session",
                 "message": {
                     "role": "assistant",
                     "content": [
@@ -99,7 +99,7 @@ def archive(tmp_path):
             },
             {
                 "type": "user",
-                "sessionId": "same-id",
+                "sessionId": "claude-session",
                 "message": {
                     "role": "user",
                     "content": [
@@ -118,7 +118,7 @@ def archive(tmp_path):
     write(
         codex / "sessions" / "rollout-test.jsonl",
         [
-            {"type": "session_meta", "payload": {"id": "same-id", "cwd": "/repo"}},
+            {"type": "session_meta", "payload": {"id": "codex-session", "cwd": "/repo"}},
             {
                 "type": "response_item",
                 "payload": {
@@ -182,7 +182,8 @@ def test_call_result_join_and_delegation(archive):
 def test_session_and_run_projections_are_provider_neutral(archive):
     sessions = archive.list_sessions()
     assert {session.harness for session in sessions} == {"pi", "claude", "codex"}
-    assert {session.native_id for session in sessions} == {"same-id"}
+    assert {session.native_id for session in sessions} == {"pi-session", "claude-session", "codex-session"}
+    assert all(session.id == session.native_id for session in sessions)  # Indexed under their own IDs.
     for session in sessions:
         assert session.event_count > 0
         assert session.run_count >= 1

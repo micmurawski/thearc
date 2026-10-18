@@ -25,13 +25,19 @@ def write(blocks: list[Block], conversion: Conversion, identity: Identity) -> tu
         output, turns = _with_turns(events, output)
         notes.append(f"{turns} Codex turn(s) marked, one per trajectory, so Codex can list and fork them.")
     headers = [i for i, record in enumerate(output) if record.get("type") == "session_meta"]
+    paginated = False
     for i in headers:  # A copy under a new ID must not claim the original's identity.
-        payload = output[i].get("payload", {})
+        payload = dict(output[i].get("payload", {}))
+        # "paginated" history lives in Codex's own store, not in the rollout; a copy is only the rollout,
+        # so with the flag kept Codex would find no turns in it.
+        paginated = payload.pop("history_mode", None) == "paginated" or paginated
         if payload.get("id") != identity.session_id:
-            renamed = {**payload, "id": identity.session_id}
+            payload["id"] = identity.session_id
             if "session_id" in payload:
-                renamed["session_id"] = identity.session_id
-            output[i] = {**output[i], "payload": renamed}
+                payload["session_id"] = identity.session_id
+        output[i] = {**output[i], "payload": payload}
+    if paginated:
+        notes.append("Codex history_mode dropped: the copy is a self-contained rollout, read from the file.")
     if not headers:
         output.insert(
             0,

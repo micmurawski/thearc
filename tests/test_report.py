@@ -43,7 +43,7 @@ def test_the_dataset_follows_sections_across_branches_and_renames(reviewed, tmp_
     first, *later = data["revisions"]
     assert data["cells"][limits["id"]][first["revision"]]["ratings"] == {"usefulness": {"harmful": 1}}
     assert later and later[-1]["spans"][limits["id"]][0] == "skills/retry/SKILL.md"
-    assert "max 1" in later[-1]["files"]["skills/retry/SKILL.md"]
+    assert "max 1" in data["files"][later[-1]["files"]["skills/retry/SKILL.md"]]  # Texts are stored once, by hash.
 
 
 def test_the_report_embeds_the_dataset_safely(reviewed, tmp_path):
@@ -69,3 +69,10 @@ def test_the_report_command(reviewed, tmp_path):
     page = (tmp_path / "r.html").read_text()
     data = json.loads(re.search(r'id="thearc-data">(.*?)</script>', page, re.DOTALL)[1])
     assert reflection.id in data["reflections"] and "## Ratings" not in data["reflections"][reflection.id]["markdown"]
+
+
+def test_hidden_views_stay_hidden(reviewed):
+    # Views set their own display (the ratings view is a grid); the hidden attribute must still win.
+    page = render_report(evolution(reviewed[0].workspace))
+    assert "[hidden] { display: none !important; }" in page
+    assert '<section id="view-sections" class="bench" hidden>' in page

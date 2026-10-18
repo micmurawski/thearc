@@ -1,151 +1,221 @@
 <title>__THEARC_TITLE__</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap">
 <style>
-/* Layout: a review desk — summary strip, then the section × revision grid as the working surface,
-   with the selected section's history beside it (stacked on narrow screens). */
+/* A terminal-flavoured review desk (dev-tool / neo-brutalist): dark-first, monospace throughout,
+   square edges, hard 1px borders and offset shadows, high contrast; greys for emphasis, colour only for data. */
 :root {
-  --bg: #f6f7f9;
-  --surface: #ffffff;
-  --sunken: #eef0f4;
-  --fg: #1d2330;
-  --muted: #5d6576;
-  --line: #d9dde5;
-  --accent: #3255c8;
-  --accent-soft: #e3e9fb;
-  --bad: #c2412d;
-  --bad-soft: #f7ddd7;
-  --mid: #8b93a3;
-  --good: #2f8a4f;
-  --good-soft: #d9efe0;
-  --add-bg: #e3f4e8;
-  --del-bg: #fbe4df;
-  --font-ui: "IBM Plex Sans", "Segoe UI", system-ui, -apple-system, sans-serif;
-  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
-  --radius: 6px;
+  --bg: #0a0a0a;
+  --surface: #141414;
+  --sunken: #1e1e1e;
+  --fg: #eeeeee;
+  --muted: #9a9a9a;
+  --line: #3a3a3a;
+  --edge: #5a5a5a;
+  --shadow: #262626;
+  --accent: #d4d4d4;
+  --accent-ink: #0a0a0a;
+  --accent-soft: #2a2a2a;
+  --bad: #e06c75;
+  --bad-soft: #3a1a1e;
+  --mid: #8a8a8a;
+  --good: #7fd88f;
+  --good-soft: #17301d;
+  --add-bg: #13301b;
+  --del-bg: #3a161a;
+  --c0: #5c9cf5; --c1: #e8d37a; --c2: #56b6c2; --c3: #e06c9f;
+  --c0-soft: #14243d; --c1-soft: #302b10; --c2-soft: #102e33; --c3-soft: #3a1529;
+  --merge: #9d7cd8; --merge-soft: #261d3a; --release: #7fd88f; --release-soft: #17301d;
+  --dead: #4d4d4d; --trunk: #9a9a9a; --warn-bg: #1e1e1e; --warn-line: #bdbdbd; --warn-fg: #eeeeee;
+  --font-ui: "JetBrains Mono", "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  --font-mono: var(--font-ui);
+  --radius: 0;
+  color-scheme: dark;
 }
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --bg: #12151c; --surface: #1a1e27; --sunken: #222733; --fg: #e4e7ee; --muted: #9aa2b3; --line: #2f3542;
-    --accent: #8ea6ff; --accent-soft: #263257; --bad: #ef7f6a; --bad-soft: #4a2620; --mid: #7d8597;
-    --good: #6cc98d; --good-soft: #1f3f2b; --add-bg: #1d3a26; --del-bg: #44221c; color-scheme: dark;
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --bg: #f4f4f0; --surface: #ffffff; --sunken: #e9e9e4; --fg: #0a0a0a; --muted: #4f4f4f; --line: #bdbdb6;
+    --edge: #0a0a0a; --shadow: #0a0a0a; --accent: #262626; --accent-ink: #ffffff; --accent-soft: #e2e2de;
+    --bad: #b3261e; --bad-soft: #f8d7d5; --mid: #6e6e6e; --good: #1f7a33; --good-soft: #d3eed9; --add-bg: #d3eed9; --del-bg: #f8d7d5;
+    --c0: #1f5fc7; --c1: #6b6200; --c2: #0d7480; --c3: #a8326d;
+    --c0-soft: #dbe7fb; --c1-soft: #efeccb; --c2-soft: #d2eef1; --c3-soft: #f5d9e7;
+    --merge: #6a3fc0; --merge-soft: #e6dcf8; --release: #1f7a33; --release-soft: #d3eed9;
+    --dead: #a6a6a0; --trunk: #5a5a5a; --warn-bg: #ececea; --warn-line: #0a0a0a; --warn-fg: #0a0a0a; color-scheme: light;
   }
 }
-:root[data-theme="dark"] {
-  --bg: #12151c; --surface: #1a1e27; --sunken: #222733; --fg: #e4e7ee; --muted: #9aa2b3; --line: #2f3542;
-  --accent: #8ea6ff; --accent-soft: #263257; --bad: #ef7f6a; --bad-soft: #4a2620; --mid: #7d8597;
-  --good: #6cc98d; --good-soft: #1f3f2b; --add-bg: #1d3a26; --del-bg: #44221c; color-scheme: dark;
+:root[data-theme="light"] {
+  --bg: #f4f4f0; --surface: #ffffff; --sunken: #e9e9e4; --fg: #0a0a0a; --muted: #4f4f4f; --line: #bdbdb6;
+  --edge: #0a0a0a; --shadow: #0a0a0a; --accent: #262626; --accent-ink: #ffffff; --accent-soft: #e2e2de;
+  --bad: #b3261e; --bad-soft: #f8d7d5; --mid: #6e6e6e; --good: #1f7a33; --good-soft: #d3eed9; --add-bg: #d3eed9; --del-bg: #f8d7d5;
+  --c0: #1f5fc7; --c1: #6b6200; --c2: #0d7480; --c3: #a8326d;
+  --c0-soft: #dbe7fb; --c1-soft: #efeccb; --c2-soft: #d2eef1; --c3-soft: #f5d9e7;
+  --merge: #6a3fc0; --merge-soft: #e6dcf8; --release: #1f7a33; --release-soft: #d3eed9;
+  --dead: #a6a6a0; --trunk: #5a5a5a; --warn-bg: #ececea; --warn-line: #0a0a0a; --warn-fg: #0a0a0a; color-scheme: light;
 }
 * { box-sizing: border-box; }
-body { background: var(--bg); color: var(--fg); font: 14px/1.5 var(--font-ui); margin: 0; }
-.page { padding-inline: 16px; padding-block: 20px 48px; max-width: 1480px; margin: 0 auto; display: grid; gap: 20px; }
-h1, h2, h3 { margin: 0; text-wrap: balance; font-weight: 600; }
-h1 { font-size: 1.45rem; letter-spacing: -0.01em; }
-h2 { font-size: 1rem; }
-h3 { font-size: 0.95rem; }
-code, .mono { font-family: var(--font-mono); font-size: 0.85em; }
+[hidden] { display: none !important; }  /* A view's own display (grid, flex) must not override hidden. */
+body { background: var(--bg); color: var(--fg); font: 13px/1.55 var(--font-ui); margin: 0; -webkit-font-smoothing: antialiased; }
+::selection { background: var(--accent); color: var(--accent-ink); }
+.page { padding-inline: 16px; padding-block: 20px 48px; max-width: 1520px; margin: 0 auto; display: grid; gap: 18px; }
+h1, h2, h3 { margin: 0; text-wrap: balance; font-weight: 700; }
+h1 { font-size: 1.35rem; letter-spacing: -0.02em; }
+h1::before { content: "> "; color: var(--accent); }
+h2 { font-size: 0.82rem; text-transform: uppercase; letter-spacing: 0.08em; }
+h3 { font-size: 0.85rem; }
+code, .mono { font-family: var(--font-mono); font-size: 0.95em; }
 .muted { color: var(--muted); }
-.eyebrow { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); font-weight: 500; }
-button { font: inherit; color: inherit; }
-:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.eyebrow { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.12em; color: var(--accent); font-weight: 700; }
+button { font: inherit; color: inherit; border-radius: 0; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 /* Header and summary */
-header.top { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 12px 24px; }
-header.top .meta { display: flex; flex-wrap: wrap; gap: 6px 16px; color: var(--muted); font-size: 0.85rem; }
-.stats { display: flex; flex-wrap: wrap; gap: 8px; }
-.stat { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 8px 12px; min-width: 7.5rem; }
-.stat b { display: block; font-size: 1.15rem; font-variant-numeric: tabular-nums; }
-.scalebar { display: flex; height: 6px; border-radius: 3px; overflow: hidden; margin-top: 6px; background: var(--sunken); }
+header.top { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 12px 24px; border-bottom: 1px solid var(--edge); padding-bottom: 14px; }
+header.top .meta { display: flex; flex-wrap: wrap; gap: 4px 0; color: var(--muted); font-size: 0.8rem; }
+header.top .meta span + span::before { content: " │ "; color: var(--line); white-space: pre; }
+.stats { display: flex; flex-wrap: wrap; gap: 0; border: 1px solid var(--edge); box-shadow: 3px 3px 0 var(--shadow); }
+.stat { background: var(--surface); padding: 8px 14px; min-width: 8rem; border-right: 1px solid var(--line); }
+.stat:last-child { border-right: 0; }
+.stat .eyebrow { color: var(--muted); }
+.stat b { display: block; font-size: 1.25rem; font-variant-numeric: tabular-nums; color: var(--fg); }
+.scalebar { display: flex; height: 4px; overflow: hidden; margin-top: 6px; background: var(--sunken); }
 
-/* Tabs */
-nav.tabs { display: flex; flex-wrap: wrap; gap: 4px; border-bottom: 1px solid var(--line); }
-nav.tabs button { background: none; border: 0; border-bottom: 2px solid transparent; padding: 8px 12px; cursor: pointer; color: var(--muted); font-weight: 500; }
-nav.tabs button[aria-selected="true"] { color: var(--fg); border-bottom-color: var(--accent); }
+.topright { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; }
+.theme-toggle { min-height: 36px; padding: 0 12px; border: 1px solid var(--edge); background: var(--surface); color: var(--fg); cursor: pointer; box-shadow: 3px 3px 0 var(--shadow); }
+.theme-toggle:hover { background: var(--accent); color: var(--accent-ink); }
 
-/* Workbench: grid + detail */
-.bench { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); gap: 20px; align-items: start; }
+/* Tabs: terminal-style, the selected one inverted */
+nav.tabs { display: flex; flex-wrap: wrap; gap: 0; border: 1px solid var(--edge); width: fit-content; max-width: 100%; }
+nav.tabs button { background: var(--surface); border: 0; border-right: 1px solid var(--line); padding: 8px 14px; cursor: pointer; color: var(--muted); font-weight: 500; min-height: 36px; }
+nav.tabs button:last-child { border-right: 0; }
+nav.tabs button:hover { color: var(--fg); background: var(--sunken); }
+nav.tabs button[aria-selected="true"] { color: var(--accent-ink); background: var(--accent); font-weight: 700; }
+
+/* Panels */
+.bench { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); gap: 18px; align-items: start; }
 @media (max-width: 980px) { .bench { grid-template-columns: minmax(0, 1fr); } }
-.panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); min-width: 0; }
-.panel > .head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; padding: 10px 14px; border-bottom: 1px solid var(--line); }
-.panel > .body { padding: 12px 14px; display: grid; gap: 12px; min-width: 0; }
-.controls { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; font-size: 0.85rem; }
+.panel { background: var(--surface); border: 1px solid var(--edge); box-shadow: 4px 4px 0 var(--shadow); min-width: 0; }
+.panel > .head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; padding: 8px 12px; border-bottom: 1px solid var(--edge); background: var(--sunken); }
+.panel > .head h2::before { content: "■ "; color: var(--accent); }
+.panel > .body { padding: 12px; display: grid; gap: 12px; min-width: 0; }
+.controls { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; font-size: 0.78rem; }
 .controls label { display: inline-flex; gap: 6px; align-items: center; color: var(--muted); }
-select { font: inherit; background: var(--surface); color: var(--fg); border: 1px solid var(--line); border-radius: 4px; padding: 3px 6px; max-width: 100%; }
+input[type="checkbox"] { accent-color: var(--accent); }
+select { font: inherit; background: var(--bg); color: var(--fg); border: 1px solid var(--edge); border-radius: 0; padding: 3px 6px; max-width: 100%; }
 
-/* Heatmap */
+/* Ratings grid */
 .scroll { overflow-x: auto; }
-table.grid { border-collapse: separate; border-spacing: 0; font-size: 0.82rem; width: max-content; min-width: 100%; }
+table.grid { border-collapse: separate; border-spacing: 0; font-size: 0.78rem; width: max-content; min-width: 100%; }
 table.grid th, table.grid td { padding: 0; }
-table.grid thead th { position: sticky; top: 0; background: var(--surface); font-weight: 500; color: var(--muted); padding: 6px 4px; text-align: center; vertical-align: bottom; border-bottom: 1px solid var(--line); }
+table.grid thead th { position: sticky; top: 0; background: var(--surface); font-weight: 500; color: var(--muted); padding: 6px 4px; text-align: center; vertical-align: bottom; border-bottom: 1px solid var(--edge); }
 table.grid thead th.name { text-align: left; padding-left: 10px; }
-.colhead { display: grid; gap: 2px; justify-items: center; cursor: pointer; border-radius: 4px; padding: 2px 4px; }
-.colhead:hover, .colhead.on { background: var(--accent-soft); color: var(--fg); }
-.colhead .v { font-family: var(--font-mono); font-size: 0.72rem; }
-.colhead .branch { font-size: 0.68rem; max-width: 7rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-td.name { position: sticky; left: 0; background: var(--surface); z-index: 1; border-right: 1px solid var(--line); max-width: 22rem; }
+.colhead { display: grid; gap: 2px; justify-items: center; cursor: pointer; padding: 2px 4px; }
+.colhead:hover, .colhead.on { background: var(--accent); color: var(--accent-ink); }
+.colhead .v { font-size: 0.7rem; }
+.colhead .branch { font-size: 0.66rem; max-width: 7rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+td.name { position: sticky; left: 0; background: var(--surface); z-index: 1; border-right: 1px solid var(--edge); max-width: 22rem; }
 td.name button { display: flex; gap: 6px; align-items: baseline; width: 100%; text-align: left; background: none; border: 0; padding: 4px 10px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-td.name .kind { font-size: 0.68rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+td.name .kind { font-size: 0.66rem; color: var(--accent); text-transform: uppercase; letter-spacing: 0.08em; }
 td.name .gone { text-decoration: line-through; color: var(--muted); }
-tr.sel td.name button { color: var(--accent); font-weight: 600; }
+tr.sel td.name button { color: var(--accent); font-weight: 700; }
 tr:hover td { background-image: linear-gradient(var(--sunken), var(--sunken)); }
-td.cell { text-align: center; padding: 2px; }
-td.cell button { width: 3.4rem; height: 1.85rem; border: 1px solid transparent; border-radius: 4px; background: transparent; cursor: pointer; position: relative; font-family: var(--font-mono); font-size: 0.72rem; font-variant-numeric: tabular-nums; }
-td.cell button.rated { color: var(--fg); }
-td.cell button.sel { border-color: var(--accent); }
-td.cell .ev { position: absolute; top: 0; right: 2px; font-size: 0.7rem; line-height: 1; color: var(--accent); font-family: var(--font-ui); font-weight: 600; }
-.legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 0.78rem; color: var(--muted); }
+td.cell { text-align: center; padding: 1px; }
+td.cell button { width: 3.4rem; height: 1.85rem; border: 1px solid transparent; background: transparent; cursor: pointer; position: relative; font-size: 0.72rem; font-variant-numeric: tabular-nums; }
+td.cell button.rated { color: var(--fg); font-weight: 700; }
+td.cell button.sel { border: 2px solid var(--accent); }
+td.cell .ev { position: absolute; top: 0; right: 2px; font-size: 0.7rem; line-height: 1; color: var(--accent); font-weight: 700; }
+td.cell button.changed { background: var(--accent-soft); border-color: var(--accent); }
+td.cell button.changed .ev { position: static; font-size: 0.85rem; }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 0.74rem; color: var(--muted); }
 .legend span { display: inline-flex; align-items: center; gap: 5px; }
-.swatch { width: 0.9rem; height: 0.9rem; border-radius: 3px; display: inline-block; border: 1px solid var(--line); }
+.swatch { width: 0.9rem; height: 0.9rem; display: inline-block; border: 1px solid var(--edge); }
 
 /* Section detail */
 .detail-empty { color: var(--muted); padding: 24px 14px; }
+.detail-empty::before { content: "// "; color: var(--accent); }
 .ident { display: grid; gap: 4px; }
-.ident .addr { font-family: var(--font-mono); font-size: 0.9rem; word-break: break-word; }
+.ident .addr { font-size: 0.86rem; word-break: break-word; color: var(--accent); }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
-.chip { font-size: 0.72rem; border: 1px solid var(--line); border-radius: 999px; padding: 1px 8px; color: var(--muted); background: var(--sunken); }
-.chip.bad { color: var(--bad); background: var(--bad-soft); border-color: transparent; }
-.chip.good { color: var(--good); background: var(--good-soft); border-color: transparent; }
-.chip.kind { color: var(--accent); background: var(--accent-soft); border-color: transparent; }
-.spark { width: 100%; height: 72px; display: block; }
+.chip { font-size: 0.7rem; border: 1px solid var(--line); padding: 0 6px; color: var(--muted); background: var(--bg); }
+.chip.bad { color: var(--bad); background: var(--bad-soft); border-color: var(--bad); }
+.chip.good { color: var(--good); background: var(--good-soft); border-color: var(--good); }
+.chip.kind { color: var(--accent); background: var(--accent-soft); border-color: var(--accent); }
+.spark-wrap { display: grid; gap: 2px; border: 1px solid var(--line); background: var(--bg); padding: 6px 6px 0; }
+.spark { width: 100%; height: 56px; display: block; }
+.spark-marks { position: relative; height: 18px; }
+.spark-mark { position: absolute; top: 0; transform: translateX(-50%); color: var(--accent); font-size: 0.85rem; line-height: 18px; font-weight: 700; white-space: nowrap; }
 .events { display: grid; gap: 10px; }
-.event { border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 12px; display: grid; gap: 6px; min-width: 0; background: var(--surface); }
-.event.rating { background: var(--sunken); border-color: transparent; }
-.event .row { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: baseline; font-size: 0.8rem; color: var(--muted); }
-.event .reason { white-space: pre-wrap; word-break: break-word; font-size: 0.86rem; }
-.event details summary { cursor: pointer; font-size: 0.8rem; color: var(--accent); }
-pre.diff, pre.text { margin: 6px 0 0; font: 0.78rem/1.45 var(--font-mono); background: var(--sunken); border-radius: 4px; padding: 8px 0; overflow-x: auto; }
+.event { border: 1px solid var(--line); padding: 10px 12px; display: grid; gap: 6px; min-width: 0; background: var(--bg); }
+.event.rating { background: var(--sunken); }
+.event .row { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: baseline; font-size: 0.76rem; color: var(--muted); }
+.event .reason { white-space: pre-wrap; word-break: break-word; font-size: 0.82rem; }
+.event details summary { cursor: pointer; font-size: 0.76rem; color: var(--accent); }
+pre.diff, pre.text { margin: 6px 0 0; font: 0.76rem/1.5 var(--font-mono); background: var(--bg); border: 1px solid var(--line); padding: 8px 0; overflow-x: auto; }
 pre.diff span, pre.text span { display: block; padding: 0 10px; white-space: pre; }
-pre .add { background: var(--add-bg); }
-pre .del { background: var(--del-bg); }
-pre .hunk { color: var(--accent); }
-pre .ln { color: var(--muted); display: inline-block; width: 3.2em; text-align: right; margin-right: 10px; user-select: none; }
-pre .heading-note { color: var(--muted); font-style: italic; }
-.md { font-size: 0.86rem; display: grid; gap: 6px; max-width: 70ch; }
-.md h3, .md h4, .md h5 { font-size: 0.86rem; margin-top: 6px; }
+pre .add { background: var(--add-bg); color: var(--good); }
+pre .del { background: var(--del-bg); color: var(--bad); }
+pre .hunk { color: var(--c2); }
+pre .ln { color: var(--muted); display: inline-block; width: 3.2em; text-align: right; margin-right: 10px; user-select: none; border-right: 1px solid var(--line); padding-right: 6px; }
+pre .heading-note { color: var(--accent); font-style: normal; }
+.md { font-size: 0.82rem; display: grid; gap: 6px; max-width: 80ch; }
+.md h3, .md h4, .md h5 { font-size: 0.82rem; margin-top: 6px; color: var(--accent); }
 .md p { margin: 0; }
-.md table { border-collapse: collapse; font-size: 0.8rem; }
+.md table { border-collapse: collapse; font-size: 0.76rem; }
 .md td, .md th { border: 1px solid var(--line); padding: 2px 6px; text-align: left; }
 .md ul { margin: 0; padding-left: 1.2em; }
 
-/* Timeline */
-.lanes { display: grid; gap: 14px; }
-.lane { display: grid; grid-template-columns: minmax(9rem, 14rem) minmax(0, 1fr); gap: 12px; align-items: start; }
-@media (max-width: 640px) { .lane { grid-template-columns: minmax(0, 1fr); } }
-.lane .label { font-family: var(--font-mono); font-size: 0.8rem; word-break: break-all; }
-.lane .label .cur { color: var(--accent); font-family: var(--font-ui); font-size: 0.72rem; margin-left: 4px; }
-.commits { display: grid; gap: 4px; border-left: 2px solid var(--line); padding-left: 12px; min-width: 0; }
-.commit { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 10px; align-items: baseline; font-size: 0.82rem; position: relative; }
-.commit::before { content: ""; position: absolute; left: -17px; top: 0.45em; width: 8px; height: 8px; border-radius: 50%; background: var(--line); }
-.commit.config::before { background: var(--accent); }
-.commit .sha { font-family: var(--font-mono); font-size: 0.75rem; color: var(--muted); }
-.commit .msg { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.commit button.rev { background: none; border: 0; padding: 0; color: var(--accent); cursor: pointer; font-family: var(--font-mono); font-size: 0.72rem; }
+/* Changes */
+.branch-block { display: grid; gap: 10px; }
+.branch-block + .branch-block { border-top: 1px dashed var(--line); padding-top: 16px; }
+.branch-block > h3 { font-size: 0.82rem; display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; color: var(--accent); }
+.branch-block > h3 .muted { font-weight: 400; font-size: 0.76rem; }
+.change-commit { display: grid; gap: 8px; border-left: 3px solid var(--accent); padding-left: 12px; min-width: 0; }
+.change-commit .msg { white-space: pre-wrap; word-break: break-word; font-size: 0.82rem; max-width: 100ch; }
+.change-commit .row { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: baseline; font-size: 0.76rem; color: var(--muted); }
+.change-commit .target { display: grid; gap: 4px; min-width: 0; }
+.change-commit .target button { justify-self: start; background: none; border: 0; padding: 0; color: var(--accent); cursor: pointer; font-size: 0.8rem; text-align: left; word-break: break-word; text-decoration: underline; text-underline-offset: 3px; }
+
+/* Evolution graph and section versions */
+.gwrap { display: flex; min-width: 860px; border: 1px solid var(--line); background: var(--bg); }
+.grows { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
+button.grow { display: grid; grid-template-columns: 64px 116px minmax(0, 1fr) 190px 100px; gap: 10px; align-items: center; width: 100%;
+  padding: 0 12px 0 6px; border: 0; border-bottom: 1px solid var(--sunken); background: none; text-align: left; cursor: pointer; font-size: 0.78rem; }
+button.grow:hover { background: var(--sunken); }
+button.grow.on { background: var(--accent); color: var(--accent-ink); }
+button.grow.on code, button.grow.on .muted, button.grow.on .gbranch { color: var(--accent-ink) !important; }
+button.grow.on .gchip { background: var(--accent-ink); color: var(--accent); border-color: var(--accent-ink); }
+button.grow.dead, button.grow.book { color: var(--muted); }
+button.grow code { font-size: 0.76rem; color: var(--muted); }
+button.grow .chips { flex-wrap: nowrap; overflow: hidden; gap: 4px; }
+.gchip { padding: 0 6px; border: 1px solid var(--line); background: var(--surface); font-size: 0.7rem; white-space: nowrap; }
+.gchip.release { background: var(--release); color: var(--bg); border-color: var(--release); font-weight: 700; }
+.gmsg { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gbranch { font-size: 0.72rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.warn { background: var(--warn-bg); border: 1px solid var(--warn-line); border-left: 4px solid var(--warn-line); padding: 10px 12px; font-size: 0.8rem; }
+.warn b { color: var(--warn-fg); }
+.warn b::before { content: "! "; }
+.chiprow { display: flex; flex-wrap: wrap; gap: 0; }
+.chiprow button { min-height: 36px; padding: 0 12px; border: 1px solid var(--edge); margin: 0 -1px -1px 0; background: var(--surface); cursor: pointer; font-size: 0.78rem; }
+.chiprow button:hover { background: var(--sunken); }
+.chiprow button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); font-weight: 700; }
+.split { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start; }
+.split > .main { flex: 999 1 640px; min-width: 0; }
+.split > .side { flex: 1 1 320px; min-width: 0; display: grid; gap: 12px; }
+.legend-list { display: grid; gap: 6px; font-size: 0.76rem; border: 1px solid var(--line); padding: 10px 12px; background: var(--bg); }
+.legend-list span { display: flex; gap: 8px; align-items: center; }
+.dot { width: 14px; height: 14px; border-radius: 50%; display: inline-block; flex: none; box-sizing: border-box; }
+.versions { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr)); gap: 14px; align-items: start; }
+.version { border: 1px solid var(--edge); border-top-width: 3px; padding: 10px 12px; display: grid; gap: 6px; min-width: 0; background: var(--bg); box-shadow: 3px 3px 0 var(--shadow); }
+.version h3 { font-size: 0.8rem; display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: baseline; }
+.version .text { white-space: pre-wrap; word-break: break-word; font-size: 0.8rem; line-height: 1.6; }
+.version .text .new { font-weight: 700; color: var(--fg); text-decoration: underline; text-decoration-color: var(--accent); text-underline-offset: 3px; }
+.prov { border-bottom: 2px solid; }
 
 /* Documents */
 .docbar { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; }
-footer { color: var(--muted); font-size: 0.78rem; }
-@media (prefers-reduced-motion: no-preference) { td.cell button, .colhead { transition: background-color 0.12s, border-color 0.12s; } }
+footer { color: var(--muted); font-size: 0.74rem; border-top: 1px solid var(--line); padding-top: 10px; }
+footer::before { content: "$ "; color: var(--accent); }
+@media (prefers-reduced-motion: no-preference) { td.cell button, .colhead, button.grow, nav.tabs button { transition: background-color 0.08s, color 0.08s; } }
 </style>
 
 <div class="page">
@@ -155,16 +225,39 @@ footer { color: var(--muted); font-size: 0.78rem; }
       <h1 id="title"></h1>
       <div class="meta" id="meta"></div>
     </div>
-    <div class="stats" id="stats"></div>
+    <div class="topright">
+      <button id="theme" type="button" class="theme-toggle" aria-pressed="false">◐ light</button>
+      <div class="stats" id="stats"></div>
+    </div>
   </header>
 
   <nav class="tabs" role="tablist">
-    <button role="tab" id="tab-sections" aria-selected="true" data-view="sections">Sections</button>
-    <button role="tab" id="tab-timeline" aria-selected="false" data-view="timeline">Timeline</button>
+    <button role="tab" id="tab-graph" aria-selected="true" data-view="graph">Evolution graph</button>
+    <button role="tab" id="tab-section" aria-selected="false" data-view="section">Section versions</button>
+    <button role="tab" id="tab-changes" aria-selected="false" data-view="changes">Changes</button>
+    <button role="tab" id="tab-sections" aria-selected="false" data-view="sections">Ratings</button>
     <button role="tab" id="tab-documents" aria-selected="false" data-view="documents">Documents</button>
   </nav>
 
-  <section id="view-sections" class="bench">
+  <section id="view-graph" class="panel">
+    <div class="head"><h2>Evolution graph</h2>
+      <div class="controls"><label for="g-bookkeeping"><input type="checkbox" id="g-bookkeeping"> Bookkeeping commits</label>
+      <label for="g-dead"><input type="checkbox" id="g-dead" checked> Dead branches</label>
+      <label for="g-edges"><input type="checkbox" id="g-edges" checked> Merged-from edges</label></div></div>
+    <div class="body"><div id="graph" class="split"></div></div>
+  </section>
+
+  <section id="view-section" class="panel" hidden>
+    <div class="head"><h2>Section versions</h2><div class="chiprow" id="section-run-pick" role="group" aria-label="Runs"></div></div>
+    <div class="body"><div id="section-view"></div></div>
+  </section>
+
+  <section id="view-changes" class="panel" hidden>
+    <div class="head"><h2>Changes per branch</h2><span class="muted">Every change a curator or merger committed, with its reason and diff; select a section to see its ratings.</span></div>
+    <div class="body" id="changes"></div>
+  </section>
+
+  <section id="view-sections" class="bench" hidden>
     <div class="panel">
       <div class="head">
         <h2>Ratings per section and revision</h2>
@@ -182,10 +275,6 @@ footer { color: var(--muted); font-size: 0.78rem; }
     <div class="panel" id="detail"><div class="detail-empty">Select a section or a cell to see its history: every change with its reason and diff, and the ratings in between.</div></div>
   </section>
 
-  <section id="view-timeline" class="panel" hidden>
-    <div class="head"><h2>Branches and commits</h2><span class="muted">Blue dots change the configuration; select a revision to open it in the grid.</span></div>
-    <div class="body"><div class="lanes" id="lanes"></div></div>
-  </section>
 
   <section id="view-documents" class="panel" hidden>
     <div class="head">
@@ -211,11 +300,11 @@ footer { color: var(--muted); font-size: 0.78rem; }
   const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
   const short = (rev) => rev ? (rev.includes("@") ? rev.split("@")[0] + "@" + rev.split("@rev_")[1].slice(0, 7) : rev.slice(4, 11)) : "";
   const sha = (c) => c ? c.slice(0, 8) : "—";
+  const time = (iso) => Date.parse(iso) || 0;  // Times carry their committer's zone: compare instants, not text.
   const when = (iso) => iso ? new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" }) : "";
   const state = { scale: data.scales[0]?.name || null, active: true, cumulative: false, section: null, revision: null };
   const revIndex = Object.fromEntries(data.revisions.map((r, i) => [r.revision, i]));
   const sectionById = Object.fromEntries(data.sections.map((s) => [s.id, s]));
-  const reflectionsByRev = {};
 
   // ---- scales and colour -------------------------------------------------------------------------------------------
   function scaleOf(name) { return data.scales.find((s) => s.name === name); }
@@ -242,6 +331,24 @@ footer { color: var(--muted); font-size: 0.78rem; }
     return `color-mix(in srgb, ${hue} ${score === 0 ? 30 : pct}%, var(--surface))`;
   }
   function labelColor(scale, value) { const p = position(scale, value); return p === null || p === 0 ? "var(--mid)" : p < 0 ? "var(--bad)" : "var(--good)"; }
+
+  // ---- theme: follows the system until the viewer picks one; the pick is remembered in this browser ----------------
+  {
+    const root = document.documentElement, button = $("theme");
+    const system = () => (window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark");
+    const current = () => (root && root.getAttribute("data-theme")) || system();
+    const paint = () => { const dark = current() === "dark";
+      button.textContent = dark ? "◐ light" : "◑ dark"; button.setAttribute("aria-pressed", String(!dark));
+      button.title = `Switch to the ${dark ? "light" : "dark"} theme`; };
+    try { const saved = localStorage.getItem("thearc-report-theme"); if (saved && root) root.setAttribute("data-theme", saved); } catch (e) { /* storage may be unavailable */ }
+    button.addEventListener("click", () => {
+      const next = current() === "dark" ? "light" : "dark";
+      if (root) root.setAttribute("data-theme", next);
+      try { localStorage.setItem("thearc-report-theme", next); } catch (e) { /* storage may be unavailable */ }
+      paint();
+    });
+    paint();
+  }
 
   // ---- header ------------------------------------------------------------------------------------------------------
   $("title").textContent = `${data.agent.name}${data.agent.version ? " " + data.agent.version : ""}`;
@@ -297,7 +404,8 @@ footer { color: var(--muted); font-size: 0.78rem; }
         const text = b ? Object.entries(counts).sort((a, c) => (position(scale, a[0]) ?? 0) - (position(scale, c[0]) ?? 0)).map(([, n]) => n).join("·") : "";
         const desc = `${s.address} at ${short(r.revision)}: ${b ? Object.entries(counts).map(([v, n]) => `${n} ${v}`).join(", ") : "no ratings"}${events.length ? "; " + events.join(", ") : ""}`;
         const sel = state.section === s.id && state.revision === r.revision ? " sel" : "";
-        return `<td class="cell"><button class="${b ? "rated" : ""}${sel}" style="background:${tint(b ? b.score : null)}" data-sec="${esc(s.id)}" data-rev="${esc(r.revision)}" aria-label="${esc(desc)}" title="${esc(desc)}">${text}${ev}</button></td>`;
+        const changed = !b && events.length ? " changed" : "";
+        return `<td class="cell"><button class="${b ? "rated" : ""}${changed}${sel}" style="${b ? `background:${tint(b.score)}${Math.abs(b.score) > 0.55 ? ";color:#0a0a0a" : ""}` : ""}" data-sec="${esc(s.id)}" data-rev="${esc(r.revision)}" aria-label="${esc(desc)}" title="${esc(desc)}">${text}${ev}</button></td>`;
       }).join("");
       return `<tr class="${state.section === s.id ? "sel" : ""}"><td class="name"><button data-sec="${esc(s.id)}" style="padding-left:${10 + pad}px" title="${esc(s.address)}">
         ${s.depth ? "" : `<span class="kind">${esc(s.kind.replace("_", " "))}</span>`}<span class="${s.removed ? "gone" : ""}">${esc(label)}</span></button></td>${cells}</tr>`;
@@ -340,27 +448,29 @@ footer { color: var(--muted); font-size: 0.78rem; }
     }).join("")}</pre>`;
   }
   function sparkline(section) {
+    // Bars stretch with the panel; the change marks are HTML on top, so they keep their shape at any width.
     const scale = scaleOf(state.scale); if (!scale) return "";
-    const w = 100 / Math.max(1, data.revisions.length);
+    const n = Math.max(1, data.revisions.length), w = 100 / n;
     const per = data.revisions.map((r) => data.cells[section.id]?.[r.revision]?.ratings?.[state.scale] || {});
     const max = Math.max(1, ...per.map((c) => Object.values(c).reduce((a, b) => a + b, 0)));
+    const marks = [];
     const bars = per.map((counts, i) => {
-      let y = 60; const x = i * w + w * 0.2; const bw = w * 0.6;
-      const stacked = scale.labels.filter((l) => counts[l]).map((l) => { const h = (counts[l] / max) * 52; y -= h;
-        return `<rect x="${x}" y="${y}" width="${bw}" height="${h}" fill="${labelColor(scale, l)}"><title>${esc(short(data.revisions[i].revision))}: ${counts[l]} ${esc(l)}</title></rect>`; }).join("");
+      let y = 56; const x = i * w + w * 0.2; const bw = w * 0.6;
       const ev = (data.cells[section.id]?.[data.revisions[i].revision]?.events || []).filter((e) => e !== "added" || i > 0);
-      const mark = ev.length ? `<text x="${x + bw / 2}" y="70" text-anchor="middle" font-size="7" fill="var(--accent)">${ev.map((e) => glyph[e]).join("")}</text>` : "";
-      return stacked + mark;
+      if (ev.length) marks.push(`<span class="spark-mark" style="left:${(i + 0.5) * w}%" title="${esc(short(data.revisions[i].revision))}: ${esc(ev.join(", "))}">${ev.map((e) => glyph[e] || "•").join("")}</span>`);
+      return scale.labels.filter((l) => counts[l]).map((l) => { const h = (counts[l] / max) * 52; y -= h;
+        return `<rect x="${x}" y="${y}" width="${bw}" height="${h}" style="fill:${labelColor(scale, l)}"><title>${esc(short(data.revisions[i].revision))}: ${counts[l]} ${esc(l)}</title></rect>`; }).join("");
     }).join("");
-    return `<svg class="spark" viewBox="0 0 100 72" preserveAspectRatio="none" role="img" aria-label="Ratings of this section per revision">
-      <line x1="0" y1="60" x2="100" y2="60" stroke="var(--line)" stroke-width="0.5"></line>${bars}</svg>`;
+    return `<div class="spark-wrap"><svg class="spark" viewBox="0 0 100 56" preserveAspectRatio="none" role="img" aria-label="Ratings of this section per revision">
+      <line x1="0" y1="56" x2="100" y2="56" style="stroke:var(--line)" stroke-width="1" vector-effect="non-scaling-stroke"></line>${bars}</svg>
+      <div class="spark-marks" aria-hidden="true">${marks.join("")}</div></div>`;
   }
   function renderDetail() {
     const s = sectionById[state.section]; const scale = scaleOf(state.scale);
     if (!s) return;
     const changes = data.changes.filter((c) => c.section === s.id && (c.kind !== "added" || revIndex[c.revision] > 0));
     const ratings = data.ratings.filter((r) => r.section === s.id);
-    const items = [...changes.map((c) => ({ at: c.at, c })), ...ratings.map((r) => ({ at: r.at, r }))].sort((a, b) => a.at < b.at ? -1 : 1);
+    const items = [...changes.map((c) => ({ at: c.at, c })), ...ratings.map((r) => ({ at: r.at, r }))].sort((a, b) => time(a.at) - time(b.at));
     const counts = {}; ratings.filter((r) => r.scale === state.scale).forEach((r) => { counts[r.value] = (counts[r.value] || 0) + 1; });
     const chips = Object.entries(counts).map(([v, n]) => { const p = position(scale, v); return `<span class="chip ${p < 0 ? "bad" : p > 0 ? "good" : ""}">${n} ${esc(v)}</span>`; }).join("");
     const names = s.names.length ? `<div class="muted">Renamed: ${s.names.map((n) => `<code>${esc(n.previous)}</code> → <code>${esc(n.address)}</code>`).join("; ")}</div>` : "";
@@ -384,18 +494,251 @@ footer { color: var(--muted); font-size: 0.78rem; }
       <div class="body">${names}${sparkline(s)}<div class="events">${events || `<div class="muted">No ratings or changes since the configuration was imported.</div>`}</div></div>`;
   }
 
-  // ---- timeline ----------------------------------------------------------------------------------------------------
-  function renderTimeline() {
-    $("lanes").innerHTML = data.branches.map((b) => {
-      const seen = new Set();
-      const commits = b.commits.map((c) => {
-        const first = c.revision && !seen.has(c.revision) && data.revisions.some((r) => r.commit === c.commit);
-        if (c.revision) seen.add(c.revision);
-        return `<div class="commit${first ? " config" : ""}"><span class="sha">${esc(sha(c.commit))}</span>
-          <span class="msg" title="${esc(c.message)}">${esc(c.message)} ${first ? `<button class="rev" data-rev="${esc(c.revision)}">${esc(short(c.revision))}</button>` : ""}</span></div>`;
+  // ---- changes -----------------------------------------------------------------------------------------------------
+  function renderChanges() {
+    const real = data.changes.filter((c) => c.kind !== "added" || revIndex[c.revision] > 0);
+    const imported = data.changes.length - real.length;
+    const byCommit = {};
+    real.forEach((c) => { (byCommit[c.commit] = byCommit[c.commit] || []).push(c); });
+    const shown = new Set();
+    const blocks = data.branches.map((b) => {
+      const commits = b.commits.filter((c) => byCommit[c.commit] && !shown.has(c.commit));
+      if (!commits.length) return "";
+      commits.forEach((c) => shown.add(c.commit));
+      const total = commits.reduce((n, c) => n + byCommit[c.commit].length, 0);
+      const items = commits.map((c) => {
+        const changes = byCommit[c.commit];
+        const author = changes[0].author;
+        const targets = changes.map((ch) => {
+          const sec = sectionById[ch.section];
+          return `<div class="target"><div class="row"><span class="chip kind">${glyph[ch.kind] || ""} ${esc(ch.kind)}</span>
+            <button data-sec="${esc(ch.section)}" data-rev="${esc(ch.revision)}" title="Open this section's history">${esc(sec ? sec.address : ch.address)}</button></div>
+            ${ch.kind === "kept" ? "" : diffHtml(ch.diff)}</div>`;
+        }).join("");
+        return `<article class="change-commit"><div class="row"><span class="mono">${esc(sha(c.commit))}</span><span class="mono">${esc(short(changes[0].revision))}</span>
+          <span>${esc(when(c.at))}</span>${author ? `<span>${esc(author)}</span>` : ""}</div>
+          <div class="msg">${esc(changes[0].reason || c.message)}</div>${targets}</article>`;
       }).join("");
-      return `<div class="lane"><div class="label">${esc(b.name)}${b.current ? `<span class="cur">current</span>` : ""}</div><div class="commits">${commits}</div></div>`;
+      return `<div class="branch-block"><h3>${esc(b.name)}<span class="muted">${commits.length} commit${commits.length === 1 ? "" : "s"}, ${total} change${total === 1 ? "" : "s"}</span></h3>${items}</div>`;
     }).join("");
+    const orphans = real.filter((c) => !shown.has(c.commit));
+    const pending = orphans.length ? `<div class="branch-block"><h3>Not committed yet<span class="muted">${orphans.length} change(s)</span></h3>${orphans.map((ch) =>
+      `<article class="change-commit"><div class="row"><span class="chip kind">${esc(ch.kind)}</span><span>${esc(sectionById[ch.section]?.address || ch.address)}</span></div>${ch.reason ? `<div class="msg">${esc(ch.reason)}</div>` : ""}${diffHtml(ch.diff)}</article>`).join("")}</div>` : "";
+    const note = `<div class="muted">${imported} section${imported === 1 ? "" : "s"} imported at the base revision (not listed).</div>`;
+    $("changes").innerHTML = (blocks + pending) ? note + blocks + pending
+      : `${note}<div class="muted">No curator or merger has changed the configuration on these branches yet.</div>`;
+  }
+
+  // ---- evolution graph ---------------------------------------------------------------------------------------------
+  // The workspace's history as the agent's evolution: each change commit a row, candidates as branches from their
+  // base, merges joined to the candidates they drew on (from the journal: dashed, git has no edge), releases as
+  // tags. Bookkeeping commits (recorded ratings, merge records) are hidden unless asked for.
+  const G = data.graph || { trunk: data.head, bases: [], runs: [], releases: [] };
+  const runs = G.runs;
+  const lstate = { run: null, section: null, commit: null, bookkeeping: false, dead: true, edges: true };
+  {
+    const merged = runs.filter((r) => r.merges.length);
+    lstate.run = runs.indexOf(merged.length ? merged[merged.length - 1] : runs[runs.length - 1]);
+  }
+  const cvar = (i) => `var(--c${i % 4})`;
+  const csoft = (i) => `var(--c${i % 4}-soft)`;
+  const secLabel = (id) => {
+    const s = sectionById[id]; if (!s) return id;
+    const [kind, rest] = s.address.split(":"); const [file, section] = rest.split("#");
+    return section ? `${file} › ${section}` : `${kind} ${file}`;
+  };
+  const isDead = (c) => !c.merged_into.length;
+  const runStatus = (r) => r.merges.some((m) => m.release) ? `released ${r.merges.find((m) => m.release).release.version}`
+    : r.merges.length ? "merged, not released" : "never merged";
+  function runPicker(id, onPick) {
+    $(id).innerHTML = runs.map((r, i) => `<button data-run="${i}" aria-pressed="${i === lstate.run}">${esc(r.label)} · ${esc(runStatus(r))}</button>`).join("");
+    $(id).onclick = (e) => { const b = e.target.closest("button[data-run]"); if (b) { lstate.run = Number(b.dataset.run); onPick(); } };
+  }
+  const empty = (what) => `<div class="muted">No ${what} yet: the evolution graph needs candidate/…, merge/… or release/… branches in the workspace.</div>`;
+  function changeBlocks(commit) {
+    return data.changes.filter((c) => c.commit === commit).map((ch) => `<div class="target"><div class="row"><span class="chip kind">${glyph[ch.kind] || ""} ${esc(ch.kind)}</span>
+      <button data-sec="${esc(ch.section)}" data-rev="${esc(ch.revision)}">${esc(sectionById[ch.section]?.address || ch.address)}</button></div>${ch.kind === "kept" ? "" : diffHtml(ch.diff)}</div>`).join("");
+  }
+
+  const branchCommits = Object.fromEntries(data.branches.map((b) => [b.name, b.commits]));
+  const changedIn = {};
+  data.changes.forEach((c) => { if (c.commit) (changedIn[c.commit] = changedIn[c.commit] || []).push(c); });
+  const releaseAt = Object.fromEntries(G.releases.map((r) => [r.commit, r]));
+  function graphLanes() {
+    const lanes = [];
+    runs.forEach((r, ri) => {
+      r.candidates.forEach((c, i) => lanes.push({ kind: "candidate", run: r, ri, branch: c.branch, name: `${r.label} · ${c.name}`,
+        color: isDead(c) ? "var(--dead)" : cvar(i), dead: isDead(c), cand: c, i }));
+      r.merges.forEach((m) => lanes.push({ kind: "merge", run: r, ri, branch: m.branch, name: m.branch, color: "var(--merge)", merge: m }));
+    });
+    return lanes;
+  }
+  function laneCommits(lane) {  // Commits after the lane's base, oldest first; a merge continues with its release's.
+    const after = (name, from) => { const list = branchCommits[name] || []; const k = list.findIndex((c) => c.commit === from); return k >= 0 ? list.slice(k + 1) : []; };
+    let list = after(lane.branch, lane.run.base);
+    if (lane.kind === "merge" && lane.merge.release) list = list.concat(after(lane.merge.release.branch, lane.merge.head));
+    return list;
+  }
+  function graphRows() {
+    const lanes = graphLanes().filter((l) => lstate.dead || !l.dead);
+    const rows = [], seen = new Set();
+    lanes.forEach((lane, li) => {
+      lane.rows = [];
+      laneCommits(lane).forEach((c, seq) => {
+        if (seen.has(c.commit)) return;
+        const content = Boolean(changedIn[c.commit]?.some((x) => x.kind !== "rated" && x.kind !== "kept")), tag = releaseAt[c.commit];
+        if (!content && !tag && !lstate.bookkeeping) return;
+        seen.add(c.commit);
+        const row = { ...c, lane, li, seq, content, tag };
+        rows.push(row); lane.rows.push(row);
+      });
+    });
+    const trunk = branchCommits[G.trunk] || [];
+    G.bases.forEach((b) => rows.push({ commit: b.commit, at: b.at, message: trunk.find((c) => c.commit === b.commit)?.message || "", base: b, li: -1, seq: 0 }));
+    rows.sort((a, b) => time(b.at) - time(a.at) || (a.li !== b.li ? b.li - a.li : b.seq - a.seq));
+    return { rows, lanes: lanes.filter((l) => l.rows.length), empty: lanes.filter((l) => !l.rows.length).length };
+  }
+  function renderGraph() {
+    if (!runs.length) { $("graph").innerHTML = empty("runs"); return; }
+    const { rows, lanes, empty: hiddenEmpty } = graphRows();
+    const ROW = 30, X0 = 14, LANE = 20, x = (k) => X0 + (k + 1) * LANE, y = (i) => 15 + i * ROW;
+    const index = Object.fromEntries(rows.map((r, i) => [r.commit, i]));
+    const col = Object.fromEntries(lanes.map((l, k) => [l.branch, k]));
+    const W = x(lanes.length) + 10, H = rows.length * ROW;
+    const svg = [];
+    const baseRows = G.bases.map((b) => index[b.commit]).filter((i) => i !== undefined);
+    if (baseRows.length > 1) svg.push(`<path d="M ${X0} ${y(Math.min(...baseRows))} L ${X0} ${y(Math.max(...baseRows))}" style="stroke:var(--trunk);stroke-width:3"></path>`);
+    lanes.forEach((lane) => {
+      const lx = x(col[lane.branch]), yb = y(index[lane.run.base]), top = y(Math.min(...lane.rows.map((r) => index[r.commit])));
+      svg.push(`<path d="M ${X0} ${yb} C ${X0} ${yb - 16} ${lx} ${yb - 12} ${lx} ${yb - 30} L ${lx} ${top}" fill="none" stroke-linecap="round" style="stroke:${lane.color};stroke-width:2.5"><title>${esc(lane.branch)}</title></path>`);
+      if (lane.dead) svg.push(`<path d="M ${lx - 4} ${top - 14} L ${lx + 4} ${top - 6} M ${lx + 4} ${top - 14} L ${lx - 4} ${top - 6}" style="stroke:var(--trunk);stroke-width:2" stroke-linecap="round"><title>never merged</title></path>`);
+    });
+    if (lstate.edges) lanes.filter((l) => l.kind === "merge").forEach((m) => {
+      const mx = x(col[m.branch]), my = y(Math.max(...m.rows.map((r) => index[r.commit])));
+      m.merge.candidates.forEach((b) => {
+        const cl = lanes.find((l) => l.branch === b); if (!cl) return;
+        const cx = x(col[b]), cy = y(Math.min(...cl.rows.map((r) => index[r.commit])));
+        svg.push(`<path d="M ${cx} ${cy} C ${cx} ${cy - 18} ${mx} ${my + 18} ${mx} ${my}" fill="none" style="stroke:var(--merge);stroke-width:2;stroke-dasharray:4 4" stroke-linecap="round"><title>${esc(b)} → ${esc(m.branch)} (from the journal)</title></path>`);
+      });
+    });
+    rows.forEach((r, i) => {
+      const cy = y(i);
+      if (r.base) { svg.push(`<circle cx="${X0}" cy="${cy}" r="8" style="fill:var(--trunk);stroke:var(--surface);stroke-width:2"></circle>`); return; }
+      const cx = x(col[r.lane.branch]);
+      if (r.tag) svg.push(`<circle cx="${cx}" cy="${cy}" r="7" style="fill:var(--release);stroke:var(--release-soft);stroke-width:4"></circle>`);
+      else if (!r.content) svg.push(`<circle cx="${cx}" cy="${cy}" r="3.5" style="fill:var(--mid)"></circle>`);
+      else if (r.lane.kind === "merge") svg.push(`<circle cx="${cx}" cy="${cy}" r="${lstate.commit === r.commit ? 8 : 6}" style="fill:var(--merge);stroke:${lstate.commit === r.commit ? "var(--merge-soft)" : "var(--surface)"};stroke-width:${lstate.commit === r.commit ? 4 : 2}"></circle>`);
+      else svg.push(`<circle cx="${cx}" cy="${cy}" r="5" style="fill:var(--surface);stroke:${r.lane.color};stroke-width:2.5"></circle>`);
+    });
+    if (!lstate.commit || index[lstate.commit] === undefined) lstate.commit = (rows.find((r) => r.content && r.lane?.kind === "merge") || rows.find((r) => r.content) || rows[0]).commit;
+    const tops = new Set(lanes.map((l) => l.rows.reduce((a, b) => (index[a.commit] < index[b.commit] ? a : b)).commit));
+    const htmlRows = rows.map((r, i) => {
+      const changes = (changedIn[r.commit] || []).filter((c) => c.kind !== "rated");
+      const sections = [...new Set(changes.map((c) => secLabel(c.section).split(" › ")[0]))];
+      const chip = r.tag ? `<span class="gchip release">${esc(r.tag.version)}</span>` : r.base ? `<span class="gchip"><b>${esc(r.base.version || "base")}</b></span>`
+        : sections.length ? sections.map((s) => `<span class="gchip">${esc(s)}</span>`).join("") : `<span class="gchip muted">journal</span>`;
+      const label = r.base ? G.trunk : tops.has(r.commit) ? (r.lane.kind === "merge" ? (r.tag ? r.tag.branch : r.lane.branch) : r.lane.name + (r.lane.dead ? " · never merged" : "")) : "";
+      const color = r.base ? "var(--muted)" : r.tag ? "var(--release)" : r.lane.color;
+      const message = changes[0]?.reason || r.message;
+      const who = changes[0]?.author || (r.base || r.tag || !r.content ? "thearc" : "");
+      return `<button class="grow${lstate.commit === r.commit ? " on" : ""}${r.lane?.dead ? " dead" : ""}${!r.content && !r.tag && !r.base ? " book" : ""}" data-commit="${esc(r.commit)}" style="height:${ROW}px">
+        <code>${esc(sha(r.commit).slice(0, 7))}</code><span class="chips">${chip}</span><span class="gmsg" title="${esc(message)}">${esc(message)}</span>
+        <span class="gbranch mono" style="color:${color}">${esc(label)}</span><span class="muted">${esc(who)}</span></button>`;
+    }).join("");
+    const counts = `${rows.filter((r) => r.content).length} change commits${lstate.bookkeeping ? "" : ` · bookkeeping hidden`}${hiddenEmpty ? ` · ${hiddenEmpty} empty branch${hiddenEmpty === 1 ? "" : "es"} hidden` : ""}`;
+    $("graph").innerHTML = `<div class="main"><div class="muted" style="font-size:0.8rem;margin-bottom:6px">${counts} · newest first</div>
+      <div class="scroll"><div class="gwrap"><svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="Branch lanes" style="flex:none">${svg.join("")}</svg>
+      <div class="grows">${htmlRows}</div></div></div></div><div class="side" id="graph-detail"></div>`;
+    renderGraphDetail(rows);
+  }
+  function renderGraphDetail(rows) {
+    const r = rows.find((x) => x.commit === lstate.commit);
+    const stale = runs.filter((x) => x.stale_base);
+    const warn = stale.length ? `<div class="warn"><b>Forked from an older version</b><br>${stale.map((x) => `Run ${esc(x.label)} forked from ${esc(x.base_version)}, not ${esc(x.stale_base)}.`).join(" ")} Move ${esc(G.trunk)} to the release so later runs build on it.</div>` : "";
+    const releases = G.releases.length ? `<div class="version"><h3>Releases</h3>${G.releases.map((rel) => `<div class="row" style="font-size:0.84rem"><b class="mono" style="color:var(--release)">${esc(rel.version)}</b><span class="muted">from ${esc(rel.parent_version || "—")} · ${esc(rel.merge || rel.branch)}</span></div>`).join("")}</div>` : "";
+    let body = "";
+    if (r?.base) body = `<div class="version"><h3><span class="mono">${esc(sha(r.commit))}</span> base ${esc(r.base.version || "")}</h3><div class="muted">${esc(r.message)} · on ${esc(G.trunk)}. ${runs.filter((x) => x.base === r.commit).length} run(s) fork here.</div></div>`;
+    else if (r) {
+      const lane = r.lane, run = lane.run;
+      const changes = (changedIn[r.commit] || []).filter((c) => c.kind !== "rated");
+      let chips = "";
+      if (lane.kind === "merge") {
+        const cands = run.candidates.flatMap((c, i) => c.commits.map((x) => ({ ...x, c, i })));
+        const msg = changes.map((c) => c.reason || "").join(" ") + " " + r.message;
+        chips = cands.filter((x) => msg.includes(x.commit.slice(0, 7))).map((x) => `<span class="chip" style="background:${csoft(x.i)};color:${cvar(x.i)};border-color:transparent">from ${esc(x.c.name)} · ${esc(x.commit.slice(0, 7))}</span>`).join("");
+      }
+      const sections = [...new Set(changes.map((c) => c.section))];
+      const open = sections.length ? `<div class="chiprow">${sections.map((s) => `<button data-open-section="${esc(s)}" data-run="${lane.ri}">Section versions: ${esc(secLabel(s))}</button>`).join("")}</div>` : "";
+      body = `<article class="change-commit" style="border-left-color:${r.tag ? "var(--release)" : lane.color}"><div class="row"><span class="mono">${esc(sha(r.commit))}</span>
+        <span>${esc(changes[0]?.author || "thearc")}</span><span>${esc(when(r.at))}</span><span class="mono">${esc(lane.branch)}</span></div>
+        ${r.tag ? `<div><span class="gchip release">${esc(r.tag.version)}</span> released on <span class="mono">${esc(r.tag.branch)}</span></div>` : ""}
+        ${chips ? `<div class="chips">${chips}</div>` : ""}<div class="msg">${esc(changes[0]?.reason || r.message)}</div>${open}${changeBlocks(r.commit)}</article>`;
+    }
+    $("graph-detail").innerHTML = body + warn + releases + `<div class="legend-list">
+      <span><i class="dot" style="border:3px solid var(--c0);background:var(--surface);width:12px;height:12px"></i>Candidate change commit (one colour per candidate)</span>
+      <span><i class="dot" style="background:var(--merge)"></i>Merger commit</span>
+      <span><i class="dot" style="background:var(--release);border:3px solid var(--release-soft)"></i>Release</span>
+      <span><i class="dot" style="border:3px solid var(--dead);background:var(--surface);width:12px;height:12px"></i>Never merged</span>
+      <span><svg width="22" height="6" aria-hidden="true"><path d="M 1 3 L 21 3" style="stroke:var(--merge);stroke-width:2;stroke-dasharray:4 4"></path></svg>Merged from — from the journal; git has no edge</span></div>`;
+  }
+
+  // ---- section versions: one section's text at the base, in each candidate, and merged, by provenance.
+  const words = (t) => String(t || "").split(/(\s+)/).filter((w) => w.length);
+  function lcsKeep(a, b) {  // Indices of b that belong to an LCS of a and b (whitespace ignored).
+    const A = a.map((w, i) => [w, i]).filter(([w]) => w.trim()), B = b.map((w, i) => [w, i]).filter(([w]) => w.trim());
+    const n = A.length, m = B.length; if (n * m > 4e6) return new Set();
+    const dp = Array.from({ length: n + 1 }, () => new Uint16Array(m + 1));
+    for (let i = n - 1; i >= 0; i--) for (let j = m - 1; j >= 0; j--) dp[i][j] = A[i][0] === B[j][0] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+    const keep = new Set(); let i = 0, j = 0;
+    while (i < n && j < m) { if (A[i][0] === B[j][0]) { keep.add(B[j][1]); i++; j++; } else if (dp[i + 1][j] >= dp[i][j + 1]) i++; else j++; }
+    return keep;
+  }
+  function marked(tokens, origin, styleOf) {  // Join runs of tokens with the same origin into spans.
+    const out = []; let cur = null, buf = "";
+    const flush = () => { if (buf) out.push(cur === null ? esc(buf) : `<span ${styleOf(cur)}>${esc(buf)}</span>`); buf = ""; };
+    tokens.forEach((w, k) => { const o = w.trim() ? origin[k] : cur; if (o !== cur) { flush(); cur = o; } buf += w; });
+    flush(); return out.join("");
+  }
+  function renderSection() {
+    runPicker("section-run-pick", () => { lstate.section = null; renderSection(); });
+    const r = runs[lstate.run];
+    if (!r || !Object.keys(r.sections).length) { $("section-view").innerHTML = r ? `<div class="muted">This run changed no section.</div>` : empty("runs"); return; }
+    const ids = Object.keys(r.sections);
+    if (!ids.includes(lstate.section)) lstate.section = ids[0];
+    const t = r.sections[lstate.section];
+    const base = words(t.base);
+    const card = (title, color, body, extra = "") => `<div class="version" style="border-color:${color}"><h3><span style="color:${color}">${title}</span>${extra}</h3><div class="text">${body}</div></div>`;
+    const cards = [card(`Base · ${esc(r.base_version || "")}`, "var(--trunk)", esc(t.base ?? "(not present)"))];
+    const candTokens = [];
+    r.candidates.forEach((c, i) => {
+      const text = t.heads[c.branch];
+      if (text == null || text === t.base) return;
+      const toks = words(text), keep = lcsKeep(base, toks);
+      candTokens.push({ i, c, toks });
+      cards.push(card(`${esc(c.name)} · ${esc(sha(c.head).slice(0, 7))}`, isDead(c) ? "var(--dead)" : cvar(i),
+        marked(toks, toks.map((w, k) => keep.has(k) ? null : "new"), () => `class="new"`), isDead(c) ? ` <span class="muted">never merged</span>` : ""));
+    });
+    r.merges.forEach((m) => {
+      const text = t.heads[m.branch];
+      if (text == null) return;
+      const toks = words(text), fromBase = lcsKeep(base, toks);
+      const fromCand = candTokens.filter((x) => m.candidates.includes(x.c.branch)).map((x) => ({ x, keep: lcsKeep(x.toks, toks) }));
+      const origin = toks.map((w, k) => {
+        if (fromBase.has(k)) return null;
+        const hits = fromCand.filter(({ keep }) => keep.has(k));
+        return hits.length === 1 ? `c${hits[0].x.i}` : hits.length ? "shared" : "merger";
+      });
+      const styleOf = (o) => o === "merger" ? `class="prov" style="background:var(--merge-soft);border-color:var(--merge)" title="merger's own"`
+        : o === "shared" ? `class="prov" style="background:var(--sunken);border-color:var(--mid)" title="in several candidates"`
+        : `class="prov" style="background:var(--${o}-soft);border-color:var(--${o})" title="from ${esc(r.candidates[Number(o.slice(1))].name)}"`;
+      const why = m.commits.filter((c) => c.sections.includes(lstate.section)).map((c) => `<div class="muted" style="font-size:0.82rem">${esc(sha(c.commit))} · ${esc(c.message)}</div>`).join("");
+      cards.push(card(`Merged · ${esc(m.branch)}`, "var(--merge)", marked(toks, origin, styleOf)) + why);
+    });
+    const legend = `<div class="legend">${r.candidates.map((c, i) => `<span><i class="swatch" style="background:${csoft(i)};border-color:${cvar(i)}"></i>from ${esc(c.name)}</span>`).join("")}
+      <span><i class="swatch" style="background:var(--sunken);border-color:var(--mid)"></i>in several candidates</span><span><i class="swatch" style="background:var(--merge-soft);border-color:var(--merge)"></i>merger's own</span><span>bold in a candidate: new since the base</span></div>`;
+    $("section-view").innerHTML = `<div class="chiprow" id="section-pick" role="group" aria-label="Sections">${ids.map((id) => `<button data-section="${esc(id)}" aria-pressed="${id === lstate.section}" class="mono">${esc(secLabel(id))}</button>`).join("")}</div>
+      ${legend}<div class="versions">${cards.join("")}</div>`;
+    $("section-pick").onclick = (e) => { const b = e.target.closest("button[data-section]"); if (b) { lstate.section = b.dataset.section; renderSection(); } };
   }
 
   // ---- documents ---------------------------------------------------------------------------------------------------
@@ -412,7 +755,8 @@ footer { color: var(--muted); font-size: 0.78rem; }
   function renderDocuments() {
     const rev = data.revisions.find((r) => r.revision === $("doc-rev").value) || data.revisions[data.revisions.length - 1];
     const against = data.revisions.find((r) => r.revision === $("doc-against").value);
-    const path = $("doc-file").value; const text = rev?.files?.[path];
+    const fileText = (r, p) => (r?.files?.[p] === undefined ? undefined : data.files[r.files[p]]);
+    const path = $("doc-file").value; const text = fileText(rev, path);
     if (text === undefined) { $("doc").innerHTML = `<div class="muted">This file does not exist at ${esc(short(rev?.revision))}.</div>`; return; }
     const notes = {};
     for (const [id, [p, line]] of Object.entries(rev.spans || {})) {
@@ -423,7 +767,7 @@ footer { color: var(--muted); font-size: 0.78rem; }
     const note = (ln) => notes[ln] ? `  <span class="heading-note">← ${esc(notes[ln])}</span>` : "";
     let html;
     if (against && against.revision !== rev.revision) {
-      const diff = lineDiff(against.files?.[path] ?? "", text);
+      const diff = lineDiff(fileText(against, path) ?? "", text);
       html = diff ? `<pre class="text">${diff.map(([op, l, ln]) =>
         `<span class="${op === "+" ? "add" : op === "-" ? "del" : ""}"><span class="ln">${ln ?? ""}</span>${op === " " ? " " : op} ${esc(l)}${ln ? note(ln) : ""}</span>`).join("")}</pre>`
         : `<div class="muted">The file is too large to compare here.</div>`;
@@ -433,7 +777,7 @@ footer { color: var(--muted); font-size: 0.78rem; }
     $("doc").innerHTML = `<div class="muted">${esc(rev.message || "")} · <code>${esc(sha(rev.commit))}</code></div>${html}`;
   }
   function setupDocuments() {
-    const files = [...new Set(data.revisions.flatMap((r) => Object.keys(r.files || {})))].filter((p) => !p.endsWith(".graphify_version")).sort();
+    const files = [...new Set(data.revisions.flatMap((r) => Object.keys(r.files || {})))].filter((p) => !p.split("/").pop().startsWith(".")).sort();
     const changedFiles = new Set(data.changes.filter((c) => revIndex[c.revision] > 0).map((c) => {
       for (const r of data.revisions) { const sp = r.spans?.[c.section]; if (sp) return sp[0]; } return null; }));
     $("doc-file").innerHTML = files.map((p) => `<option value="${esc(p)}">${changedFiles.has(p) ? "● " : ""}${esc(p)}</option>`).join("");
@@ -447,7 +791,7 @@ footer { color: var(--muted); font-size: 0.78rem; }
 
   // ---- wiring ------------------------------------------------------------------------------------------------------
   function show(view) {
-    for (const v of ["sections", "timeline", "documents"]) { $("view-" + v).hidden = v !== view; $("tab-" + v).setAttribute("aria-selected", String(v === view)); }
+    for (const v of ["graph", "section", "changes", "sections", "documents"]) { $("view-" + v).hidden = v !== view; $("tab-" + v).setAttribute("aria-selected", String(v === view)); }
     try { localStorage.setItem("thearc-report-view", view); } catch (e) { /* storage may be unavailable */ }
   }
   document.querySelector("nav.tabs").addEventListener("click", (e) => { const b = e.target.closest("button[data-view]"); if (b) show(b.dataset.view); });
@@ -461,14 +805,28 @@ footer { color: var(--muted); font-size: 0.78rem; }
     state.section = b.dataset.sec; if (b.dataset.rev) state.revision = b.dataset.rev;
     renderGrid(); renderDetail();
   });
-  $("lanes").addEventListener("click", (e) => { const b = e.target.closest("button.rev"); if (!b) return; state.revision = b.dataset.rev; show("sections"); renderGrid(); });
+  $("changes").addEventListener("click", (e) => {
+    const b = e.target.closest("button[data-sec]"); if (!b) return;
+    state.section = b.dataset.sec; state.revision = b.dataset.rev; show("sections"); renderGrid(); renderDetail();
+  });
+  $("graph").addEventListener("click", (e) => {
+    const sec = e.target.closest("button[data-sec]");
+    if (sec) { state.section = sec.dataset.sec; state.revision = sec.dataset.rev; show("sections"); renderGrid(); renderDetail(); return; }
+    const open = e.target.closest("button[data-open-section]");
+    if (open) { lstate.run = Number(open.dataset.run); lstate.section = open.dataset.openSection; show("section"); renderSection(); return; }
+    const row = e.target.closest("button[data-commit]"); if (!row) return;
+    lstate.commit = row.dataset.commit; renderGraph();
+  });
+  [["g-bookkeeping", "bookkeeping"], ["g-dead", "dead"], ["g-edges", "edges"]].forEach(([id, key]) =>
+    $(id).addEventListener("change", (e) => { lstate[key] = e.target.checked; renderGraph(); }));
   function renderAll() { renderStats(); renderGrid(); if (state.section) renderDetail(); renderDocuments(); }
 
   // Open on the most-rated section, so the page shows a history at rest.
   const tally = {}; data.ratings.forEach((r) => { tally[r.section] = (tally[r.section] || 0) + 1; });
   const busiest = Object.entries(tally).sort((a, b) => b[1] - a[1])[0];
   if (busiest) state.section = busiest[0];
-  setupDocuments(); renderTimeline(); renderAll();
+  setupDocuments(); renderGraph(); renderSection(); renderChanges(); renderAll();
+  if (!runs.length) show("changes");
   $("footer").textContent = `thearc report · ${data.sections.length} sections across ${data.revisions.length} revisions · ${data.ratings.length} ratings · ${data.changes.length} journal changes`;
   try { const v = localStorage.getItem("thearc-report-view"); if (v && $("view-" + v)) show(v); } catch (e) { /* storage may be unavailable */ }
 })();

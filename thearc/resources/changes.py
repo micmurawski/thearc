@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import json
 from collections import defaultdict
-from collections.abc import Callable, Hashable, Iterable
+from collections.abc import Callable, Hashable, Iterable, Mapping
 from datetime import UTC, datetime
 from typing import Any
 
@@ -51,12 +51,14 @@ def detect_changes(
     at: datetime | None = None,
     commit: str | None = None,
     parent: str | None = None,
+    identities: tuple[Mapping[ResourceTarget, str], Mapping[ResourceTarget, str]] | None = None,
     **extra: Any,
 ) -> list[Entry]:
     """Entries describing how ``before`` became ``after``; ``before=None`` records every target as Added.
 
     Each changed target gets its own entry, all sharing ``reason``. Keyword
-    arguments are stored on every entry as ``extra``.
+    arguments are stored on every entry as ``extra``. ``identities`` are the lineage IDs the
+    workspace markers gave on each side: a section that kept its ID under a new address moved.
     """
     at = at or datetime.now(UTC)
     new_files = after.files()
@@ -84,8 +86,9 @@ def detect_changes(
 
     if before is not None and old_files is not None:
         # Markers name the same section on both sides, so a rename is certain even if the text changed too.
-        by_id = {identifier: target for target, identifier in before.identities.items()}
-        take([(by_id[identifier], new) for new, identifier in after.identities.items() if identifier in by_id])
+        old_ids, new_ids = identities or ({}, {})
+        by_id = {identifier: target for target, identifier in old_ids.items()}
+        take([(by_id[identifier], new) for new, identifier in new_ids.items() if identifier in by_id])
         marked = list(moves)
 
         def fingerprint(agent: MetaAgent, target: ResourceTarget) -> Hashable | None:

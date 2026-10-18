@@ -14,7 +14,7 @@ agent = agent.init_workspace("artifacts/graphify", branch="reflections")
 
 The **workspace** is a git repository holding the configuration as files (`skills/…`,
 `context/…`, `hooks.jsonc`) and the **journal** (`journal.jsonl`). Every heading carries a
-marker with its section's ID; ratings appear there after `annotate`.
+marker with its section's ID; ratings stay in the journal (`agent_outline` shows them).
 
 ## 2. Index sessions and pick evidence
 
@@ -56,9 +56,10 @@ SCHEMA = ReflectionSchema(Lesson)
 ```python
 from thearc.reflection import Reflector
 
-reflection = Reflector("codex").handoff("Review the configuration against this session.", session, agent, SCHEMA)
+reflection = Reflector("codex").handoff("Review the configuration against this session.", session,
+                                        agent, SCHEMA)
 print(reflection.to_markdown())
-agent.add_reflection(reflection)          # ratings appended to journal.jsonl
+agent.add_reflection(reflection)      # ratings appended to journal.jsonl
 ```
 
 `handoff` installs a copy of the session into the reflector's harness and forks it, so the

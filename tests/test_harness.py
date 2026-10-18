@@ -12,7 +12,8 @@ from thearc.resources import (
     InstallConflict,
     MetaAgent,
     install,
-    read_installation,
+    installed_agents,
+    uninstall,
 )
 from thearc.resources.markdown import split_frontmatter
 
@@ -22,8 +23,8 @@ FASTAPI = Path(__file__).resolve().parent / "fastapi"
 @pytest.mark.parametrize("harness", sorted(HARNESSES))
 def test_install_then_import_round_trips(agent, harness, tmp_path):
     result = install(agent, harness, tmp_path)
-    imported = read_installation(harness, tmp_path)
-    if harness == "pi":  # Pi has no hooks or MCP servers.
+    imported = MetaAgent.from_installation(harness, tmp_path)
+    if harness in {"pi", "opencode"}:  # Neither takes hooks or MCP servers from thearc.
         assert result.skipped == ("hook:guard", "hook:lint", "mcp:docs")
         agent = agent.model_copy(update={"hooks": {}, "mcps": {}})
     assert imported.revision == agent.revision
@@ -34,7 +35,7 @@ def test_install_then_import_round_trips(agent, harness, tmp_path):
 def test_skills_use_standard_frontmatter(agent, harness, tmp_path):
     install(agent, harness, tmp_path)
     skill = tmp_path / HARNESSES[harness].location("skills") / "retry" / "SKILL.md"
-    assert skill.read_text().startswith("---\nname: retry\ndescription: Retry things\n---\n")
+    assert skill.read_text().startswith("---\nname: retry\ndescription: Retry things\nversion: '1'\n---\n")
 
 
 def test_claude_layout(agent, tmp_path):
@@ -72,7 +73,7 @@ def test_reinstall_replaces_only_what_it_owns(agent, tmp_path):
 
 def test_hook_names_survive_through_the_marker(agent, tmp_path):
     install(agent, "codex", tmp_path)
-    assert set(read_installation("codex", tmp_path).hooks) == {"guard", "lint"}
+    assert set(MetaAgent.from_installation("codex", tmp_path).hooks) == {"guard", "lint"}
 
 
 def test_unowned_files_are_conflicts_unless_forced(agent, tmp_path):
@@ -83,7 +84,7 @@ def test_unowned_files_are_conflicts_unless_forced(agent, tmp_path):
         install(agent, "claude", tmp_path)
     assert rule.read_text() == "hand-written\n"
     install(agent, "claude", tmp_path, force=True)
-    assert rule.read_text() == agent.resources["rules/style.md"].content
+    assert rule.read_text() == "# Style <!-- demo 1 -->\n\nNo emoji.\n"
 
 
 USER_AGENTS = """# Project
@@ -131,7 +132,8 @@ Run pytest.
 Be brief.
 """
     )
-    assert read_installation("codex", tmp_path).context["AGENTS.md"].content == agent.context["AGENTS.md"].content
+    imported = MetaAgent.from_installation("codex", tmp_path)
+    assert imported.context["AGENTS.md"].content == agent.context["AGENTS.md"].content
 
 
 def test_reinstall_removes_dropped_sections_and_keeps_user_content(tmp_path):
@@ -149,7 +151,7 @@ def test_reinstall_removes_dropped_sections_and_keeps_user_content(tmp_path):
 def test_context_created_by_thearc_is_owned_whole(agent, tmp_path):
     result = install(agent, "claude", tmp_path)
     assert result.context == {"AGENTS.md": None}
-    install(MetaAgent(name="empty"), "claude", tmp_path)
+    uninstall("claude", tmp_path)
     assert not (tmp_path / "AGENTS.md").exists()
 
 
@@ -169,7 +171,7 @@ def test_codex_mcp_servers_are_toml_tables(tmp_path):
     assert data["model"] == "gpt-5" and data["mcp_servers"]["theirs"] == {"command": "x"}
     assert data["mcp_servers"]["docs"] == {"command": "npx", "args": ["-y", "docs"], "env": {"TOKEN": "t"}}
     assert data["mcp_servers"]["web"] == {"url": "https://example.test/mcp", "enabled": False}
-    assert read_installation("codex", tmp_path).mcps["web"] == agent.mcps["web"]
+    assert MetaAgent.from_installation("codex", tmp_path).mcps["web"] == agent.mcps["web"]
 
     install(MetaAgent(name="a"), "codex", tmp_path)
     assert tomllib.loads(config.read_text()) == {"model": "gpt-5", "mcp_servers": {"theirs": {"command": "x"}}}
@@ -188,9 +190,8 @@ def test_codex_unowned_mcp_server_is_a_conflict(tmp_path):
 
 def test_uninstalling_everything_removes_owned_config(agent, tmp_path):
     install(agent, "claude", tmp_path)
-    install(MetaAgent(name="empty"), "claude", tmp_path)
-    remaining = sorted(path.relative_to(tmp_path).as_posix() for path in tmp_path.rglob("*") if path.is_file())
-    assert remaining == [".claude/.thearc-agent.json"]
+    uninstall("claude", tmp_path)
+    assert not any(path.is_file() for path in tmp_path.rglob("*"))  # The install record goes too.
 
 
 def test_script_hooks_are_installed_as_executable_files(tmp_path):
@@ -209,8 +210,8 @@ def test_unknown_harness():
 
 @pytest.mark.skipif(not (FASTAPI / ".agents").is_dir(), reason="tests/fastapi submodule not checked out")
 def test_imports_the_graphify_reference_project(tmp_path):
-    antigravity = read_installation("antigravity", FASTAPI, name="graphify")
-    codex = read_installation("codex", FASTAPI, name="graphify")
+    antigravity = MetaAgent.from_installation("antigravity", FASTAPI, name="graphify")
+    codex = MetaAgent.from_installation("codex", FASTAPI, name="graphify")
     assert antigravity.skills["graphify"].files[".graphify_version"]
     assert set(antigravity.resources) == {"rules/graphify.md", "workflows/graphify.md"}
     hook = next(iter(codex.hooks.values()))
@@ -278,22 +279,22 @@ def test_owned_hooks_in_a_flat_hooks_file_are_replaced(tmp_path):
     install(MetaAgent(name="graphify", owns_hooks=["graphify *"], hooks=[check]), "antigravity", tmp_path)
     assert json.loads(hooks_file.read_text()) == {"mine": {"command": "mine"},
                                                   "check": {"command": "graphify hook-check"}}
-    imported = read_installation("antigravity", tmp_path)
+    imported = MetaAgent.from_installation("antigravity", tmp_path)
     assert imported.hooks["check"].harnesses == [] and imported.hooks["mine"].harnesses == ["antigravity"]
     assert imported.owns_hooks == ["graphify *"]
 
 
 def test_scopes_and_ownership_survive_install_and_import(tmp_path):
     install(GRAPHIFY, "claude", tmp_path)
-    imported = read_installation("claude", tmp_path, name="graphify", version="0.9.68")
+    imported = MetaAgent.from_installation("claude", tmp_path, name="graphify", version="0.9.68")
     assert imported.hooks == {"guard-search": GUARD_SEARCH, "guard-read": GUARD_READ}
     assert imported.owns_hooks == ["graphify *"]
 
 
 @pytest.mark.skipif(not (FASTAPI / ".claude").is_dir(), reason="tests/fastapi submodule not checked out")
 def test_graphify_hooks_of_each_harness_combine_into_one_agent(tmp_path):
-    claude = read_installation("claude", FASTAPI, name="graphify")
-    codex = read_installation("codex", FASTAPI, name="graphify")
+    claude = MetaAgent.from_installation("claude", FASTAPI, name="graphify")
+    codex = MetaAgent.from_installation("codex", FASTAPI, name="graphify")
     assert {hook.harnesses[0] for hook in claude.hooks.values()} == {"claude"} and len(claude.hooks) == 2
     combined = codex.model_copy(update={"hooks": {**claude.hooks, **codex.hooks}, "owns_hooks": ["graphify *"]})
     for harness, native in [("claude", ".claude/settings.json"), ("codex", ".codex/hooks.json")]:
@@ -303,3 +304,27 @@ def test_graphify_hooks_of_each_harness_combine_into_one_agent(tmp_path):
         target.write_text((FASTAPI / native).read_text())  # Graphify's own hand-made install is already there.
         install(combined, harness, project)
         assert json.loads(target.read_text()) == json.loads((FASTAPI / native).read_text())
+
+
+def test_harnesses_share_an_agents_context(tmp_path):
+    graphify = MetaAgent(name="graphify", version="1",
+                         context=[ContextDocument(filename="AGENTS.md", content="## graphify\n\nUse the graph.\n")])
+    install(graphify, "codex", tmp_path)
+    install(graphify, "pi", tmp_path)
+    install(MetaAgent(name="other", version="1"), "pi", tmp_path)  # Another agent leaves graphify's context alone.
+    uninstall("pi", tmp_path, name="graphify")  # Codex still reads it.
+    assert "Use the graph." in (tmp_path / "AGENTS.md").read_text()
+    assert installed_agents(tmp_path) == {"graphify": {"codex": "1"}, "other": {"pi": "1"}}
+    uninstall("codex", tmp_path)
+    assert not (tmp_path / "AGENTS.md").exists()
+
+
+def test_installing_over_another_agent_takes_ownership(tmp_path):
+    first = MetaAgent(name="first",
+                      context=[ContextDocument(filename="AGENTS.md", content="## a\n\nA.\n\n## b\n\nB.\n")])
+    second = MetaAgent(name="second", context=[ContextDocument(filename="AGENTS.md", content="## b\n\nNew B.\n")])
+    install(first, "codex", tmp_path)
+    install(second, "codex", tmp_path)
+    assert MetaAgent.from_installation("codex", tmp_path, name="first").context["AGENTS.md"].content == "## a\n\nA.\n"
+    uninstall("codex", tmp_path, name="first")
+    assert (tmp_path / "AGENTS.md").read_text() == "## b\n\nNew B.\n"

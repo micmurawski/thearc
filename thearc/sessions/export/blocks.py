@@ -183,12 +183,11 @@ def _tool_call(event: dict, conversion: Conversion, target: str) -> Block:
 
 def _codex_item(event: dict, conversion: Conversion, target: str) -> Block:
     """Codex encrypted reasoning and custom tool calls: kept as is for Codex, converted for the rest."""
-    item = {
-        k: v
-        for k, v in event["raw"]["payload"].items()
-        if k not in {"id", "internal_chat_message_metadata_passthrough"}
-    }
-    kind, name = item["type"], TARGET_NAMES[target]
+    payload = event["raw"]["payload"]
+    kind, name = payload["type"], TARGET_NAMES[target]
+    # Encrypted reasoning is bound to its item ID, so it keeps it; other items drop theirs.
+    dropped = {"internal_chat_message_metadata_passthrough"} | (set() if kind == "reasoning" else {"id"})
+    item = {k: v for k, v in payload.items() if k not in dropped}
     if kind == "custom_tool_call":
         if target != "codex":
             conversion.refuse(event, f"Codex custom tool call {item.get('name')!r} has no {name} equivalent")

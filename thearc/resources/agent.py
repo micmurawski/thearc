@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -10,15 +9,16 @@ from pydantic import BaseModel, Field, PrivateAttr, field_validator
 
 from thearc.harnesses import Harness
 from thearc.resources.journal import Journal, Rated
-from thearc.resources.ratings import RatingPolicy, RatingScale
 from thearc.resources.targets import ResourceTarget, safe_name, safe_relative_path
 
 if TYPE_CHECKING:
     from thearc.reflection import Reflection
     from thearc.resources.files import AgentFiles
     from thearc.resources.harness import HarnessLayout, Installation
+    from thearc.resources.ratings import RatingPolicy
 
 SKILL_FILE = "SKILL.md"
+RATINGS_FILE = "RATINGS.md"  # Written by release(include_scales=True); a view, not configuration.
 _RESERVED_SKILL_METADATA = frozenset({"name", "description"})
 
 
@@ -278,7 +278,7 @@ class MetaAgent(BaseModel):
 
     @classmethod
     def from_workspace(cls, path: str | Path, *, journal: bool = True, **limits: int) -> MetaAgent:
-        """The agent saved in a workspace; ``journal=False`` reads only its configuration."""
+        """The agent saved in a workspace, which it remembers; ``journal=False`` reads only its configuration."""
         from thearc.resources.workspace import read_workspace
 
         return read_workspace(path, journal=journal, **limits)
@@ -290,6 +290,11 @@ class MetaAgent(BaseModel):
         return all(getattr(self, name) == getattr(other, name) for name in type(self).model_fields)
 
     __hash__ = None  # type: ignore[assignment]  # Mutable, like any BaseModel.
+
+    @property
+    def workspace(self) -> Path | None:
+        """The workspace this agent was read from or initialized in, whose journal ``add_reflection`` appends to."""
+        return self._workspace
 
     @property
     def identities(self) -> dict[ResourceTarget, str]:
@@ -305,56 +310,6 @@ class MetaAgent(BaseModel):
         if read_workspace(self._workspace, journal=False).revision != self.revision:
             raise ValueError(f"workspace {self._workspace} holds another configuration than this agent")
         return self._workspace
-
-    @property
-    def workspace(self) -> Path | None:
-        """The workspace this agent was read from or initialized in, whose journal ``add_reflection`` appends to."""
-        return self._workspace
-
-    def to_worktree(self, path: str | Path, *, branch: str | None = None) -> MetaAgent:
-        """A new git worktree of this agent's workspace at ``path``, on ``branch`` from its current commit.
-
-        Pending journal lines are committed first, so the worktree starts with them. Parallel
-        pipelines each work on their own worktree from the same commit — their shared base —
-        and a merger combines them. The returned agent is bound to the new worktree.
-        """
-        from thearc.resources.git import _git, commit_journal
-        from thearc.resources.workspace import _root
-
-        root = self.checked_workspace("to_worktree")
-        commit_journal(root)
-        if dirty := _git(root, "status", "--porcelain").decode().strip():
-            raise ValueError(f"commit or undo the workspace's pending edits first: {dirty.splitlines()}")
-        target = _root(path)
-        branch = branch or f"candidate/{target.name}"
-        _git(root, "worktree", "add", "-q", "-b", branch, str(target), "HEAD")
-        return MetaAgent.from_workspace(target)
-
-    def annotate(
-        self,
-        scales: RatingScale | Sequence[RatingScale],
-        *,
-        policy: RatingPolicy | None = None,
-        message: str = "Refresh ratings",
-    ) -> str | None:
-        """Refresh the rating summaries in the workspace's markers from the journal, and commit them.
-
-        ``policy`` defaults to ``since_last_modification``: ratings of each target's current
-        text. Only markers change, so the commit records no journal entries. Returns the
-        commit, or None when the markers were already current.
-        """
-        from thearc.resources.git import _git, commit
-        from thearc.resources.ratings import since_last_modification
-        from thearc.resources.workspace import JOURNAL_FILE, write_workspace
-
-        root = self.checked_workspace("annotate")
-        scales = (scales,) if isinstance(scales, RatingScale) else tuple(scales)
-        policy = policy or since_last_modification
-        write_workspace(self, root, journal=False, overwrite=True, scales=scales, policy=policy)
-        _git(root, "add", "-A", "--", ".", f":!{JOURNAL_FILE}")
-        if not _git(root, "diff", "--cached", "--name-only").strip():
-            return None
-        return commit(root, message)
 
     def add_reflection(self, reflection: Reflection) -> tuple[Rated, ...]:
         """Record a reflection's ratings: each item, once per target its reference resolves to.
@@ -375,6 +330,77 @@ class MetaAgent(BaseModel):
         if self._workspace is not None:
             Journal.append(self._workspace / JOURNAL_FILE, new)
         return tuple(entry for entry in new if isinstance(entry, Rated))
+
+    def release(
+        self,
+        version: str | None = None,
+        *,
+        part: Literal["major", "minor", "patch"] = "patch",
+        branch: str | None = None,
+        message: str | None = None,
+        include_scales: bool = False,
+        policy: RatingPolicy | None = None,
+        push: str | None = None,
+    ) -> MetaAgent:
+        """Version this agent's workspace: set ``version`` (default: bump ``part`` of the current one), commit
+        it, and point a new branch (default ``release/<version>``) at that commit.
+
+        Only ``agent.json`` changes, so the configuration's content and journal stay as they are; the
+        revision changes with the version. With ``include_scales``, ``RATINGS.md`` is written next to
+        the configuration: every section with its lineage ID and its ratings on every scale the
+        journal uses (``agent_outline``); it is not configuration, so it changes no revision. Pending
+        journal lines are committed first. The current branch moves forward with the release commit.
+        With ``push``, the release branch is pushed to that remote. Returns the agent at the new version.
+        """
+        import json
+
+        from thearc.resources.git import GitError, _git, commit, commit_journal
+        from thearc.resources.ratings import scales_from_ratings, since_last_modification
+        from thearc.resources.views import agent_outline
+        from thearc.resources.workspace import MANIFEST
+
+        root = self.checked_workspace("release")
+        version = version or bump_version(self.version, part)
+        branch = branch or f"release/{version}"
+        try:
+            _git(root, "rev-parse", "--verify", "--quiet", f"refs/heads/{branch}")
+        except GitError:
+            pass
+        else:
+            raise ValueError(f"branch {branch} already exists")
+        commit_journal(root)
+        manifest = json.loads((root / MANIFEST).read_text(encoding="utf-8"))
+        manifest["version"] = version
+        (root / MANIFEST).write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+        _git(root, "add", MANIFEST)
+        if include_scales and (scales := scales_from_ratings(self.journal.ratings())):
+            released = self.model_copy(update={"version": version})
+            outline = agent_outline(released, scales, ids=True, policy=policy or since_last_modification)
+            (root / RATINGS_FILE).write_text(outline, encoding="utf-8")
+            _git(root, "add", RATINGS_FILE)
+        sha = commit(root, message or f"Release {self.name} {version}")
+        _git(root, "branch", branch, sha)
+        if push is not None:
+            _git(root, "push", "--quiet", push, f"refs/heads/{branch}:refs/heads/{branch}")
+        return MetaAgent.from_workspace(root)
+
+    def to_worktree(self, path: str | Path, *, branch: str | None = None) -> MetaAgent:
+        """A new git worktree of this agent's workspace at ``path``, on ``branch`` from its current commit.
+
+        Pending journal lines are committed first, so the worktree starts with them. Parallel
+        pipelines each work on their own worktree from the same commit — their shared base —
+        and a merger combines them. The returned agent is bound to the new worktree.
+        """
+        from thearc.resources.git import _git, commit_journal
+        from thearc.resources.workspace import _root
+
+        root = self.checked_workspace("to_worktree")
+        commit_journal(root)
+        if dirty := _git(root, "status", "--porcelain").decode().strip():
+            raise ValueError(f"commit or undo the workspace's pending edits first: {dirty.splitlines()}")
+        target = _root(path)
+        _git(root, "worktree", "add", "-q", "-b", branch or f"candidate/{target.name}", str(target), "HEAD")
+        return MetaAgent.from_workspace(target)
 
     def to_workspace(self, path: str | Path, *, journal: bool = True, overwrite: bool = False) -> Path:
         from thearc.resources.workspace import write_workspace
@@ -411,7 +437,26 @@ class MetaAgent(BaseModel):
         name: str | None = None,
         version: str | None = None,
     ) -> MetaAgent:
-        """Import the configuration installed for a harness in ``project_dir``."""
+        """Import the configuration installed for ``harness`` in ``project_dir`` (by thearc or by hand), as an agent
+        not bound to a workspace. For a context document thearc merged into, only the sections it owns are
+        imported. When several agents are installed for ``harness``, ``name`` picks one; for a project thearc did
+        not install into, ``name`` and ``version`` name the imported agent."""
         from thearc.resources.harness import read_installation
 
         return read_installation(harness, project_dir, name=name, version=version)
+
+
+def bump_version(version: str | None, part: Literal["major", "minor", "patch"] = "patch") -> str:
+    """``1.4.2`` → ``2.0.0`` / ``1.5.0`` / ``1.4.3``; missing parts count as 0 (``1`` → ``1.1.0``)."""
+    if version is None:
+        raise ValueError("the agent has no version to bump; pass one")
+    numbers = version.split(".")
+    if not 1 <= len(numbers) <= 3 or not all(n.isdigit() for n in numbers):
+        raise ValueError(f"cannot bump {version!r}; pass the new version explicitly")
+    major, minor, patch = ([int(n) for n in numbers] + [0, 0])[:3]
+    if part == "major":
+        return f"{major + 1}.0.0"
+    if part == "minor":
+        return f"{major}.{minor + 1}.0"
+    return f"{major}.{minor}.{patch + 1}"
+

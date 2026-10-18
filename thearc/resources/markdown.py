@@ -100,6 +100,9 @@ def _find(text: str, title: str) -> Heading | None:
     return min(matches, key=lambda h: (h.level, h.start)) if matches else None
 
 
+find_section = _find  # The heading replace_sections and section_text match for a title.
+
+
 def section_text(text: str, title: str) -> str | None:
     """The text of the section ``replace_sections`` would match for ``title``, ending with one newline."""
     heading = _find(text, title)

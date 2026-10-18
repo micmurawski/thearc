@@ -24,7 +24,7 @@ from thearc.resources.agent import MetaAgent
 from thearc.resources.changes import detect_changes
 from thearc.resources.journal import Entry, Journal, Moved
 from thearc.resources.targets import ResourceTarget
-from thearc.resources.workspace import JOURNAL_FILE, MANIFEST, parse_workspace
+from thearc.resources.workspace import JOURNAL_FILE, MANIFEST, is_managed, parse_workspace
 
 
 class GitError(RuntimeError):
@@ -99,6 +99,14 @@ def workspace_commits(repo: str | Path, *, path: str = "", rev: str = "HEAD") ->
 
 def agent_at(repo: str | Path, commit: str, *, path: str = "") -> MetaAgent | None:
     """The MetaAgent configuration stored in ``commit`` (journal excluded), or ``None`` if it has no workspace."""
+    snapshot = snapshot_at(repo, commit, path=path)
+    return snapshot[0] if snapshot else None
+
+
+def snapshot_at(
+    repo: str | Path, commit: str, *, path: str = ""
+) -> tuple[MetaAgent, dict[ResourceTarget, str]] | None:
+    """The configuration stored in ``commit`` and the lineage IDs its markers give; ``None`` without a workspace."""
     prefix = _prefix(path)
     listing = _git(repo, "ls-tree", "-r", "-z", "--full-tree", commit, "--", prefix or ".")
     names = []
@@ -107,8 +115,8 @@ def agent_at(repo: str | Path, commit: str, *, path: str = "") -> MetaAgent | No
             continue
         meta, name = item.decode().split("\t", 1)
         relative = name[len(prefix) :]
-        if not name.startswith(prefix) or relative.split("/", 1)[0].startswith(".") or relative == JOURNAL_FILE:
-            continue
+        if not name.startswith(prefix) or relative == JOURNAL_FILE or not is_managed(relative):
+            continue  # Dot-files and the repository's own files (README, LICENSE, …) are not the agent's.
         if meta.split()[0] not in {"100644", "100755"}:
             raise GitError(f"{commit}: {name} is not a regular file")
         names.append((name, relative))
@@ -147,24 +155,27 @@ def record_commits(
     if since is not None:
         seen.add(_git(repo, "rev-parse", "--verify", f"{since}^{{commit}}").decode().strip())
     start = max((index + 1 for index, commit in enumerate(commits) if commit.sha in seen), default=0)
-    loaded: dict[str, MetaAgent | None] = {}
+    loaded: dict[str, tuple[MetaAgent, dict[ResourceTarget, str]] | None] = {}
 
-    def load(sha: str | None) -> MetaAgent | None:
+    def load(sha: str | None) -> tuple[MetaAgent, dict[ResourceTarget, str]] | None:
         if sha is None:
             return None
         if sha not in loaded:
-            loaded[sha] = agent_at(repo, sha, path=path)
+            loaded[sha] = snapshot_at(repo, sha, path=path)
         return loaded[sha]
 
     recorded: list[Entry] = []
     for commit in commits[start:]:
-        after = load(commit.sha)
-        if after is None or commit.sha in seen:
+        snapshot = load(commit.sha)
+        if snapshot is None or commit.sha in seen:
             continue
-        ids = {**after.identities, **journal.ids()}  # Lineage IDs, by the addresses before this commit.
+        after, after_ids = snapshot
+        before = load(commit.parent)
+        ids = {**after_ids, **journal.ids()}  # Lineage IDs, by the addresses before this commit.
         entries = detect_changes(
-            load(commit.parent),
+            before[0] if before else None,
             after,
+            identities=(before[1] if before else {}, after_ids),
             reason=commit.message,
             at=commit.at,
             commit=commit.sha,

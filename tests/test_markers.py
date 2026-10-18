@@ -1,4 +1,4 @@
-"""Workspace markers: lineage IDs and ratings in the files, never in the configuration."""
+"""Workspace markers: lineage IDs in the files, never in the configuration."""
 
 import json
 import re
@@ -6,10 +6,10 @@ import subprocess
 
 import pytest
 
-from thearc.resources import Hook, MetaAgent, Skill, record_commits
-from thearc.resources.markers import strip
+from thearc.resources import Hook, MetaAgent, Skill, record_commits, write_workspace
+from thearc.resources.markers import annotate, strip
 
-from .test_reflection import GOOD, SCHEMA, Scripted, answer, usefulness
+from .test_reflection import GOOD, SCHEMA, Scripted, answer
 
 MARKER = re.compile(r"res_[0-9a-f]{24}")
 
@@ -34,7 +34,8 @@ def workspace(agent, tmp_path):
 
 def test_workspace_files_carry_ids_but_the_configuration_does_not(workspace):
     root = workspace.workspace
-    limits = workspace.files().targets[[t.section for t in workspace.files().targets].index("Retry > Limits")]
+    targets = workspace.files().targets
+    limits = targets[[t.section for t in targets].index("Retry > Limits")]
     skill = (root / "skills/retry/SKILL.md").read_text()
     assert f"## Limits <!-- {limits.id} -->" in skill
     assert (root / "skills/retry/run.sh").read_text().startswith("#!/bin/sh\necho hi  # res_")
@@ -52,25 +53,9 @@ def test_the_reflectors_workspace_has_no_ids_or_ratings(workspace):
     from thearc.reflection import Reflector
 
     workspace.add_reflection(Reflector(runtime=Scripted(answer(GOOD))).reflect("Review.", workspace, SCHEMA))
-    workspace.annotate(usefulness)
-    assert "harmful: 1" in (workspace.workspace / "skills/retry/SKILL.md").read_text()
     runtime = Scripted(answer(GOOD))
     Reflector(runtime=runtime).reflect("Review.", MetaAgent.from_workspace(workspace.workspace), SCHEMA)
     assert runtime.texts and not any(MARKER.search(text) or "harmful:" in text for text in runtime.texts.values())
-
-
-def test_annotate_refreshes_ratings_without_touching_the_revision_or_journal(workspace):
-    from thearc.reflection import Reflector
-
-    revision, base = workspace.revision, head(workspace.workspace)
-    workspace.add_reflection(Reflector(runtime=Scripted(answer(GOOD))).reflect("Review.", workspace, SCHEMA))
-    sha = workspace.annotate(usefulness)
-    assert sha and workspace.annotate(usefulness) is None  # Already current.
-    skill = (workspace.workspace / "skills/retry/SKILL.md").read_text()
-    assert "## Limits <!-- res_" in skill and "usefulness: (harmful: 1, neutral: 0, helpful: 0) -->" in skill
-    reread = MetaAgent.from_workspace(workspace.workspace)
-    assert reread.revision == revision
-    assert record_commits(workspace.workspace, reread.journal, since=base) == []  # Markers only: nothing to record.
 
 
 def test_a_kept_marker_makes_a_rename_certain_even_when_the_text_changed(workspace):
@@ -117,13 +102,21 @@ def test_a_commit_touching_two_sections_lists_both(workspace):
     assert len(entries) == 2 and entries[0].touched == entries[1].touched and len(entries[0].touched) == 2
 
 
-def test_workspaces_in_the_earlier_layout_still_load(tmp_path):
-    root = tmp_path / "old"
-    agent = MetaAgent(name="a", version="1", skills=[Skill(name="s", instructions="# S\n")],
-                      hooks=[Hook(name="h", command="graphify x")], owns_hooks=["graphify *"])
-    agent.to_workspace(root)
+def test_a_plain_json_file_in_a_workspace_is_refused(tmp_path):
+    root = tmp_path / "ws"
+    write_workspace(MetaAgent(name="a", version="1", hooks=[Hook(name="h", command="x")]), root)
     (root / "hooks.jsonc").rename(root / "hooks.json")
-    (root / "owned_hooks.jsonc").unlink()
-    manifest = json.loads((root / "agent.json").read_text())
-    (root / "agent.json").write_text(json.dumps({**manifest, "owns_hooks": ["graphify *"]}))
-    assert MetaAgent.from_workspace(root) == agent
+    with pytest.raises(ValueError, match="hooks.json: a workspace keeps it as hooks.jsonc"):
+        MetaAgent.from_workspace(root)
+
+
+def test_markers_written_with_ratings_still_read():
+    text = "## Limits <!-- res_fd94c5d3172195a16d25e40b · usefulness: (harmful: 3, neutral: 0, helpful: 1) -->\n"
+    assert strip("skills/a/SKILL.md", text) == ("## Limits\n", {1: "res_fd94c5d3172195a16d25e40b"})
+
+
+def test_a_continued_first_line_gets_no_marker():
+    agent = MetaAgent(name="a", skills=[Skill(name="s", instructions="# S\n",
+                                              files={"run.sh": "#!/bin/sh\nexec x \\\n  --y\n"})])
+    files = annotate(agent.files(), {target: target.id for target in agent.files().targets})
+    assert files["skills/s/run.sh"] == "#!/bin/sh\nexec x \\\n  --y\n"

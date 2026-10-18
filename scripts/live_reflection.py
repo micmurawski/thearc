@@ -4,9 +4,9 @@ A tiny agent with a deliberately bad retry rule, and evidence of the agent loopi
 syntax error. ``reflect`` attaches the evidence to the prompt; ``handoff`` installs an
 8-event session showing the same thing into the harness and forks it.
 
-    .venv/bin/python thearc/live_reflection.py codex reflect
-    .venv/bin/python thearc/live_reflection.py claude handoff --home /tmp/claude-home
-    .venv/bin/python thearc/live_reflection.py pi reflect --model <provider/model>
+    .venv/bin/python scripts/live_reflection.py codex reflect
+    .venv/bin/python scripts/live_reflection.py claude handoff --home /tmp/claude-home
+    .venv/bin/python scripts/live_reflection.py pi reflect --model <provider/model>
 
 ``--home`` installs handed-off sessions into another harness home instead of your own
 (Codex then needs ``CODEX_HOME`` set to the same folder, Claude ``CLAUDE_CONFIG_DIR``).

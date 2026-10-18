@@ -79,7 +79,7 @@ class Merge:
     merger: dict[str, Any]
     candidates: dict[str, str]  # Branch → head commit merged.
     proposals: tuple[Proposal, ...]
-    agent: MetaAgent
+    agent: MetaAgent  # The merged candidate, bound to its worktree.
     at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
 
@@ -131,7 +131,7 @@ class Merger:
 
         identifier = "merge_" + uuid.uuid4().hex
         branch = f"merge/{identifier.removeprefix('merge_')[:12]}"
-        stamp = {"merge": identifier, "merger": self.harness,
+        stamp = {"merge": identifier, "merger": self.harness, "candidates": names,
                  **({"model": self.runtime.model} if self.runtime.model else {}), **extra}
         with tempfile.TemporaryDirectory(prefix="thearc-merge-") as directory:
             clone = Path(directory).resolve() / "agent"
@@ -163,7 +163,7 @@ class Merger:
 def _root_of(candidate: MetaAgent) -> Path:
     if candidate.workspace is None:
         raise ValueError("candidates must be agents on workspaces (see agent.to_worktree)")
-    return candidate.workspace
+    return candidate.workspace  # Read as committed: curation moved the worktree past this agent.
 
 
 def _owned(files: AgentFiles, target: ResourceTarget | None) -> str | None:

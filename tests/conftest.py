@@ -55,3 +55,11 @@ def reviewed(agent, tmp_path):
     reflection = Reflector(runtime=Scripted(answer(GOOD))).reflect("Review.", workspace, SCHEMA)
     workspace.add_reflection(reflection)
     return workspace, reflection
+
+
+@pytest.fixture
+def candidates(agent, tmp_path):
+    """A workspace and two worktree candidates curated from it (see tests/pipelines.py)."""
+    from .pipelines import make_candidates
+
+    return make_candidates(agent, tmp_path)

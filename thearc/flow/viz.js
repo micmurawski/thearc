@@ -1,6 +1,49 @@
 (function () {
     "use strict";
 
+    // ---- theme: same toggle and remembered choice as the report page ----
+    (function () {
+        var root = document.documentElement, button = document.getElementById("theme");
+        if (!button) return;
+        var system = function () {
+            return window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        };
+        var current = function () { return root.getAttribute("data-theme") || system(); };
+        var paint = function () {
+            var dark = current() === "dark";
+            button.textContent = dark ? "\u25d0 light" : "\u25d1 dark";
+            button.setAttribute("aria-pressed", String(!dark));
+            button.title = "Switch to the " + (dark ? "light" : "dark") + " theme";
+        };
+        try { var saved = localStorage.getItem("thearc-report-theme"); if (saved) root.setAttribute("data-theme", saved); } catch (_error) {}
+        button.addEventListener("click", function () {
+            var next = current() === "dark" ? "light" : "dark";
+            root.setAttribute("data-theme", next);
+            try { localStorage.setItem("thearc-report-theme", next); } catch (_error) {}
+            paint();
+        });
+        paint();
+    }());
+
+    // ---- tabs ----
+    var tabKey = "thearc-flow-viz-active-tab";
+    function showTab(name) {
+        document.querySelectorAll(".tab-panel").forEach(function (panel) {
+            panel.hidden = panel.id !== "tab-" + name;
+        });
+        document.querySelectorAll("nav.tabs [data-tab]").forEach(function (button) {
+            button.setAttribute("aria-selected", String(button.dataset.tab === name));
+        });
+        try { localStorage.setItem(tabKey, name); } catch (_error) {}
+    }
+    document.querySelectorAll("nav.tabs [data-tab]").forEach(function (button) {
+        button.addEventListener("click", function () { showTab(button.dataset.tab); });
+    });
+    var savedTab = "status";
+    try { savedTab = localStorage.getItem(tabKey) || savedTab; } catch (_error) {}
+    showTab(document.getElementById("tab-" + savedTab) ? savedTab : "status");
+    window._flowViz = { showTab: showTab };
+
     var svg = document.getElementById("flow-svg");
     var viewport = document.getElementById("vp");
     if (!svg || !viewport) return;
@@ -9,10 +52,12 @@
     var pan = null;
     var nodeDrag = null;
     var lastTouches = [];
-    var nodeWidth = 150;
-    var nodeHeight = 64;
+    var nodeWidth = Number(svg.dataset.nodeW) || 176;
+    var nodeHeight = Number(svg.dataset.nodeH) || 64;
     var positionsKey = "thearc-flow-viz-node-positions:" + (svg.dataset.storageKey || "default");
-    var tabKey = "thearc-flow-viz-active-tab";
+    // The live page reloads every few seconds; keep the pan and zoom across those reloads.
+    var viewKey = "thearc-flow-viz-view:" + (svg.dataset.storageKey || "default");
+    var background = document.getElementById("vp-bg");
     var nodeGroups = Array.from(svg.querySelectorAll(".node"));
     var edgeElements = Array.from(svg.querySelectorAll("[data-edge]"));
     var nodesById = {};
@@ -34,10 +79,10 @@
     }
 
     function applyViewport() {
-        viewport.setAttribute(
-            "transform",
-            "translate(" + transform.x + " " + transform.y + ") scale(" + transform.scale + ")"
-        );
+        var value = "translate(" + transform.x + " " + transform.y + ") scale(" + transform.scale + ")";
+        viewport.setAttribute("transform", value);
+        if (background) background.setAttribute("transform", value);
+        try { sessionStorage.setItem(viewKey, JSON.stringify(transform)); } catch (_error) {}
     }
 
     function nodePosition(group) {
@@ -59,6 +104,7 @@
         var position = nodePosition(group);
         if (anchor === "r") return { x: position.x + nodeWidth, y: position.y + nodeHeight / 2 };
         if (anchor === "l") return { x: position.x, y: position.y + nodeHeight / 2 };
+        if (anchor === "t") return { x: position.x + nodeWidth / 2, y: position.y };
         return { x: position.x + nodeWidth / 2, y: position.y + nodeHeight };
     }
 
@@ -77,7 +123,8 @@
                 );
             } else {
                 element.setAttribute("x", (source.x + target.x) / 2);
-                element.setAttribute("y", drop + Number(element.dataset.labelDy || 0));
+                // Sit on the curve's midpoint, as the server-side render does.
+                element.setAttribute("y", 0.125 * (source.y + target.y) + 0.75 * drop - Number(element.dataset.labelDy || 0));
             }
             return;
         }
@@ -93,7 +140,7 @@
             );
         } else if (element.tagName === "text") {
             element.setAttribute("x", (source.x + target.x) / 2);
-            element.setAttribute("y", Math.min(sourceY, targetY) - Number(element.dataset.labelDy || 6));
+            element.setAttribute("y", (sourceY + targetY) / 2 - Number(element.dataset.labelDy || 6));
         }
     }
 
@@ -103,7 +150,31 @@
         });
     }
 
+    var initialPositions = {};
+    nodeGroups.forEach(function (group) {
+        initialPositions[group.dataset.nodeId] = nodePosition(group);
+    });
     var savedPositions = readJSON(positionsKey, {});
+    // Size the box to the graph, and keep wide graphs readable: never start below 80% of natural size
+    // (the view opens on the start of the flow; pan for the rest), and never blow small graphs up past 100%.
+    var box = svg.parentElement;
+    var viewBox = svg.viewBox.baseVal;
+    var fit = box.clientWidth / viewBox.width;
+    var natural = clamp(fit, 0.8, 1);
+    box.style.height = clamp(viewBox.height * natural + 2, 220, Math.max(320, window.innerHeight * 0.7)) + "px";
+    var initialScale = natural / Math.min(fit, box.clientHeight / viewBox.height);
+    function initialView() {
+        transform = { x: 0, y: 0, scale: 1 };
+        if (initialScale > 1.01) {
+            transform = { x: 0, y: viewBox.height / 2 * (1 - initialScale), scale: initialScale };
+        }
+    }
+    initialView();
+    try {
+        var savedView = JSON.parse(sessionStorage.getItem(viewKey));
+        if (savedView && isFinite(savedView.scale)) transform = savedView;
+    } catch (_error) {}
+    applyViewport();
     nodeGroups.forEach(function (group) {
         var saved = savedPositions[group.dataset.nodeId];
         if (saved) setNodePosition(group, saved.x, saved.y);
@@ -229,20 +300,6 @@
         lastTouches = [{ x: touch.clientX, y: touch.clientY }];
     }, { passive: false });
 
-    function showTab(name) {
-        document.querySelectorAll(".tab-panel").forEach(function (panel) {
-            panel.classList.toggle("active", panel.id === "tab-" + name);
-        });
-        document.querySelectorAll(".tab-btn").forEach(function (button) {
-            button.classList.toggle("active", button.dataset.tab === name);
-        });
-        try { localStorage.setItem(tabKey, name); } catch (_error) {}
-    }
-
-    var savedTab = "status";
-    try { savedTab = localStorage.getItem(tabKey) || savedTab; } catch (_error) {}
-    showTab(savedTab);
-
     window._flowViz = {
         zoomIn: function () {
             zoomAt({ x: svg.viewBox.baseVal.width / 2, y: svg.viewBox.baseVal.height / 2 }, 1.25);
@@ -251,8 +308,15 @@
             zoomAt({ x: svg.viewBox.baseVal.width / 2, y: svg.viewBox.baseVal.height / 2 }, 0.8);
         },
         reset: function () {
-            transform = { x: 0, y: 0, scale: 1 };
+            initialView();
             applyViewport();
+            nodeGroups.forEach(function (group) {
+                var initial = initialPositions[group.dataset.nodeId];
+                setNodePosition(group, initial.x, initial.y);
+            });
+            edgeElements.forEach(updateEdge);
+            savedPositions = {};
+            try { localStorage.removeItem(positionsKey); } catch (_error) {}
         },
         showTab: showTab
     };

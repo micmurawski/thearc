@@ -1,10 +1,18 @@
 """MetaAgent configuration, its journal, and ratings. See ``GLOSSARY.md``."""
 
-from .agent import MCP, AgentResource, ContextDocument, Extension, Hook, MetaAgent, Skill
+from .agent import MCP, AgentResource, ContextDocument, Extension, Hook, MetaAgent, Skill, bump_version
 from .changes import detect_changes
 from .files import AgentFiles, FileReference, Span, diff_files
 from .git import Commit, GitError, agent_at, record_commits, workspace_commits
-from .harness import HARNESSES, HarnessLayout, Installation, InstallConflict, install, read_installation
+from .harness import (
+    HARNESSES,
+    HarnessLayout,
+    Installation,
+    InstallConflict,
+    install,
+    installed_agents,
+    uninstall,
+)
 from .journal import Added, Change, Entry, Journal, Kept, Lineage, Modified, Moved, Rated, Removed
 from .ratings import (
     CategoricalScale,
@@ -21,7 +29,7 @@ from .ratings import (
 )
 from .reflection import Ref, ReflectionItem, ReflectionResult, ReflectionSchema, Rejection
 from .targets import ResourceTarget
-from .views import agent_outline, annotated_files
+from .views import agent_outline
 from .workspace import init_workspace, read_workspace, workspace_files, write_workspace
 
 __all__ = [
@@ -67,17 +75,18 @@ __all__ = [
     "Summary",
     "agent_at",
     "agent_outline",
-    "annotated_files",
+    "bump_version",
     "count_all",
     "detect_changes",
     "diff_files",
     "including_subsections",
     "init_workspace",
     "install",
-    "read_installation",
+    "installed_agents",
     "read_workspace",
     "record_commits",
     "since_last_modification",
+    "uninstall",
     "workspace_commits",
     "workspace_files",
     "write_workspace",

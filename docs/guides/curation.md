@@ -11,9 +11,9 @@ curation.entries      # the journal entries recording them
 curation.candidate()  # the curated configuration
 ```
 
-The reflections must already be in the agent's journal (`agent.add_reflection`). With `scales`,
-the workspace's markers are refreshed first, so the curator sees every section's ratings next to
-its text.
+The reflections must already be in the workspace's journal (`agent.add_reflection`). With `scales`,
+the prompt also lists every section with its ID and its ratings so far (`agent_outline`); the files
+themselves carry only IDs.
 
 ## How the curator works
 

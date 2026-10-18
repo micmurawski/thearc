@@ -8,19 +8,22 @@ commit where it first appears and to its configuration files (without markers).
     {
       "agent": {"name", "version"}, "generated_at", "head",
       "scales": [{"name", "labels", "ordered"}],
-      "revisions": [{"revision", "commit", "at", "message", "branches", "files": {path: text},
+      "files": {hash: text},   every distinct file text once
+      "revisions": [{"revision", "commit", "at", "message", "branches", "files": {path: hash},
                      "spans": {section id: [path, line]}}],
       "branches": [{"name", "head", "current", "commits": [{"commit", "at", "message", "revision"}]}],
       "sections": [{"id", "address", "kind", "name", "section", "depth", "path", "removed", "names"}],
       "cells": {section id: {revision: {"ratings": {scale: {value: count}}, "events": [kind, …]}}},
       "changes": [{"section", "kind", "revision", "commit", "at", "reason", "author", "diff", "branches", …}],
       "ratings": [{"section", "revision", "scale", "value", "item", "reflection", "ref", "at", "metadata"}],
-      "reflections": {id: {"markdown", "revision", "at", "reflector", "evidence"}}
+      "reflections": {id: {"markdown", "revision", "at", "reflector", "evidence"}},
+      "graph": {"trunk", "bases", "runs", "releases"}   (thearc.resources.graph)
     }
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 from collections.abc import Sequence
 from datetime import UTC, datetime
@@ -28,13 +31,11 @@ from pathlib import Path
 from typing import Any
 
 from thearc.resources.git import GitError, _git, agent_at
+from thearc.resources.graph import _utc
 from thearc.resources.journal import Entry, Journal, Kept, Modified, Moved, Rated, _unified, load_journal
-from thearc.resources.ratings import CategoricalScale, RatingScale
+from thearc.resources.ratings import CategoricalScale, RatingScale, rank_labels
 from thearc.resources.targets import ResourceTarget
 from thearc.resources.workspace import JOURNAL_FILE
-
-# Labels people commonly use, from worst to best, to order and colour scales the dataset only sees values of.
-_SENTIMENT = ["harmful", "bad", "negative", "wrong", "neutral", "mixed", "unclear", "helpful", "good", "positive"]
 
 
 def evolution(
@@ -111,11 +112,29 @@ def evolution(
         cell["events"].append(entry.kind)
         changes.append(_change(entry, section, sorted(found_in.get(entry.id, ()))))
 
+    targets: dict[str, list[ResourceTarget]] = {}
+    for line in lineages:
+        for entry in reversed(line.entries):  # Latest address first.
+            for target in (entry.target, *([entry.previous] if isinstance(entry, Moved) else [])):
+                if target not in targets.setdefault(line.id, []):
+                    targets[line.id].append(target)
+    from thearc.resources.graph import evolution_graph
+
+    texts: dict[str, str] = {}  # Revisions share most file texts: each is stored once, by hash.
+    for revision in revisions:
+        hashed = {}
+        for path, text in revision["files"].items():
+            key = hashlib.sha256(text.encode()).hexdigest()[:16]
+            texts[key] = text
+            hashed[path] = key
+        revision["files"] = hashed
+
     return {
         "agent": {"name": current.name if current else root.name, "version": current.version if current else None},
         "generated_at": datetime.now(UTC).isoformat(),
         "head": head,
         "scales": _scales(scales, ratings),
+        "files": texts,
         "revisions": revisions,
         "branches": branches,
         "sections": sections,
@@ -123,6 +142,7 @@ def evolution(
         "changes": changes,
         "ratings": ratings,
         "reflections": _reflections(reflections) if reflections else {},
+        "graph": evolution_graph(root, refs, head, changes, ratings, targets),
     }
 
 
@@ -138,6 +158,7 @@ def _history(root: Path, refs: list[str], head: str) -> tuple[list[dict[str, Any
     revision_of: dict[str, str | None] = {}
     for line in log.splitlines():
         sha, at, message = line.split("\x00", 2)
+        at = _utc(at)
         try:
             agent = agent_at(root, sha)
         except (GitError, ValueError):
@@ -155,6 +176,7 @@ def _history(root: Path, refs: list[str], head: str) -> tuple[list[dict[str, Any
         commits = []
         for line in lines.splitlines():
             sha, at, message = line.split("\x00", 2)
+            at = _utc(at)
             revision = revision_of.get(sha)
             commits.append({"commit": sha, "at": at, "message": message, "revision": revision})
             if revision in revisions and ref not in revisions[revision]["branches"]:
@@ -208,9 +230,7 @@ def _scales(scales: Sequence[RatingScale], ratings: list[dict[str, Any]]) -> lis
     given = {scale.name: scale for scale in scales}
     seen: dict[str, list[str]] = {}
     for rating in ratings:
-        values = seen.setdefault(rating["scale"], [])
-        if str(rating["value"]) not in values:
-            values.append(str(rating["value"]))
+        seen.setdefault(rating["scale"], []).append(str(rating["value"]))
     result = []
     for name in sorted(set(seen) | set(given)):
         scale = given.get(name)
@@ -218,21 +238,9 @@ def _scales(scales: Sequence[RatingScale], ratings: list[dict[str, Any]]) -> lis
             result.append({"name": name, "labels": list(scale.labels), "ordered": scale.ordered,
                            "meanings": scale.meanings})
             continue
-        values = seen.get(name, [])
-        numeric = all(_is_number(value) for value in values) and values
-        ranked = sorted(values, key=lambda v: (float(v),) if numeric else (
-            _SENTIMENT.index(v.lower()) if v.lower() in _SENTIMENT else len(_SENTIMENT), v))
-        result.append({"name": name, "labels": ranked, "ordered": bool(numeric) or all(
-            v.lower() in _SENTIMENT for v in values), "numeric": bool(numeric), "meanings": {}})
+        labels, ordered, numeric = rank_labels(seen.get(name, []))
+        result.append({"name": name, "labels": labels, "ordered": ordered, "numeric": numeric, "meanings": {}})
     return result
-
-
-def _is_number(value: str) -> bool:
-    try:
-        float(value)
-    except ValueError:
-        return False
-    return True
 
 
 def _reflections(folder: str | Path) -> dict[str, Any]:

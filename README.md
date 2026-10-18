@@ -38,13 +38,13 @@ class Lesson(BaseModel):
     ratings: list[Rated]
 
 agent = MetaAgent.from_installation("codex", "path/to/project", name="my-agent", version="1.0")
-agent = agent.init_workspace("artifacts/my-agent")            # git-tracked, with a journal
+agent = agent.init_workspace("artifacts/my-agent")       # git-tracked, with a journal
 
 with Sessions("sessions.sqlite") as sessions:
     session = sessions.get()                                  # the most recent session
 reflection = Reflector("codex").handoff("Review the configuration against this session.",
                                         session, agent, ReflectionSchema(Lesson))
-agent.add_reflection(reflection)                              # ratings → journal
+agent.add_reflection(reflection)                          # ratings → journal
 
 curation = Curator("codex").curate("Address the reflections.", [reflection], agent, scales=[usefulness])
 print(agent.diff(curation.candidate()))

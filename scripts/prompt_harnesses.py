@@ -5,35 +5,95 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 import subprocess
 from pathlib import Path
 from uuid import UUID
 
-from thearc import MetaAgent
-from thearc.models.agent import ContextDocument, Skill
+from thearc.resources import MetaAgent
+from thearc.resources.harness import HARNESSES, installed_agents
+
+# The canonical skills: the Agent Skills copy the project ships (.agents/skills), which Claude and Codex
+# also load. Pi and OpenCode get the same text installed where they read it.
+SKILL_SOURCE = "antigravity"  # Its layout is .agents/.
+INSTALLS_SKILLS = {"pi", "opencode"}
+MISPLACED = {"pi": [".pi/agent/skills"]}  # Not a Pi location; a copy there is never loaded.
+
+
+def install_skills(args, worktree: Path) -> list[str]:
+    """Install the project's canonical skills where ``args.harness`` reads them; returns their names.
+
+    Pi reads project skills from .pi/skills and OpenCode from .opencode/skills. Older copies there are
+    replaced, so every copy a harness can discover holds the same text, and misplaced copies are removed.
+    """
+    if args.harness not in INSTALLS_SKILLS:
+        return []
+    if any(args.harness in harnesses for harnesses in installed_agents(worktree).values()):  # Stamped, in place.
+        return sorted(MetaAgent.from_installation(args.harness, worktree).skills)
+    source = MetaAgent.from_installation(SKILL_SOURCE, worktree)
+    skills = source.skills
+    if not skills:
+        return []
+    target = worktree / HARNESSES[args.harness].location("skills")
+    for name in skills:
+        shutil.rmtree(target / name, ignore_errors=True)
+    for misplaced in MISPLACED.get(args.harness, []):
+        shutil.rmtree(worktree / misplaced, ignore_errors=True)
+    # The source's name and version, so the copies carry the same version stamps.
+    MetaAgent(name=source.name if source.version else f"{args.harness}-skills", version=source.version,
+              skills=skills).install(args.harness, worktree, force=True)
+    return sorted(skills)
+
+
+def _text(content: object) -> str:
+    """Text of a message's content: a string, or a list of blocks with ``text``."""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "\n".join(block.get("text", "") for block in content if isinstance(block, dict))
+    return ""
 
 
 def snapshot_agent(args, worktree: Path) -> MetaAgent:
+    """The configuration installed for ``args.harness`` in ``worktree``, as that harness finds it."""
     if args.agent_snapshot:
         return MetaAgent.model_validate_json(args.agent_snapshot.expanduser().read_text())
-    if args.harness != "opencode":
-        return MetaAgent.from_project(args.harness, worktree)
-    # OpenCode has no installer in thearc yet. Capture project skills/instructions;
-    # use --agent-snapshot when the canonical producer includes other resources.
-    skills = {}
-    for root in (worktree / ".agents/skills", worktree / ".opencode/skills"):
-        for path in sorted(root.glob("*/SKILL.md")):
-            skill = Skill.from_dir(path.parent)
-            skills[skill.name] = skill
-    return MetaAgent(
-        name="opencode-project",
-        skills=skills,
-        context=[
-            ContextDocument.from_file(worktree / name)
-            for name in ("AGENTS.md", "CLAUDE.md")
-            if (worktree / name).is_file()
-        ],
-    )
+    return MetaAgent.from_installation(args.harness, worktree, name=f"{args.harness}-project")
+
+
+def skills_advertised(harness: str, transcript: Path) -> list[str] | None:
+    """Skill names the harness offered the model, as its transcript records them (None: not recorded)."""
+    texts = []
+    try:
+        lines = transcript.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return None
+    for line in lines:
+        try:
+            record = json.loads(line)
+        except ValueError:
+            continue
+        if not isinstance(record, dict):
+            continue
+        attachment = record.get("attachment") if isinstance(record.get("attachment"), dict) else {}
+        payload = record.get("payload") if isinstance(record.get("payload"), dict) else {}
+        message = record.get("message") if isinstance(record.get("message"), dict) else {}
+        if harness == "claude" and attachment.get("type") == "skill_listing":
+            texts.append(str(attachment.get("content", "")))
+        elif harness == "codex" and payload.get("type") == "message" and payload.get("role") == "developer":
+            texts.append(_text(payload.get("content")))
+        elif harness == "pi" and record.get("type") == "message" and message.get("role") == "system":
+            texts.append(_text(message.get("content")))
+            # Pi 1.0 leaves content empty and records the prompt in sections; only "skills" lists skills.
+            sections = message.get("sections") if isinstance(message.get("sections"), dict) else {}
+            texts.append(_text(sections.get("skills")))
+    if harness not in {"claude", "codex", "pi"}:
+        return None
+    listed = "\n".join(texts)
+    names = set(re.findall(r"(?m)^\s*-\s*([\w.-]+):", listed))  # "- graphify: …" (Claude, Codex)
+    names |= set(re.findall(r"<name>([\w.-]+)</name>", listed))  # <skill><name>…</name> listings
+    names |= set(re.findall(r"skills/([\w.-]+)/SKILL\.md", listed))  # Listings that give each skill's path
+    return sorted(names)
 
 
 def command_for(args, run_dir: Path) -> list[str]:
@@ -52,7 +112,9 @@ def command_for(args, run_dir: Path) -> list[str]:
             str(run_dir / "response.md"),
         ]
     elif args.harness == "pi":
-        command = [args.agent_bin, "--print", "--mode", "json", "--session-dir", str(run_dir / "native")]
+        # --approve: Pi loads project skills (.pi/skills, .agents/skills) only in a trusted project, and the
+        # worktrees are new folders no saved trust decision covers; without it, --print skips them silently.
+        command = [args.agent_bin, "--print", "--approve", "--mode", "json", "--session-dir", str(run_dir / "native")]
     elif args.harness == "claude":
         command = [
             args.agent_bin,

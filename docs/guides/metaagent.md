@@ -37,13 +37,18 @@ agent = MetaAgent.from_workspace("artifacts/graphify")
 light = MetaAgent.from_workspace("artifacts/graphify", journal=False)   # configuration only
 ```
 
+An agent read from or initialized in a workspace remembers it (`agent.workspace`).
+`add_reflection` then also appends to `journal.jsonl`, and `release` and `to_worktree` act on that
+repository; each first checks that nobody edited the files since the agent was read.
+
 A workspace is the configuration as files plus `agent.json` (name, version) and
-`journal.jsonl`. Files carry **markers** — each section's lineage ID and, after
-`agent.annotate(scales)`, its rating summaries:
+`journal.jsonl`. Files carry **markers** — each section's lineage ID:
 
 ```markdown
-## Limits <!-- res_fd94… · usefulness: (harmful: 3, neutral: 0, helpful: 1) -->
+## Limits <!-- res_fd94… -->
 ```
+
+Ratings stay in the journal; `agent_outline(agent, USEFULNESS, ids=True)` shows them per section.
 
 Markers are stripped when a workspace is read, so revisions, installations, and the files
 reflectors read never contain them. While someone edits, a marker says which section is which:

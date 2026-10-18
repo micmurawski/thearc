@@ -303,3 +303,39 @@ def including_subsections(policy: RatingPolicy = count_all) -> RatingPolicy:
                         yield rated, weight
 
     return rolled_up
+
+
+# Labels people commonly use, from worst to best: how scales known only from their ratings are ordered.
+SENTIMENT = ["harmful", "bad", "negative", "wrong", "neutral", "mixed", "unclear", "helpful", "good", "positive"]
+
+
+def _is_number(value: str) -> bool:
+    try:
+        float(value)
+    except ValueError:
+        return False
+    return True
+
+
+def rank_labels(values: Iterable[str]) -> tuple[list[str], bool, bool]:
+    """Observed rating values in order: ``(labels, ordered, numeric)`` — numbers by value, sentiment words from
+    worst to best (harmful … neutral … helpful), anything else after them alphabetically and unordered."""
+    values = list(dict.fromkeys(values))
+    numeric = bool(values) and all(_is_number(value) for value in values)
+    if numeric:
+        return sorted(values, key=float), True, True
+    ranked = sorted(values, key=lambda v: (SENTIMENT.index(v.lower()) if v.lower() in SENTIMENT else len(SENTIMENT), v))
+    return ranked, all(v.lower() in SENTIMENT for v in values), False
+
+
+def scales_from_ratings(ratings: Iterable[Any]) -> list[RatingScale]:
+    """The scales a set of Rated entries uses, rebuilt from the values they hold (``.scale`` and ``.value``)."""
+    seen: dict[str, list[str]] = {}
+    for rating in ratings:
+        seen.setdefault(rating.scale, []).append(str(rating.value))
+    scales: list[RatingScale] = []
+    for name, values in sorted(seen.items()):
+        labels, ordered, numeric = rank_labels(values)
+        scales.append(NumericScale(name) if numeric else CategoricalScale(name, labels, ordered=ordered))
+    return scales
+

@@ -6,7 +6,6 @@ from thearc.resources import (
     ReflectionSchema,
     ResourceTarget,
     agent_outline,
-    annotated_files,
     detect_changes,
 )
 
@@ -24,23 +23,16 @@ def rated(agent, human):
     return agent
 
 
-def test_headings_carry_summaries_and_lines_stay_put(rated):
-    plain = rated.files().files[SKILL]
-    annotated = annotated_files(rated, usefulness)[SKILL]
-    assert len(annotated.splitlines()) == len(plain.splitlines())
-    assert annotated.splitlines()[10] == "## Examples (harmful: 0, neutral: 0, helpful: 1)"
-    assert annotated.splitlines()[14] == "## Limits"
+def test_outline_does_not_change_the_agent(rated):
+    revision = rated.revision
+    agent_outline(rated, usefulness, ids=True)
+    assert rated.revision == revision and "helpful: 1" not in rated.files().files[SKILL]
 
 
 def test_several_scales_are_named(rated):
-    line = annotated_files(rated, [usefulness, LabelScale("tags")])[SKILL].splitlines()[10]
-    assert line == "## Examples usefulness: (harmful: 0, neutral: 0, helpful: 1) tags: (outdated: 1)"
-
-
-def test_view_does_not_change_the_agent(rated):
-    revision = rated.revision
-    annotated_files(rated, usefulness)
-    assert rated.revision == revision and "helpful: 1" not in rated.files().files[SKILL]
+    outline = agent_outline(rated, [usefulness, LabelScale("tags")])
+    assert ("- Examples `skills/retry/SKILL.md#L11-L14` usefulness: (harmful: 0, neutral: 0, helpful: 1) "
+            "tags: (outdated: 1)") in outline
 
 
 def test_outline_covers_whole_resources(rated):
@@ -54,14 +46,11 @@ def test_summaries_follow_renamed_sections(rated, human):
     edited = rated.model_copy(deep=True)
     edited.skills["retry"].instructions = edited.skills["retry"].instructions.replace("## Examples", "## Samples")
     edited.journal.record(*detect_changes(rated, edited, **human))
-    assert "## Samples (harmful: 0, neutral: 0, helpful: 1)" in annotated_files(edited, usefulness)[SKILL]
+    assert "- Samples `skills/retry/SKILL.md#L11-L14` (harmful: 0, neutral: 0, helpful: 1)" in agent_outline(
+        edited, usefulness)
 
 
-def test_section_ids_with_and_without_ratings(rated):
+def test_outline_ids_are_lineage_ids(rated):
     examples = ResourceTarget(kind="skill", name="retry", section="Retry > Examples")
-    line = annotated_files(rated, ids=True)[SKILL].splitlines()[10]
-    assert line == f"## Examples [{examples.id}]"
-    line = annotated_files(rated, usefulness, ids=True)[SKILL].splitlines()[10]
-    assert line == f"## Examples [{examples.id}] (harmful: 0, neutral: 0, helpful: 1)"
-    assert annotated_files(rated) == rated.files().files
-    assert f"[{examples.id}]" in agent_outline(rated, ids=True)
+    outline = agent_outline(rated, usefulness, ids=True)
+    assert f"- Examples `skills/retry/SKILL.md#L11-L14` [{examples.id}] (harmful: 0, neutral: 0, helpful: 1)" in outline
