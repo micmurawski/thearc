@@ -55,6 +55,19 @@ The reflector hands its answer in through a `submit_reflection` tool connected f
 tool validates the whole output and resolves every ref; on any problem it returns the reasons by
 location (`/ratings/1/ref: …`) and the reflector fixes them in its own loop.
 
+A session record does not always show which configuration the agent ran with: OpenCode's leaves
+out its system prompt, so the project instructions and skills it loaded are invisible, and a
+reflector rightly refuses to credit or blame files it cannot see were loaded. `handoff` tells the
+reflector what a harness's record leaves out, and `provenance` adds what you know yourself:
+
+```python
+reflector.handoff(PROMPT, session, agent, schema,
+                  provenance=f"thearc had installed {agent.name} {agent.version} for opencode in this project.")
+```
+
+Both reach the reflector under "How the session ran (not in its record)"; `provenance` is also
+kept in `reflection.evidence`.
+
 ## Using the result
 
 ```python
