@@ -19,6 +19,7 @@ from typing import Any
 
 from thearc.resources.evolution import evolution
 from thearc.resources.ratings import RatingScale
+from thearc.ui import FONTS, THEME_CSS, THEME_JS
 
 
 def render_report(dataset: dict[str, Any], *, standalone: bool = True) -> str:
@@ -27,7 +28,9 @@ def render_report(dataset: dict[str, Any], *, standalone: bool = True) -> str:
     payload = json.dumps(dataset, ensure_ascii=False).replace("</", "<\\/").replace("<!--", "<\\!--")
     agent = dataset.get("agent", {})
     title = html.escape(f"{agent.get('name', 'Agent')} evolution")
-    page = template.replace("__THEARC_TITLE__", title).replace("__THEARC_DATA__", payload)
+    page = (template.replace("__THEARC_FONTS__", FONTS.rstrip("\n")).replace("__THEARC_THEME_CSS__", THEME_CSS)
+            .replace("__THEARC_THEME_JS__", THEME_JS).replace("__THEARC_TITLE__", title)
+            .replace("__THEARC_DATA__", payload))  # The data last: it may hold any of the other placeholders.
     if not standalone:
         return page
     return ('<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n'

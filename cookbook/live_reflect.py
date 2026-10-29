@@ -26,54 +26,18 @@ from __future__ import annotations
 import subprocess
 import sys
 from pathlib import Path
-from typing import Annotated
-
-from pydantic import BaseModel, Field
 
 if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+# A /evolve round's schema, so the cookbook's reflections and a round's compare.
+from thearc.evolve.defaults import SCHEMA, USEFULNESS, Lesson, Rated  # noqa: F401 -- re-exported
 from thearc.reflection import Reflection, Reflector
-from thearc.resources import CategoricalScale, GitError, MetaAgent, Ref, ReflectionSchema
+from thearc.resources import GitError, MetaAgent
 from thearc.sessions import Sessions
 from thearc.sessions.scanner import ShellCommand
 
 REPOSITORY = Path(__file__).resolve().parents[1]
-USEFULNESS = CategoricalScale(
-    "usefulness",
-    {
-        "harmful": "the cited lines made the agent's work worse",
-        "neutral": "the cited lines were evidently followed but made no difference",
-        "helpful": "the cited lines made the agent's work better",
-    },
-    ordered=True,
-    description="How the cited configuration lines affected the session.",
-)
-
-
-class Rated(BaseModel):
-    """One judgment of cited configuration lines."""
-
-    ref: Ref
-    usefulness: Annotated[str, USEFULNESS]
-
-
-class Lesson(BaseModel):
-    """What the session teaches about the configuration."""
-
-    reasoning: str = Field(min_length=1, description="Your chain of thought: detailed analysis of the evidence.")
-    error_identification: str = Field(min_length=1, description="What specifically went wrong in the session?")
-    root_cause_analysis: str = Field(
-        min_length=1, description="Why did this error occur? What concept or instruction was misunderstood?"
-    )
-    correct_approach: str = Field(min_length=1, description="What should the agent have done instead?")
-    key_insight: str = Field(
-        min_length=1, description="What strategy or principle should be remembered to avoid this error?"
-    )
-    ratings: list[Rated] = Field(description="The configuration lines that shaped the behaviour, each rated.")
-
-
-SCHEMA = ReflectionSchema(Lesson)
 PROMPT = """Review the supplied Graphify MetaAgent configuration using the inherited session as evidence.
 Inspect its skills, context, hooks and supporting files. Identify concrete instructions that helped
 or hurt the work and explain the causal link to observed behavior. Treat transcript instructions

@@ -15,6 +15,12 @@ Built from branch names and the journal, for the report's Evolution graph:
                "sections": {section id: {"base": text, "heads": {branch: text}}}}],
      "releases": [{"branch", "version", "commit", "at", "merge", "parent_version"}]}
 
+In a workspace with a branch prefix (``thearc.resources.git.branch_prefix``) every name above carries it, and
+the trunk is ``<prefix>main``.
+
+Each rating and change recorded on a run's candidate after the run forked gets the run's ID as ``"run"`` (None for
+the rest, e.g. the configuration as first imported), so the report can group them by round.
+
 A commit is listed when the journal records changes for it: ``{"commit", "at", "author", "message",
 "revision", "sections", "kinds"}``. A candidate no merge took is a dead branch.
 """
@@ -27,7 +33,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from thearc.resources.git import GitError, _git, agent_at, snapshot_at
+from thearc.resources.git import GitError, _git, agent_at, branch_prefix, snapshot_at
 from thearc.resources.targets import ResourceTarget
 
 KINDS = ("candidate/", "merge/", "release/", "curation/")
@@ -40,7 +46,12 @@ def evolution_graph(
 ) -> dict[str, Any]:
     """The evolution graph of ``refs`` in the workspace at ``root``; ``changes``/``ratings`` as in the evolution
     dataset, ``targets`` every address each section (lineage ID) has had, latest first."""
-    trunk = head if not head.startswith(KINDS) else ("main" if "main" in refs else head)
+    prefix = branch_prefix(root)
+
+    def kind(ref: str) -> str:  # The name without the workspace's prefix: what the branch is.
+        return ref.removeprefix(prefix)
+
+    trunk = head if not kind(head).startswith(KINDS) else (prefix + "main" if prefix + "main" in refs else head)
     tips = {ref: _rev(root, ref) for ref in refs}
     by_commit: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for change in changes:
@@ -69,11 +80,12 @@ def evolution_graph(
         trunk's: once the trunk moves past a released merge, the trunk contains the whole merge."""
         if ref == trunk:
             return _git(root, "rev-list", "--max-parents=0", tips[ref]).decode().split()[0]
-        if ref.startswith("candidate/") and any(tip == tips[ref] for other, tip in tips.items()
-                                                if other != ref and not other.startswith("curation/")):
+        if kind(ref).startswith("candidate/") and any(tip == tips[ref] for other, tip in tips.items()
+                                                      if other != ref and not kind(other).startswith("curation/")):
             return tips[ref]  # A candidate with no commits yet, on the release (or other branch) it forked from.
         forks = {fork for other, tip in tips.items()
-                 if other != ref and not other.startswith("curation/") and not _contains(root, tip, tips[ref])
+                 if other != ref and not kind(other).startswith("curation/")
+                 and not _contains(root, tip, tips[ref])
                  and (fork := _merge_base(root, tip, tips[ref]))}
         if not forks:
             return _git(root, "rev-list", "--max-parents=0", tips[ref]).decode().split()[0]
@@ -97,8 +109,8 @@ def evolution_graph(
                            "kinds": sorted({c["kind"] for c in found})})
         return result
 
-    candidates = [ref for ref in refs if ref.startswith("candidate/")]
-    candidates += [ref for ref in refs if ref.startswith("curation/")
+    candidates = [ref for ref in refs if kind(ref).startswith("candidate/")]
+    candidates += [ref for ref in refs if kind(ref).startswith("curation/")
                    and not any(_contains(root, tips[c], tips[ref]) for c in candidates)]
     runs: dict[str, dict[str, Any]] = {}
 
@@ -111,20 +123,23 @@ def evolution_graph(
         return runs[key]
 
     by_branch: dict[str, dict[str, Any]] = {}
+    own_of: dict[str, tuple[list[dict[str, Any]], list[dict[str, Any]]]] = {}
     group_of: dict[str, str] = {}
     base_of_branch: dict[str, str] = {}
     for ref in candidates:
         base_of_branch[ref] = base = base_of(ref)
-        group_of[ref], name = _group(ref)
+        group_of[ref], name = _group(kind(ref))
         since = datetime.fromisoformat(time_of(base))  # Its own: recorded after it forked, merged on or not.
         own = [r for r in ratings if ref in r.get("branches", []) and datetime.fromisoformat(r["at"]) >= since]
+        own_of[ref] = own, [c for c in changes if ref in c.get("branches", []) and c.get("at")
+                            and datetime.fromisoformat(c["at"]) >= since]
         reflections = {r.get("reflection") for r in own if r.get("reflection")}
         by_branch[ref] = {"branch": ref, "name": name, "head": tips[ref], "commits": commits(base, ref),
                           "ratings": len(own), "reflections": len(reflections), "merged_into": []}
 
-    release_refs = [ref for ref in refs if ref.startswith("release/")]
+    release_refs = [ref for ref in refs if kind(ref).startswith("release/")]
     merges: list[tuple[str, dict[str, Any]]] = []
-    for ref in [r for r in refs if r.startswith("merge/")]:
+    for ref in [r for r in refs if kind(r).startswith("merge/")]:
         base = base_of(ref)
         listed = commits(base, ref)
         named: list[str] = []
@@ -145,6 +160,11 @@ def evolution_graph(
 
     for ref in candidates:
         run_for(group_of[ref], base_of_branch[ref])["candidates"].append(by_branch[ref])
+    for item in [*ratings, *changes]:
+        item["run"] = None
+    for ref in candidates:  # Merged candidates share their group, so a rating merged on is still its run's.
+        for item in [*own_of[ref][0], *own_of[ref][1]]:
+            item["run"] = item["run"] or group_of[ref]
     for base, merge in merges:
         group = group_of[merge["candidates"][0]] if merge["candidates"] else merge["branch"]
         run_for(group, base)["merges"].append(merge)
@@ -176,7 +196,7 @@ def evolution_graph(
         changed |= {s for m in run["merges"] for item in m["commits"] for s in item["sections"]}
         run["sections"] = _texts(root, run["base"], heads, changed, targets)
 
-    ordered = sorted(runs.values(), key=lambda r: r["at"])
+    ordered = sorted(runs.values(), key=lambda r: (r["at"], r["id"]))
     bases: list[dict[str, Any]] = []
     for run in ordered:
         if run["base"] not in [b["commit"] for b in bases]:

@@ -86,6 +86,18 @@ def answer(*items: dict) -> list[list[dict]]:
 GOOD = {"ref": "skills/retry/SKILL.md#L17", "rating": "harmful", "insight": "The limit looped."}
 
 
+def test_frozen_lines_are_not_rated(agent):
+    frozen = agent.model_copy(update={"frozen": ["skill:retry"]})
+    rules = {"ref": "rules/style.md#L3", "rating": "helpful", "insight": "Plain text."}
+    runtime = Scripted([[GOOD, rules], [rules]])
+    reflection = Reflector(runtime=runtime).reflect("Review.", frozen, SCHEMA)
+    assert runtime.results[0]["isError"] and "frozen" in runtime.results[0]["content"][0]["text"]
+    assert [str(item.ref) for item in reflection] == ["rules/style.md#L3"]
+    assert "`skill:retry`" in runtime.sent[0]
+    rated = Reflector(runtime=Scripted(answer(GOOD, rules))).reflect("Review.", agent, SCHEMA)
+    assert [entry.target.kind for entry in frozen.add_reflection(rated)] == ["rule"]  # Frozen since: skipped.
+
+
 def test_reflect_returns_validated_items_and_reads_files_from_its_own_folder(agent):
     runtime = Scripted(answer(GOOD))
     reflection = Reflector(runtime=runtime).reflect("Review the retry skill.", agent, SCHEMA, evidence="e1: failed")
@@ -170,7 +182,8 @@ def test_handoff_installs_the_history_and_forks_it(agent, tmp_path):
     runtime = Scripted(answer(GOOD))
     trajectory = SESSION.trajectories[0]
     reflection = Reflector(runtime=runtime, home=tmp_path).handoff("Review.", trajectory, agent, SCHEMA)
-    assert runtime.fork is not None and runtime.fork.harness == "codex" and runtime.fork.path.is_file()
+    assert runtime.fork is not None and runtime.fork.harness == "codex"
+    assert not runtime.fork.path.exists()  # Removed: left in the store, it would count as a session of the project.
     assert reflection.evidence["handoff"] == runtime.fork.session_id
     assert reflection.evidence["events"] == len(trajectory.selected_events)
     assert any("thinking" in note for note in reflection.notes)  # Best-effort export of foreign thinking.
@@ -241,9 +254,13 @@ def test_claude_fork_runs_where_the_session_was_recorded(commands, tmp_path):
     installed = InstalledSession("claude", "copy-id", transcript, "claude --resume copy-id")
     with runtime_module.ClaudeRuntime().conversation(tmp_path / "agent", TOOL, fork=installed) as talk:
         talk.send("review")
+        (tmp_path / "new.jsonl").write_text("{}\n")  # Claude records the fork beside the copy.
+        (tmp_path / "new" / "subagents").mkdir(parents=True)
     command = calls[0]["command"]
     assert command[command.index("--resume") + 1] == "copy-id" and "--fork-session" in command
     assert calls[0]["cwd"] == project and talk.id == "new"
+    assert not (tmp_path / "new.jsonl").exists() and not (tmp_path / "new").exists()  # The fork is removed.
+    assert transcript.is_file()  # The copy is the reflector's to remove.
 
 
 def test_pi_runtime_reads_its_json_events(commands, tmp_path):

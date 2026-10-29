@@ -54,6 +54,17 @@ Run pipelines in parallel worktrees (`agent.to_worktree(path)`) and combine thei
 `Merger("codex").merge(prompt, [candidate_1, candidate_2])`. Install the result into any
 harness with `agent.install("claude", "path/to/project")`.
 
+## Evolve a project with /evolve
+
+```sh
+thearc skills install self-evolve --project . --harness claude
+```
+
+Then type `/evolve` in the agent: thearc reflects on the project's recent Claude sessions, curates, and proposes a new
+version of its skills and instructions. Review it with `/evolve diff`, ask the agent for amendments, and install it
+with `/evolve apply`. The recipe is `evolve.py` in the evolve skill, with its prompts as Markdown files next to it.
+See [the guide](docs/guides/evolve-skill.md).
+
 ## Further reading
 
 - [Glossary](GLOSSARY.md) — every concept, kept in step with the code.

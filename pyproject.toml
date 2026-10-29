@@ -29,6 +29,8 @@ include = ["thearc*"]
 [tool.setuptools.package-data]
 "thearc.flow" = ["viz.css", "viz.js"]
 "thearc.resources" = ["report.html"]
+"thearc.ui" = ["theme.css", "theme.js"]
+"thearc.evolve" = ["skill/SKILL.md", "skill/evolve.py", "skill/prompts/*.md"]
 
 [project.optional-dependencies]
 mcp = ["mcp>=2.2,<3"]
@@ -57,9 +59,14 @@ extend-select = ["E501"]
 python_version = "3.11"
 files = ["thearc"]
 # thearc.flow was copied from the old package as it was and is not typed yet.
-exclude = ["thearc/flow/"]
+# thearc/evolve/skill/evolve.py is the recipe users edit, installed as a script, not library code.
+exclude = ["thearc/flow/", "thearc/evolve/skill/"]
 ignore_missing_imports = true
 check_untyped_defs = true
 disallow_untyped_defs = true
 disallow_incomplete_defs = true
 warn_unused_ignores = true
+
+[[tool.mypy.overrides]]
+module = ["thearc.flow", "thearc.flow.*"]  # Followed from thearc.evolve, but not typed yet.
+ignore_errors = true

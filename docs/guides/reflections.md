@@ -20,7 +20,7 @@ from typing import Annotated
 from pydantic import BaseModel, Field
 from thearc.resources import CategoricalScale, NumericScale, Ref, ReflectionSchema
 
-usefulness = CategoricalScale("usefulness", {"helpful": "…", "neutral": "…", "harmful": "…"}, ordered=True)
+usefulness = CategoricalScale("usefulness", {"harmful": "…", "neutral": "…", "helpful": "…"}, ordered=True)
 
 class Rated(BaseModel):
     ref: Ref
@@ -36,9 +36,29 @@ class Lesson(BaseModel):
 schema = ReflectionSchema(Lesson)
 ```
 
-Scales are `CategoricalScale` (labels, optionally ordered, each with a meaning), `LabelScale`
-(open-ended tags), and `NumericScale` (bounded numbers). Descriptions of fields, labels, and the
-model reach the reflector through the schema. `ReflectionSchema(scale, Metadata)` is shorthand
+Scales are `CategoricalScale` (labels, optionally ordered from worst to best, each with a meaning),
+`LabelScale` (open-ended tags), and `NumericScale` (bounded numbers). Descriptions of fields, labels,
+and the model reach the reflector through the schema.
+
+The evolution report draws a `CategoricalScale` from two more settings, which reflectors never see.
+`values` gives each label a number that rises with the label order: labels below zero are bad, a label
+at zero is neither, labels above zero are good, and the report draws the scale diverging around zero.
+Values that are all zero or above make a sequential scale, drawn from its first label up. `colors`
+gives labels their own colour; the rest get one from their value.
+
+```python
+usefulness = CategoricalScale(
+    "usefulness", ["catastrophic", "harmful", "neutral", "useful"],
+    values={"catastrophic": -2, "harmful": -1, "neutral": 0, "useful": 1},
+    colors={"catastrophic": "#7a0019"},
+)
+importance = CategoricalScale(
+    "importance", ["meaningless", "significant", "important", "very important", "critical"],
+    values={"meaningless": 0, "significant": 1, "important": 2, "very important": 3, "critical": 4},
+)
+```
+
+An ordered scale without values is diverging, its labels evenly spaced around zero. `ReflectionSchema(scale, Metadata)` is shorthand
 for a list of `{ref, rating, …}` items.
 
 ## Running a reflector

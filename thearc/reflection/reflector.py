@@ -21,6 +21,7 @@ from typing import Any
 
 from thearc.resources.agent import MetaAgent
 from thearc.resources.reflection import ReflectionItem, ReflectionSchema
+from thearc.sessions.install import InstalledSession
 from thearc.sessions.session import EventSequence, Session
 
 from .runtimes import RUNTIMES, TOOL, ReflectionError, Runtime
@@ -179,6 +180,21 @@ class Reflector:
         if not self.runtime.can_fork:
             raise ReflectionError("capability", f"{self.harness} cannot continue a session; use reflect()")
         installed = history.install(self.harness, home=self.home, overwrite=True, strict=False)
+        try:
+            return self._handoff(prompt, history, installed, agent, schema, provenance, extra)
+        finally:  # The copy only starts the reflector: left in the store, it would count as a session of the project.
+            Path(installed.path).unlink(missing_ok=True)
+
+    def _handoff(
+        self,
+        prompt: str,
+        history: EventSequence,
+        installed: InstalledSession,
+        agent: MetaAgent,
+        schema: ReflectionSchema,
+        provenance: str | None,
+        extra: dict[str, Any],
+    ) -> Reflection:
         session = history if isinstance(history, Session) else getattr(history, "session", None)
         evidence = {
             "handoff": installed.session_id,
@@ -206,7 +222,10 @@ class Reflector:
         notes: tuple[str, ...] = (),
     ) -> Reflection:
         files = agent.files()
-        submission = Submission(files, schema)
+        submission = Submission(files, schema, agent.is_frozen)
+        if agent.frozen:
+            task += ("\n\n## Frozen\n\nThese parts of the configuration are frozen — kept as they are, whatever "
+                     "the evidence — so do not rate them: " + ", ".join(f"`{p}`" for p in agent.frozen) + ".")
         with tempfile.TemporaryDirectory(prefix="thearc-reflection-") as directory:
             workspace = files.write(Path(directory) / "agent")
             with submission.serve() as tool, self.runtime.conversation(workspace, tool, fork=fork) as conversation:

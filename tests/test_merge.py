@@ -144,3 +144,43 @@ def test_a_released_merge_keeps_its_candidates_once_the_trunk_moves_past_it(cand
     assert graph["releases"][0]["parent_version"] == run["base_version"] != "1.0.1"
     (following,) = [r for r in graph["runs"] if r["id"] == "candidate/idle"]
     assert following["base_version"] == "1.0.1" and following["candidates"][0]["commits"] == []
+
+
+def test_a_workspace_inside_a_project_repository_keeps_to_its_prefixed_branches(agent, tmp_path):
+    from thearc.resources.evolution import evolution
+
+    project = tmp_path / "project"
+    project.mkdir()
+    git(project, "init", "-q", "-b", "main")
+    git(project, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "Project")
+    workspace = agent.init_workspace(project / ".thearc/workspace", repository=project, prefix="thearc/")
+    root = workspace.workspace
+    assert git(root, "rev-parse", "--abbrev-ref", "HEAD") == "thearc/main"
+    assert git(root, "rev-list", "--count", "HEAD") == "1"  # An orphan history: no project commits in it.
+    one, two = workspace.to_worktree(tmp_path / "c1"), workspace.to_worktree(tmp_path / "c2")
+    pipeline(one, ("max 3", "max 1", "One retry is enough"))
+    pipeline(two, ("ex1", "ex2", "Show a transient failure"))
+
+    def script(root, tool):
+        edit(root, "max 3", "max 1")
+        assert not tool("commit_change", message="Take thearc/candidate/c1's limit")["error"]
+        tool("finish", summary="Took the limit.")
+
+    merge = Merger(runtime=ScriptedCurator(script)).merge("Merge them.", [one, two])
+    released = merge.agent.release()
+    assert merge.branch.startswith("thearc/merge/") and released.version == "1.0.1"
+    branches = git(project, "for-each-ref", "--format=%(refname:short)", "refs/heads").split()
+    assert branches[0] == "main" and all(b.startswith("thearc/") for b in branches[1:])
+    assert {"thearc/candidate/c1", "thearc/release/1.0.1"} <= set(branches)
+
+    graph = evolution(root)["graph"]
+    assert graph["trunk"] == "thearc/main"
+    (run,) = [r for r in graph["runs"] if r["merges"]]
+    assert [c["branch"] for c in run["candidates"]] == ["thearc/candidate/c1", "thearc/candidate/c2"]
+    assert run["merges"][0]["candidates"] == ["thearc/candidate/c1", "thearc/candidate/c2"]
+    assert graph["releases"][0]["merge"] == merge.branch and graph["releases"][0]["version"] == "1.0.1"
+
+
+def git(root, *args):
+    return subprocess.run(["git", "-C", str(root), *args], check=True, capture_output=True,
+                          text=True).stdout.strip()

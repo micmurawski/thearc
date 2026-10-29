@@ -170,3 +170,9 @@ def detect_changes(
                     )
                 )
     return entries
+
+
+def frozen_changes(before: MetaAgent, after: MetaAgent) -> list[Entry]:
+    """The changes from ``before`` to ``after`` that touch a target ``before`` freezes (``MetaAgent.frozen``)."""
+    return [entry for entry in detect_changes(before, after)
+            if before.is_frozen(entry.target) or isinstance(entry, Moved) and before.is_frozen(entry.previous)]

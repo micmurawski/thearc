@@ -165,6 +165,21 @@ class Sessions:
             self.sync(source_ids=[source.id])
         return source
 
+    def add_harness_store(self, harness: Harness, project: str | Path, *, home: str | Path | None = None,
+                          sync: bool = True) -> builtins.list[SourceConfig]:
+        """Register where ``harness`` keeps the sessions run in ``project`` (see ``thearc.sessions.stores``) and
+        synchronize them; returns the sources. OpenCode's sessions are exported next to the index first, so call it
+        again to pick up new ones. List them with ``list(cwd=project)``."""
+        from .stores import export_opencode_sessions, store_folders
+
+        if harness == "opencode":
+            exports = self.artifact_dir / "opencode-exports" / Path(project).resolve().as_posix().strip("/")
+            export_opencode_sessions(project, exports)
+            folders = [exports]
+        else:
+            folders = store_folders(harness, project, home=home)
+        return [self.add(folder, harness=harness, sync=sync) for folder in folders]
+
     def ingest(self, source: SourceConfig) -> SyncReport:
         """Register an explicit source configuration and synchronize only it."""
         return self.index.ingest(source)
@@ -184,13 +199,18 @@ class Sessions:
         source: str | Iterable[str] | None = None,
         since: Moment = None,
         until: Moment = None,
+        cwd: str | Path | None = None,
+        without_call: str | None = None,
     ) -> builtins.list[SessionMetadata]:
-        """Session records, newest first."""
+        """Session records, newest first. ``cwd`` keeps the sessions run in that folder or below it;
+        ``without_call`` drops those with a tool call whose arguments contain that text (e.g. ``thearc evolve``)."""
         filters = SearchFilters(
             harnesses=cast("list[Harness]", _names(harness)),
             source_ids=_names(source),
             started_after=_moment(since),
             started_before=_moment(until),
+            cwd=str(Path(cwd).expanduser().resolve()) if cwd is not None else None,
+            without_call=without_call,
         )
         return sorted(self.index.iter_sessions(filters), key=lambda s: (s.started_at or "", s.id), reverse=True)
 

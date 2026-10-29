@@ -1,30 +1,6 @@
 (function () {
     "use strict";
 
-    // ---- theme: same toggle and remembered choice as the report page ----
-    (function () {
-        var root = document.documentElement, button = document.getElementById("theme");
-        if (!button) return;
-        var system = function () {
-            return window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
-        };
-        var current = function () { return root.getAttribute("data-theme") || system(); };
-        var paint = function () {
-            var dark = current() === "dark";
-            button.textContent = dark ? "\u25d0 light" : "\u25d1 dark";
-            button.setAttribute("aria-pressed", String(!dark));
-            button.title = "Switch to the " + (dark ? "light" : "dark") + " theme";
-        };
-        try { var saved = localStorage.getItem("thearc-report-theme"); if (saved) root.setAttribute("data-theme", saved); } catch (_error) {}
-        button.addEventListener("click", function () {
-            var next = current() === "dark" ? "light" : "dark";
-            root.setAttribute("data-theme", next);
-            try { localStorage.setItem("thearc-report-theme", next); } catch (_error) {}
-            paint();
-        });
-        paint();
-    }());
-
     // ---- tabs ----
     var tabKey = "thearc-flow-viz-active-tab";
     function showTab(name) {
@@ -39,6 +15,29 @@
     document.querySelectorAll("nav.tabs [data-tab]").forEach(function (button) {
         button.addEventListener("click", function () { showTab(button.dataset.tab); });
     });
+    // ---- log files: each opens at its end, like `tail -f`, unless the viewer scrolled up to read ----
+    var logKey = "thearc-flow-viz-log-scroll:";
+    function followLog(panel) {
+        var box = panel && panel.querySelector(".log-box");
+        if (!box) return;
+        var saved = null;
+        try { saved = JSON.parse(sessionStorage.getItem(logKey + panel.id)); } catch (_error) {}
+        box.scrollTop = saved && !saved.end ? saved.top : box.scrollHeight;
+    }
+    document.querySelectorAll(".log-box").forEach(function (box) {
+        box.addEventListener("scroll", function () {
+            var end = box.scrollTop + box.clientHeight >= box.scrollHeight - 4;
+            try {
+                sessionStorage.setItem(logKey + box.closest(".tab-panel").id, JSON.stringify({ top: box.scrollTop, end: end }));
+            } catch (_error) {}
+        });
+    });
+    var showPanel = showTab;
+    showTab = function (name) {  // The tab buttons call this too: their handlers look showTab up when clicked.
+        showPanel(name);
+        followLog(document.getElementById("tab-" + name));
+    };
+
     var savedTab = "status";
     try { savedTab = localStorage.getItem(tabKey) || savedTab; } catch (_error) {}
     showTab(document.getElementById("tab-" + savedTab) ? savedTab : "status");

@@ -2,17 +2,19 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
 from pydantic import BaseModel, Field, PrivateAttr, field_validator
 
 from thearc.harnesses import Harness
-from thearc.resources.journal import Journal, Rated
-from thearc.resources.targets import ResourceTarget, safe_name, safe_relative_path
+from thearc.resources.journal import Journal, Rated, Reflected
+from thearc.resources.targets import ResourceTarget, safe_name, safe_relative_path, target_pattern
 
 if TYPE_CHECKING:
     from thearc.reflection import Reflection
+    from thearc.resources.drift import Drift
     from thearc.resources.files import AgentFiles
     from thearc.resources.harness import HarnessLayout, Installation
     from thearc.resources.ratings import RatingPolicy
@@ -177,6 +179,8 @@ class MetaAgent(BaseModel):
     name: str
     version: str | None = None
     owns_hooks: list[str] = Field(default_factory=list)
+    frozen: list[str] = Field(default_factory=list)
+    ignore: list[str] = Field(default_factory=list)
     skills: dict[str, Skill] = Field(default_factory=dict)
     hooks: dict[str, Hook] = Field(default_factory=dict)
     mcps: dict[str, MCP] = Field(default_factory=dict)
@@ -201,6 +205,19 @@ class MetaAgent(BaseModel):
         ):
             raise ValueError("version must be a non-blank, trimmed, single-line label")
         return value
+
+    @field_validator("frozen", "ignore")
+    @classmethod
+    def _patterns(cls, value: list[str]) -> list[str]:
+        return sorted({target_pattern(pattern) for pattern in value})
+
+    def is_frozen(self, target: ResourceTarget) -> bool:
+        """Whether evolution must leave ``target`` as it is."""
+        return any(target.matches(pattern) for pattern in self.frozen)
+
+    def is_ignored(self, target: ResourceTarget) -> bool:
+        """Whether ``target`` is left out of this configuration."""
+        return any(target.matches(pattern) for pattern in self.ignore)
 
     @field_validator("skills", "hooks", "mcps", "context", "resources", "extensions", mode="before")
     @classmethod
@@ -283,6 +300,12 @@ class MetaAgent(BaseModel):
 
         return read_workspace(path, journal=journal, **limits)
 
+    def reload(self) -> MetaAgent:
+        """This agent's workspace as it is now (e.g. after a curator moved its worktree forward)."""
+        if self._workspace is None:
+            raise ValueError("reload needs an agent read from or initialized in a workspace")
+        return type(self).from_workspace(self._workspace)
+
     def __eq__(self, other: object) -> bool:
         """Equal configuration, identity and journal; where an agent was read from does not count."""
         if not isinstance(other, MetaAgent):
@@ -312,10 +335,11 @@ class MetaAgent(BaseModel):
         return self._workspace
 
     def add_reflection(self, reflection: Reflection) -> tuple[Rated, ...]:
-        """Record a reflection's ratings: each item, once per target its reference resolves to.
+        """Record a reflection's ratings: each item, once per target its reference resolves to; and keep the whole
+        reflection in the journal (``journal.reflections``).
 
-        The reflection must have judged this agent's revision. Entry IDs derive from the
-        reflection, so adding it again records nothing new. With a workspace, the new entries
+        The reflection must have judged this agent's revision; ratings of frozen targets are not recorded.
+        Entry IDs derive from the reflection, so adding it again records nothing new. With a workspace, the new entries
         are also appended to its ``journal.jsonl`` (without reading it); nothing is committed.
         Returns the entries recorded now.
         """
@@ -326,9 +350,12 @@ class MetaAgent(BaseModel):
             raise ValueError(f"reflection {reflection.id} judged {reflection.revision}, not {self.revision}")
         if self._workspace is not None:
             self.checked_workspace("add_reflection")
-        new = self.journal.merge(*reflection_entries(reflection, self.files()))
+        rated = [entry for entry in reflection_entries(reflection, self.files()) if not self.is_frozen(entry.target)]
+        new = self.journal.merge(*rated)
+        whole = Reflected.model_validate(reflection.to_dict())
+        kept = self.journal.record_reflection(whole)
         if self._workspace is not None:
-            Journal.append(self._workspace / JOURNAL_FILE, new)
+            Journal.append(self._workspace / JOURNAL_FILE, [*new, *([whole] if kept else [])])
         return tuple(entry for entry in new if isinstance(entry, Rated))
 
     def release(
@@ -343,7 +370,8 @@ class MetaAgent(BaseModel):
         push: str | None = None,
     ) -> MetaAgent:
         """Version this agent's workspace: set ``version`` (default: bump ``part`` of the current one), commit
-        it, and point a new branch (default ``release/<version>``) at that commit.
+        it, and point a new branch (default ``release/<version>``, after the workspace's branch prefix) at that
+        commit.
 
         Only ``agent.json`` changes, so the configuration's content and journal stay as they are; the
         revision changes with the version. With ``include_scales``, ``RATINGS.md`` is written next to
@@ -354,14 +382,14 @@ class MetaAgent(BaseModel):
         """
         import json
 
-        from thearc.resources.git import GitError, _git, commit, commit_journal
+        from thearc.resources.git import GitError, _git, branch_name, commit, commit_journal
         from thearc.resources.ratings import scales_from_ratings, since_last_modification
         from thearc.resources.views import agent_outline
         from thearc.resources.workspace import MANIFEST
 
         root = self.checked_workspace("release")
         version = version or bump_version(self.version, part)
-        branch = branch or f"release/{version}"
+        branch = branch or branch_name(root, "release", version)
         try:
             _git(root, "rev-parse", "--verify", "--quiet", f"refs/heads/{branch}")
         except GitError:
@@ -385,13 +413,14 @@ class MetaAgent(BaseModel):
         return MetaAgent.from_workspace(root)
 
     def to_worktree(self, path: str | Path, *, branch: str | None = None) -> MetaAgent:
-        """A new git worktree of this agent's workspace at ``path``, on ``branch`` from its current commit.
+        """A new git worktree of this agent's workspace at ``path``, on ``branch`` from its current commit
+        (default ``candidate/<folder name>``, after the workspace's branch prefix).
 
         Pending journal lines are committed first, so the worktree starts with them. Parallel
         pipelines each work on their own worktree from the same commit — their shared base —
         and a merger combines them. The returned agent is bound to the new worktree.
         """
-        from thearc.resources.git import _git, commit_journal
+        from thearc.resources.git import _git, branch_name, commit_journal
         from thearc.resources.workspace import _root
 
         root = self.checked_workspace("to_worktree")
@@ -399,7 +428,8 @@ class MetaAgent(BaseModel):
         if dirty := _git(root, "status", "--porcelain").decode().strip():
             raise ValueError(f"commit or undo the workspace's pending edits first: {dirty.splitlines()}")
         target = _root(path)
-        _git(root, "worktree", "add", "-q", "-b", branch or f"candidate/{target.name}", str(target), "HEAD")
+        branch = branch or branch_name(root, "candidate", target.name)
+        _git(root, "worktree", "add", "-q", "-b", branch, str(target), "HEAD")
         return MetaAgent.from_workspace(target)
 
     def to_workspace(self, path: str | Path, *, journal: bool = True, overwrite: bool = False) -> Path:
@@ -408,17 +438,19 @@ class MetaAgent(BaseModel):
         return write_workspace(self, path, journal=journal, overwrite=overwrite)
 
     def init_workspace(
-        self, path: str | Path, *, branch: str = "main", reason: str = "Initialize MetaAgent workspace"
+        self, path: str | Path, *, branch: str = "main", reason: str = "Initialize MetaAgent workspace",
+        repository: str | Path | None = None, prefix: str = "",
     ) -> MetaAgent:
         """Create a git workspace, or resume a matching one, returning its agent and journal.
 
         The receiver is unchanged and must have a version. New workspaces seed an empty journal with Added
         entries and commit the configuration. Existing workspaces must match this
-        agent's identity and revision; their saved journal is authoritative.
+        agent's identity and revision; their saved journal is authoritative. With ``repository``, the workspace
+        lives in that repository on ``<prefix>`` branches, checked out at ``path`` as a worktree.
         """
         from thearc.resources.workspace import init_workspace
 
-        return init_workspace(self, path, branch=branch, reason=reason)
+        return init_workspace(self, path, branch=branch, reason=reason, repository=repository, prefix=prefix)
 
     def install(
         self, harness: Harness | HarnessLayout, project_dir: str | Path, *, force: bool = False
@@ -436,14 +468,53 @@ class MetaAgent(BaseModel):
         *,
         name: str | None = None,
         version: str | None = None,
+        ignore: Iterable[str] = (),
     ) -> MetaAgent:
         """Import the configuration installed for ``harness`` in ``project_dir`` (by thearc or by hand), as an agent
         not bound to a workspace. For a context document thearc merged into, only the sections it owns are
         imported. When several agents are installed for ``harness``, ``name`` picks one; for a project thearc did
-        not install into, ``name`` and ``version`` name the imported agent."""
+        not install into, ``name`` and ``version`` name the imported agent. Targets ``ignore`` names (patterns, see
+        ``MetaAgent.ignore``) are left out."""
         from thearc.resources.harness import read_installation
 
-        return read_installation(harness, project_dir, name=name, version=version)
+        return read_installation(harness, project_dir, name=name, version=version, ignore=ignore)
+
+    def ignore_targets(self, patterns: Iterable[str], *, remove: bool = False, reason: str | None = None,
+                       author: str = "user") -> MetaAgent:
+        """Leave the targets ``patterns`` name out of this workspace's configuration from now on (or, with ``remove``,
+        stop ignoring them), as one commit recorded in the journal; returns the agent as committed.
+
+        Ignored targets are removed from the workspace with Removed entries; installing then leaves their files
+        alone. Un-ignoring only drops the patterns: the targets come back when the installation is imported again.
+        """
+        from thearc.resources.git import commit_configuration
+        from thearc.resources.workspace import read_workspace
+
+        root = self.checked_workspace("ignore_targets")
+        patterns = list(patterns)
+        if remove:
+            updated = self.model_copy(update={"ignore": [p for p in self.ignore if p not in patterns]})
+            message = reason or "Stop ignoring " + ", ".join(patterns)
+        else:
+            updated = self.model_copy(update={"ignore": [*self.ignore, *patterns]}).without_ignored()
+            message = reason or "Ignore " + ", ".join(patterns)
+        updated._workspace = root
+        commit_configuration(updated, message, author=author)
+        return read_workspace(root)
+
+    def sync_installation(self, project_dir: str | Path, harnesses: Sequence[Harness], *, author: str = "user",
+                          message: str | None = None) -> Drift:
+        """Commit to this workspace the edits made by hand to its installation in ``project_dir`` for ``harnesses``
+        since it was installed, as one change by ``author`` (see ``thearc.resources.drift``)."""
+        from thearc.resources.drift import sync_installation
+
+        return sync_installation(self, project_dir, harnesses, author=author, message=message)
+
+    def without_ignored(self) -> MetaAgent:
+        """A copy without the targets ``ignore`` names: dropped whole, or cut out of their Markdown."""
+        from thearc.resources.ignore import without_ignored
+
+        return without_ignored(self)
 
 
 def bump_version(version: str | None, part: Literal["major", "minor", "patch"] = "patch") -> str:

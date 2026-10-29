@@ -29,12 +29,14 @@ def test_the_dataset_follows_sections_across_branches_and_renames(reviewed, tmp_
     curation = curated(workspace, reflection)
     data = evolution(workspace.workspace)
     assert {b["name"] for b in data["branches"]} == {"main", curation.branch}
-    assert data["scales"] == [{"name": "usefulness", "labels": ["harmful"], "ordered": True, "numeric": False,
-                               "meanings": {}}]
+    assert data["scales"] == [{"name": "usefulness", "labels": ["harmful"], "ordered": True, "meanings": {},
+                               "values": {"harmful": 0.0}, "colors": {}}]
     limits = next(s for s in data["sections"] if s["section"] == "Retry > Retry budget")
     assert limits["names"][0]["previous"] == "skill:retry#Retry > Limits"  # Renamed, same lineage.
     (rating,) = [r for r in data["ratings"] if r["section"] == limits["id"]]
     assert rating["value"] == "harmful" and rating["reflection"] == reflection.id
+    kept = data["reflections"][reflection.id]  # From the journal: no folder of saved reflections needed.
+    assert kept["revision"] == reflection.revision and "The limit looped." in kept["markdown"]
     kinds = [c["kind"] for c in data["changes"] if c["section"] == limits["id"]]
     assert kinds[-2:] == ["moved", "modified"] or set(kinds) >= {"moved", "modified"}
     modified = next(c for c in data["changes"] if c["section"] == limits["id"] and c["kind"] == "modified")

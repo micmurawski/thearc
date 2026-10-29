@@ -1,110 +1,17 @@
 <title>__THEARC_TITLE__</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap">
+__THEARC_FONTS__
 <style>
-/* A terminal-flavoured review desk (dev-tool / neo-brutalist): dark-first, monospace throughout,
-   square edges, hard 1px borders and offset shadows, high contrast; greys for emphasis, colour only for data. */
-:root {
-  --bg: #0a0a0a;
-  --surface: #141414;
-  --sunken: #1e1e1e;
-  --fg: #eeeeee;
-  --muted: #9a9a9a;
-  --line: #3a3a3a;
-  --edge: #5a5a5a;
-  --shadow: #262626;
-  --accent: #d4d4d4;
-  --accent-ink: #0a0a0a;
-  --accent-soft: #2a2a2a;
-  --bad: #e06c75;
-  --bad-soft: #3a1a1e;
-  --mid: #8a8a8a;
-  --good: #7fd88f;
-  --good-soft: #17301d;
-  --add-bg: #13301b;
-  --del-bg: #3a161a;
-  --c0: #5c9cf5; --c1: #e8d37a; --c2: #56b6c2; --c3: #e06c9f;
-  --c0-soft: #14243d; --c1-soft: #302b10; --c2-soft: #102e33; --c3-soft: #3a1529;
-  --merge: #9d7cd8; --merge-soft: #261d3a; --release: #7fd88f; --release-soft: #17301d;
-  --dead: #4d4d4d; --trunk: #9a9a9a; --warn-bg: #1e1e1e; --warn-line: #bdbdbd; --warn-fg: #eeeeee;
-  --font-ui: "JetBrains Mono", "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
-  --font-mono: var(--font-ui);
-  --radius: 0;
-  color-scheme: dark;
-}
-@media (prefers-color-scheme: light) {
-  :root:not([data-theme="dark"]) {
-    --bg: #f4f4f0; --surface: #ffffff; --sunken: #e9e9e4; --fg: #0a0a0a; --muted: #4f4f4f; --line: #bdbdb6;
-    --edge: #0a0a0a; --shadow: #0a0a0a; --accent: #262626; --accent-ink: #ffffff; --accent-soft: #e2e2de;
-    --bad: #b3261e; --bad-soft: #f8d7d5; --mid: #6e6e6e; --good: #1f7a33; --good-soft: #d3eed9; --add-bg: #d3eed9; --del-bg: #f8d7d5;
-    --c0: #1f5fc7; --c1: #6b6200; --c2: #0d7480; --c3: #a8326d;
-    --c0-soft: #dbe7fb; --c1-soft: #efeccb; --c2-soft: #d2eef1; --c3-soft: #f5d9e7;
-    --merge: #6a3fc0; --merge-soft: #e6dcf8; --release: #1f7a33; --release-soft: #d3eed9;
-    --dead: #a6a6a0; --trunk: #5a5a5a; --warn-bg: #ececea; --warn-line: #0a0a0a; --warn-fg: #0a0a0a; color-scheme: light;
-  }
-}
-:root[data-theme="light"] {
-  --bg: #f4f4f0; --surface: #ffffff; --sunken: #e9e9e4; --fg: #0a0a0a; --muted: #4f4f4f; --line: #bdbdb6;
-  --edge: #0a0a0a; --shadow: #0a0a0a; --accent: #262626; --accent-ink: #ffffff; --accent-soft: #e2e2de;
-  --bad: #b3261e; --bad-soft: #f8d7d5; --mid: #6e6e6e; --good: #1f7a33; --good-soft: #d3eed9; --add-bg: #d3eed9; --del-bg: #f8d7d5;
-  --c0: #1f5fc7; --c1: #6b6200; --c2: #0d7480; --c3: #a8326d;
-  --c0-soft: #dbe7fb; --c1-soft: #efeccb; --c2-soft: #d2eef1; --c3-soft: #f5d9e7;
-  --merge: #6a3fc0; --merge-soft: #e6dcf8; --release: #1f7a33; --release-soft: #d3eed9;
-  --dead: #a6a6a0; --trunk: #5a5a5a; --warn-bg: #ececea; --warn-line: #0a0a0a; --warn-fg: #0a0a0a; color-scheme: light;
-}
-* { box-sizing: border-box; }
-[hidden] { display: none !important; }  /* A view's own display (grid, flex) must not override hidden. */
-body { background: var(--bg); color: var(--fg); font: 13px/1.55 var(--font-ui); margin: 0; -webkit-font-smoothing: antialiased; }
-::selection { background: var(--accent); color: var(--accent-ink); }
-.page { padding-inline: 16px; padding-block: 20px 48px; max-width: 1520px; margin: 0 auto; display: grid; gap: 18px; }
-h1, h2, h3 { margin: 0; text-wrap: balance; font-weight: 700; }
-h1 { font-size: 1.35rem; letter-spacing: -0.02em; }
-h1::before { content: "> "; color: var(--accent); }
-h2 { font-size: 0.82rem; text-transform: uppercase; letter-spacing: 0.08em; }
-h3 { font-size: 0.85rem; }
-code, .mono { font-family: var(--font-mono); font-size: 0.95em; }
-.muted { color: var(--muted); }
-.eyebrow { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.12em; color: var(--accent); font-weight: 700; }
-button { font: inherit; color: inherit; border-radius: 0; }
-:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+__THEARC_THEME_CSS__
 
-/* Header and summary */
-header.top { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 12px 24px; border-bottom: 1px solid var(--edge); padding-bottom: 14px; }
-header.top .meta { display: flex; flex-wrap: wrap; gap: 4px 0; color: var(--muted); font-size: 0.8rem; }
-header.top .meta span + span::before { content: " │ "; color: var(--line); white-space: pre; }
-.stats { display: flex; flex-wrap: wrap; gap: 0; border: 1px solid var(--edge); box-shadow: 3px 3px 0 var(--shadow); }
-.stat { background: var(--surface); padding: 8px 14px; min-width: 8rem; border-right: 1px solid var(--line); }
-.stat:last-child { border-right: 0; }
-.stat .eyebrow { color: var(--muted); }
-.stat b { display: block; font-size: 1.25rem; font-variant-numeric: tabular-nums; color: var(--fg); }
-.scalebar { display: flex; height: 4px; overflow: hidden; margin-top: 6px; background: var(--sunken); }
-
-.topright { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; }
-.theme-toggle { min-height: 36px; padding: 0 12px; border: 1px solid var(--edge); background: var(--surface); color: var(--fg); cursor: pointer; box-shadow: 3px 3px 0 var(--shadow); }
-.theme-toggle:hover { background: var(--accent); color: var(--accent-ink); }
-
-/* Tabs: terminal-style, the selected one inverted */
-nav.tabs { display: flex; flex-wrap: wrap; gap: 0; border: 1px solid var(--edge); width: fit-content; max-width: 100%; }
-nav.tabs button { background: var(--surface); border: 0; border-right: 1px solid var(--line); padding: 8px 14px; cursor: pointer; color: var(--muted); font-weight: 500; min-height: 36px; }
-nav.tabs button:last-child { border-right: 0; }
-nav.tabs button:hover { color: var(--fg); background: var(--sunken); }
-nav.tabs button[aria-selected="true"] { color: var(--accent-ink); background: var(--accent); font-weight: 700; }
-
-/* Panels */
+/* The report's own rules, after thearc.ui's shared ones */
 .bench { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); gap: 18px; align-items: start; }
 @media (max-width: 980px) { .bench { grid-template-columns: minmax(0, 1fr); } }
-.panel { background: var(--surface); border: 1px solid var(--edge); box-shadow: 4px 4px 0 var(--shadow); min-width: 0; }
-.panel > .head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; padding: 8px 12px; border-bottom: 1px solid var(--edge); background: var(--sunken); }
-.panel > .head h2::before { content: "■ "; color: var(--accent); }
-.panel > .body { padding: 12px; display: grid; gap: 12px; min-width: 0; }
 .controls { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; font-size: 0.78rem; }
 .controls label { display: inline-flex; gap: 6px; align-items: center; color: var(--muted); }
 input[type="checkbox"] { accent-color: var(--accent); }
 select { font: inherit; background: var(--bg); color: var(--fg); border: 1px solid var(--edge); border-radius: 0; padding: 3px 6px; max-width: 100%; }
 
 /* Ratings grid */
-.scroll { overflow-x: auto; }
 table.grid { border-collapse: separate; border-spacing: 0; font-size: 0.78rem; width: max-content; min-width: 100%; }
 table.grid th, table.grid td { padding: 0; }
 table.grid thead th { position: sticky; top: 0; background: var(--surface); font-weight: 500; color: var(--muted); padding: 6px 4px; text-align: center; vertical-align: bottom; border-bottom: 1px solid var(--edge); }
@@ -126,24 +33,47 @@ td.cell button.sel { border: 2px solid var(--accent); }
 td.cell .ev { position: absolute; top: 0; right: 2px; font-size: 0.7rem; line-height: 1; color: var(--accent); font-weight: 700; }
 td.cell button.changed { background: var(--accent-soft); border-color: var(--accent); }
 td.cell button.changed .ev { position: static; font-size: 0.85rem; }
-.legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 0.74rem; color: var(--muted); }
-.legend span { display: inline-flex; align-items: center; gap: 5px; }
-.swatch { width: 0.9rem; height: 0.9rem; display: inline-block; border: 1px solid var(--edge); }
 
 /* Section detail */
 .detail-empty { color: var(--muted); padding: 24px 14px; }
 .detail-empty::before { content: "// "; color: var(--accent); }
 .ident { display: grid; gap: 4px; }
 .ident .addr { font-size: 0.86rem; word-break: break-word; color: var(--accent); }
-.chips { display: flex; flex-wrap: wrap; gap: 6px; }
-.chip { font-size: 0.7rem; border: 1px solid var(--line); padding: 0 6px; color: var(--muted); background: var(--bg); }
-.chip.bad { color: var(--bad); background: var(--bad-soft); border-color: var(--bad); }
-.chip.good { color: var(--good); background: var(--good-soft); border-color: var(--good); }
-.chip.kind { color: var(--accent); background: var(--accent-soft); border-color: var(--accent); }
-.spark-wrap { display: grid; gap: 2px; border: 1px solid var(--line); background: var(--bg); padding: 6px 6px 0; }
-.spark { width: 100%; height: 56px; display: block; }
-.spark-marks { position: relative; height: 18px; }
-.spark-mark { position: absolute; top: 0; transform: translateX(-50%); color: var(--accent); font-size: 0.85rem; line-height: 18px; font-weight: 700; white-space: nowrap; }
+.sc { display: grid; gap: 8px; border: 1px solid var(--line); background: var(--bg); padding: 8px; min-width: 0; }
+.sc-switch button { min-height: 28px; }
+.sc-scroll { overflow-x: auto; }
+.sc-plot { display: grid; min-width: min-content; }
+.sc-axis { position: relative; font-size: 0.66rem; color: var(--muted); }
+.sc-axis span { position: absolute; right: 6px; transform: translateY(-50%); }
+.sc-lanelabel { padding: 6px 6px 0 0; text-align: right; border-top: 1px solid var(--line); }
+.sc-slot { position: relative; min-width: 0; }
+.sc-bandbg { position: absolute; inset: 0; background: var(--surface); }
+.sc-bandbg.alt { background: var(--sunken); }
+.sc-base { position: absolute; left: 0; right: 0; border-top: 1px solid var(--edge); }
+.sc-bar { position: absolute; left: 50%; width: 40%; max-width: 28px; transform: translateX(-50%); display: flex; }
+.sc-bar.up { flex-direction: column-reverse; }
+.sc-bar.down { flex-direction: column; }
+.sc-bar i { display: block; width: 100%; }
+.sc-cap { font-size: 0.66rem; color: var(--muted); text-align: center; padding: 4px 2px 0; display: grid; line-height: 1.35; }
+.sc-cap b { color: var(--fg); font-weight: 500; }
+.sc-lane { border-top: 1px solid var(--line); padding: 4px 2px; display: flex; flex-direction: column; align-items: center; gap: 3px; min-height: 2rem; }
+.sc-chg { font-size: 0.66rem; border: 1px solid var(--run); background: var(--run-soft); padding: 0 4px; white-space: nowrap; }
+.sc-chg.unreleased { border-style: dashed; background: transparent; color: var(--muted); }
+.sc-kept { font-size: 0.64rem; color: var(--muted); white-space: nowrap; }
+.sc-band { font-size: 0.7rem; padding: 2px 6px; border-top: 2px solid var(--edge); background: var(--surface); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sc-band.alt { background: var(--sunken); }
+.sc-band.pending { border-top-style: dashed; color: var(--muted); }
+.sc-gate::before { content: ""; position: absolute; top: 0; bottom: 0; left: 50%; border-left: 2px solid var(--run); }
+.sc-gate.quiet::before { border-left: 1px dashed var(--line); }
+.sc-pin { position: absolute; left: 50%; transform: translateX(-50%); background: var(--run); color: var(--bg); font-size: 0.66rem; font-weight: 700; min-width: 1.1rem; text-align: center; line-height: 1.1rem; }
+.sc-keptmark { position: absolute; top: 3px; left: 50%; transform: translateX(-50%); }
+.sc-empty { position: absolute; inset: 0; display: grid; place-items: center; font-size: 0.64rem; color: var(--muted); text-align: center; padding: 0 4px; }
+.sc-dot { position: absolute; left: 50%; transform: translate(-50%, -50%); border-radius: 50%; border: 2px solid var(--bg); }
+.sc-delta { position: absolute; top: 2px; left: 50%; transform: translateX(-50%); font-size: 0.6rem; color: var(--run); background: var(--bg); white-space: nowrap; padding: 0 2px; z-index: 1; }
+.sc-gates { display: grid; gap: 6px; font-size: 0.74rem; }
+.sc-gates > div { display: grid; grid-template-columns: auto 1fr; gap: 8px; align-items: start; }
+.sc-gates .sc-pin { position: static; transform: none; padding: 0 4px; }
+.sc-gates small { display: block; color: var(--muted); white-space: pre-wrap; word-break: break-word; }
 .events { display: grid; gap: 10px; }
 .event { border: 1px solid var(--line); padding: 10px 12px; display: grid; gap: 6px; min-width: 0; background: var(--bg); }
 .event.rating { background: var(--sunken); }
@@ -213,8 +143,6 @@ button.grow .chips { flex-wrap: nowrap; overflow: hidden; gap: 4px; }
 
 /* Documents */
 .docbar { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; }
-footer { color: var(--muted); font-size: 0.74rem; border-top: 1px solid var(--line); padding-top: 10px; }
-footer::before { content: "$ "; color: var(--accent); }
 @media (prefers-reduced-motion: no-preference) { td.cell button, .colhead, button.grow, nav.tabs button { transition: background-color 0.08s, color 0.08s; } }
 </style>
 
@@ -292,6 +220,7 @@ footer::before { content: "$ "; color: var(--accent); }
 </div>
 
 <script type="application/json" id="thearc-data">__THEARC_DATA__</script>
+<script id="thearc-theme">__THEARC_THEME_JS__</script>
 <script>
 (function () {
   "use strict";
@@ -303,52 +232,56 @@ footer::before { content: "$ "; color: var(--accent); }
   const time = (iso) => Date.parse(iso) || 0;  // Times carry their committer's zone: compare instants, not text.
   const when = (iso) => iso ? new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" }) : "";
   const state = { scale: data.scales[0]?.name || null, active: true, cumulative: false, section: null, revision: null };
+  try { state.chart = localStorage.getItem("thearc-report-chart"); } catch (e) { /* storage may be unavailable */ }
+  if (!["rounds", "versions", "score"].includes(state.chart)) state.chart = "versions";
   const revIndex = Object.fromEntries(data.revisions.map((r, i) => [r.revision, i]));
   const sectionById = Object.fromEntries(data.sections.map((s) => [s.id, s]));
 
   // ---- scales and colour -------------------------------------------------------------------------------------------
   function scaleOf(name) { return data.scales.find((s) => s.name === name); }
-  // Position of a label on its scale, from -1 (worst) to 1 (best); null when the scale has no order.
-  function position(scale, value) {
-    if (!scale) return null;
-    if (scale.numeric) {
-      const nums = scale.labels.map(Number); const lo = Math.min(...nums), hi = Math.max(...nums);
-      return hi === lo ? 0 : ((Number(value) - lo) / (hi - lo)) * 2 - 1;
-    }
-    const i = scale.labels.indexOf(String(value));
-    if (i < 0 || scale.labels.length < 2) return 0;
-    return (i / (scale.labels.length - 1)) * 2 - 1;
+  // A scale's shape, from its labels' values (CategoricalScale.values): "diverging" when some are below zero and some
+  // above (bad … neither … good), "sequential" when none is below zero (least … most), "unordered" without values.
+  // Positions run from -1 (worst) to 1 (best) on a diverging scale, from 0 to 1 on a sequential one.
+  const shapes = {};
+  function shapeOf(scale) {
+    if (!scale) return { kind: "unordered", pos: {} };
+    if (shapes[scale.name]) return shapes[scale.name];
+    let values = scale.values;
+    if (!values && scale.numeric) values = Object.fromEntries(scale.labels.map((l) => [l, Number(l)]));
+    if (!values && scale.ordered) values = Object.fromEntries(scale.labels.map((l, i) => [l, i - (scale.labels.length - 1) / 2]));
+    if (!values) return (shapes[scale.name] = { kind: "unordered", pos: {} });
+    const nums = Object.values(values), lo = Math.min(...nums), hi = Math.max(...nums);
+    const kind = lo < 0 && hi > 0 ? "diverging" : "sequential";
+    const pos = Object.fromEntries(Object.entries(values).map(([l, v]) => [l, kind === "diverging"
+      ? (v < 0 ? v / -lo : v > 0 ? v / hi : 0) : (hi === lo ? 1 : (v - lo) / (hi - lo))]));
+    return (shapes[scale.name] = { kind, pos });
   }
+  function position(scale, value) { const p = shapeOf(scale).pos[String(value)]; return p === undefined ? null : p; }
+  const PALETTE = ["var(--c0)", "var(--c1)", "var(--c2)", "var(--c3)", "var(--merge)", "var(--warn)"];
+  // A label's colour: the scale's own (CategoricalScale.colors), else one from its position.
+  function labelColor(scale, value) {
+    const own = scale?.colors?.[value]; if (own) return own;
+    const shape = shapeOf(scale), p = position(scale, value);
+    if (p === null) return PALETTE[Math.max(0, (scale?.labels || []).indexOf(String(value))) % PALETTE.length];
+    if (shape.kind === "sequential") return `color-mix(in srgb, var(--run) ${Math.round(25 + 75 * p)}%, var(--surface))`;
+    if (p === 0) return "var(--mid)";
+    return `color-mix(in srgb, ${p < 0 ? "var(--bad)" : "var(--good)"} ${Math.round(45 + 55 * Math.abs(p))}%, var(--surface))`;
+  }
+  // The mean position of some ratings, and how many; null without ratings. Unordered scales have no mean.
   function balance(counts, scale) {
     let total = 0, sum = 0;
-    for (const [value, n] of Object.entries(counts || {})) { const p = position(scale, value); total += n; sum += (p ?? 0) * n; }
-    return total ? { total, score: sum / total } : null;
+    for (const [value, n] of Object.entries(counts || {})) { total += n; sum += (position(scale, value) ?? 0) * n; }
+    return total ? { total, score: shapeOf(scale).kind === "unordered" ? null : sum / total } : null;
   }
-  function tint(score) {
-    if (score === null) return "transparent";
-    const pct = Math.round(Math.min(1, Math.abs(score)) * 85 + 15);
-    const hue = score < 0 ? "var(--bad)" : score > 0 ? "var(--good)" : "var(--mid)";
-    return `color-mix(in srgb, ${hue} ${score === 0 ? 30 : pct}%, var(--surface))`;
+  // A cell's fill: the colour of the label nearest its mean (the commonest label on an unordered scale), muted.
+  function fill(counts, scale) {
+    const b = balance(counts, scale); if (!b) return "transparent";
+    let label;
+    if (b.score === null) label = Object.entries(counts).sort((a, c) => c[1] - a[1])[0][0];
+    else label = scale.labels.reduce((best, l) => Math.abs(position(scale, l) - b.score) < Math.abs(position(scale, best) - b.score) ? l : best);
+    return `color-mix(in srgb, ${labelColor(scale, label)} ${position(scale, label) === 0 ? 35 : 60}%, var(--surface))`;
   }
-  function labelColor(scale, value) { const p = position(scale, value); return p === null || p === 0 ? "var(--mid)" : p < 0 ? "var(--bad)" : "var(--good)"; }
-
-  // ---- theme: follows the system until the viewer picks one; the pick is remembered in this browser ----------------
-  {
-    const root = document.documentElement, button = $("theme");
-    const system = () => (window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark");
-    const current = () => (root && root.getAttribute("data-theme")) || system();
-    const paint = () => { const dark = current() === "dark";
-      button.textContent = dark ? "◐ light" : "◑ dark"; button.setAttribute("aria-pressed", String(!dark));
-      button.title = `Switch to the ${dark ? "light" : "dark"} theme`; };
-    try { const saved = localStorage.getItem("thearc-report-theme"); if (saved && root) root.setAttribute("data-theme", saved); } catch (e) { /* storage may be unavailable */ }
-    button.addEventListener("click", () => {
-      const next = current() === "dark" ? "light" : "dark";
-      if (root) root.setAttribute("data-theme", next);
-      try { localStorage.setItem("thearc-report-theme", next); } catch (e) { /* storage may be unavailable */ }
-      paint();
-    });
-    paint();
-  }
+  function chipStyle(scale, value) { const c = labelColor(scale, value); return `style="border-color:${c};box-shadow:inset 4px 0 0 ${c};color:var(--fg)"`; }
 
   // ---- header ------------------------------------------------------------------------------------------------------
   $("title").textContent = `${data.agent.name}${data.agent.version ? " " + data.agent.version : ""}`;
@@ -405,15 +338,15 @@ footer::before { content: "$ "; color: var(--accent); }
         const desc = `${s.address} at ${short(r.revision)}: ${b ? Object.entries(counts).map(([v, n]) => `${n} ${v}`).join(", ") : "no ratings"}${events.length ? "; " + events.join(", ") : ""}`;
         const sel = state.section === s.id && state.revision === r.revision ? " sel" : "";
         const changed = !b && events.length ? " changed" : "";
-        return `<td class="cell"><button class="${b ? "rated" : ""}${changed}${sel}" style="${b ? `background:${tint(b.score)}${Math.abs(b.score) > 0.55 ? ";color:#0a0a0a" : ""}` : ""}" data-sec="${esc(s.id)}" data-rev="${esc(r.revision)}" aria-label="${esc(desc)}" title="${esc(desc)}">${text}${ev}</button></td>`;
+        return `<td class="cell"><button class="${b ? "rated" : ""}${changed}${sel}" style="${b ? `background:${fill(counts, scale)}` : ""}" data-sec="${esc(s.id)}" data-rev="${esc(r.revision)}" aria-label="${esc(desc)}" title="${esc(desc)}">${text}${ev}</button></td>`;
       }).join("");
       return `<tr class="${state.section === s.id ? "sel" : ""}"><td class="name"><button data-sec="${esc(s.id)}" style="padding-left:${10 + pad}px" title="${esc(s.address)}">
         ${s.depth ? "" : `<span class="kind">${esc(s.kind.replace("_", " "))}</span>`}<span class="${s.removed ? "gone" : ""}">${esc(label)}</span></button></td>${cells}</tr>`;
     }).join("");
     $("grid").innerHTML = head + `<tbody>${body || `<tr><td class="name"><span class="muted" style="padding:8px 10px;display:block">No section has ratings or changes yet.</span></td></tr>`}</tbody>`;
-    const leg = scale ? scale.labels.map((l) => `<span><i class="swatch" style="background:${tint(position(scale, l))}"></i>${esc(l)}</span>`).join("") : "";
+    const leg = scale ? scale.labels.map((l) => `<span><i class="swatch" style="background:${labelColor(scale, l)}"></i>${esc(l)}</span>`).join("") : "";
     $("legend").innerHTML = leg + Object.entries(glyph).map(([k, g]) => `<span><b style="color:var(--accent)">${g}</b>${k}</span>`).join("") +
-      `<span>numbers: ratings from worst to best</span>`;
+      `<span>numbers: ratings in the scale's order</span>`;
   }
 
   // ---- section detail ----------------------------------------------------------------------------------------------
@@ -447,23 +380,158 @@ footer::before { content: "$ "; color: var(--accent); }
       return `<span class="${cls}">${esc(l) || " "}</span>`;
     }).join("")}</pre>`;
   }
-  function sparkline(section) {
-    // Bars stretch with the panel; the change marks are HTML on top, so they keep their shape at any width.
-    const scale = scaleOf(state.scale); if (!scale) return "";
-    const n = Math.max(1, data.revisions.length), w = 100 / n;
-    const per = data.revisions.map((r) => data.cells[section.id]?.[r.revision]?.ratings?.[state.scale] || {});
-    const max = Math.max(1, ...per.map((c) => Object.values(c).reduce((a, b) => a + b, 0)));
-    const marks = [];
-    const bars = per.map((counts, i) => {
-      let y = 56; const x = i * w + w * 0.2; const bw = w * 0.6;
-      const ev = (data.cells[section.id]?.[data.revisions[i].revision]?.events || []).filter((e) => e !== "added" || i > 0);
-      if (ev.length) marks.push(`<span class="spark-mark" style="left:${(i + 0.5) * w}%" title="${esc(short(data.revisions[i].revision))}: ${esc(ev.join(", "))}">${ev.map((e) => glyph[e] || "•").join("")}</span>`);
-      return scale.labels.filter((l) => counts[l]).map((l) => { const h = (counts[l] / max) * 52; y -= h;
-        return `<rect x="${x}" y="${y}" width="${bw}" height="${h}" style="fill:${labelColor(scale, l)}"><title>${esc(short(data.revisions[i].revision))}: ${counts[l]} ${esc(l)}</title></rect>`; }).join("");
+  // ---- section chart -----------------------------------------------------------------------------------------------
+  // One section's ratings and changes over time, three ways (state.chart): "rounds", the ratings of each round as a
+  // bar with a lane of the changes the round made; "versions", the rounds inside bands of the version they judged,
+  // with the changes that made the next version as numbered gates between the bands; "score", each round's mean
+  // rating as a dot, with the same gates. Rounds are the graph's runs; a workspace without runs gets one column per
+  // revision instead.
+  const CHARTS = [["rounds", "Rounds"], ["versions", "Versions"], ["score", "Score"]];
+  const CHART_H = 140;
+  const versionOf = (revision) => String(revision || "").split("@")[0];
+  const released = (c) => (c.branches || []).some((b) => b === data.graph?.trunk || /(^|\/)release\//.test(b));
+  function columns(section) {
+    const mine = (r) => r.section === section.id && r.scale === state.scale;
+    const runs = data.graph?.runs || [];
+    if (runs.length) return runs.map((run) => ({ label: run.label, version: run.base_version, at: run.at,
+      ratings: data.ratings.filter((r) => mine(r) && r.run === run.id),
+      changes: data.changes.filter((c) => c.section === section.id && c.run === run.id) }));
+    return data.revisions.map((rev, i) => ({ label: short(rev.revision), version: versionOf(rev.revision), at: rev.at,
+      ratings: data.ratings.filter((r) => mine(r) && r.revision === rev.revision),
+      changes: data.changes.filter((c) => c.section === section.id && c.revision === rev.revision && (c.kind !== "added" || i > 0)) }));
+  }
+  function tallied(ratings) { const t = {}; ratings.forEach((r) => { t[r.value] = (t[r.value] || 0) + 1; }); return t; }
+  // A column's bar: on a diverging scale good labels rise from the baseline and bad ones hang below it, the label at
+  // zero split across it; on other scales every label rises, in the scale's order.
+  function stacks(counts, scale) {
+    const diverging = shapeOf(scale).kind === "diverging", up = [], down = [];
+    for (const l of scale.labels) {
+      const n = counts[l] || 0; if (!n) continue;
+      const p = position(scale, l);
+      if (!diverging || p > 0) up.push([l, n]);
+      else if (p < 0) down.unshift([l, n]);
+      else { up.unshift([l, n / 2]); down.unshift([l, n / 2]); }
+    }
+    return { up, down };
+  }
+  function geometry(cols, scale, pad) {
+    const st = cols.map((c) => stacks(tallied(c.ratings), scale));
+    const sum = (xs) => xs.reduce((a, [, n]) => a + n, 0);
+    const up = Math.max(1, ...st.map((s) => sum(s.up))), down = Math.max(0, ...st.map((s) => sum(s.down)));
+    const k = (CHART_H - pad - 6) / (up + down), base = pad + up * k;
+    const axis = `<span style="top:${base - up * k}px">${Math.ceil(up)}</span><span style="top:${base}px">0</span>` +
+      (down ? `<span style="top:${base + down * k}px">${Math.ceil(down)}</span>` : "");
+    return { st, k, base, axis };
+  }
+  function countsText(counts, scale) {
+    return scale.labels.filter((l) => counts[l]).map((l) => `${counts[l]} ${l}`).join(", ") || "no ratings";
+  }
+  function bar(s, g, scale, title) {
+    if (!s.up.length && !s.down.length) return "";
+    const seg = ([l, n]) => `<i style="height:${n * g.k}px;background:${labelColor(scale, l)}"></i>`;
+    return `<div class="sc-bar up" style="bottom:${CHART_H - g.base}px" title="${esc(title)}">${s.up.map(seg).join("")}</div>` +
+      (s.down.length ? `<div class="sc-bar down" style="top:${g.base}px" title="${esc(title)}">${s.down.map(seg).join("")}</div>` : "");
+  }
+  function caption(c, scale, withVersion) {
+    const counts = tallied(c.ratings);
+    const nums = scale.labels.filter((l) => counts[l]).map((l) => `<span style="color:${labelColor(scale, l)}" title="${esc(l)}">${counts[l]}</span>`).join(" ");
+    return `<div class="sc-cap"><b>${esc(c.label)}</b>${withVersion ? `<span>on ${esc(c.version || "?")}</span>` : ""}<span>${nums || "–"}</span></div>`;
+  }
+  function kept(c) {
+    const k = c.changes.find((ch) => ch.kind === "kept");
+    return k ? `<span class="sc-kept" title="${esc(k.reason || "")}">✓ kept</span>` : "";
+  }
+  function plot(template, rows) {
+    return `<div class="sc-scroll"><div class="sc-plot" style="grid-template-columns:3rem ${template}">${rows.join("")}</div></div>`;
+  }
+  // Versions in order, each with the columns that judged it; then releases no column judged yet.
+  function bands(cols, section) {
+    const groups = [];
+    cols.forEach((c) => { const last = groups[groups.length - 1];
+      if (last && last.version === c.version) last.cols.push(c); else groups.push({ version: c.version, cols: [c] }); });
+    const seen = new Set(groups.map((g) => g.version)), latest = Math.max(0, ...cols.map((c) => time(c.at)));
+    (data.graph?.releases || []).filter((r) => !seen.has(r.version) && time(r.at) >= latest)
+      .forEach((r) => groups.push({ version: r.version, cols: [], pending: true }));
+    let pin = 0;
+    groups.forEach((g, i) => {
+      const next = groups[i + 1]; if (!next) return;
+      g.gate = data.changes.filter((c) => c.section === section.id && released(c) && c.kind !== "kept" &&
+        (c.kind !== "added" || revIndex[c.revision] > 0) && versionOf(c.revision) === g.version)
+        .map((c) => ({ n: ++pin, c, to: next.version }));
+    });
+    return groups;
+  }
+  function bandSlots(groups) {
+    const slots = [];
+    groups.forEach((g, i) => {
+      if (g.pending) slots.push({ pending: g, band: i });
+      g.cols.forEach((c) => slots.push({ col: c, band: i }));
+      if (i < groups.length - 1) slots.push({ gate: g.gate || [] });
+    });
+    const template = slots.map((s) => s.gate ? "1.6rem" : s.pending ? "minmax(5.5rem, 0.8fr)" : "minmax(4.5rem, 1fr)").join(" ");
+    const head = `<div></div>` + groups.map((g, i) => `<div class="sc-band${i % 2 ? " alt" : ""}${g.pending ? " pending" : ""}" style="grid-column:span ${Math.max(1, g.cols.length)}" title="${esc(g.version || "")}">${esc(g.version || "?")}${g.pending ? " · no rounds yet" : ""}</div>${i < groups.length - 1 ? "<div></div>" : ""}`).join("");
+    return { slots, template, head };
+  }
+  const clip = (text, n) => text.length > n ? text.slice(0, n - 1).trimEnd() + "…" : text;
+  function gateList(groups) {
+    const pins = groups.flatMap((g) => g.gate || []);
+    return pins.length ? `<div class="sc-gates">${pins.map((p) => `<div><span class="sc-pin">${p.n}</span><span><b>${esc(glyph[p.c.kind] || "•")} ${esc(p.c.kind)}</b> → ${esc(p.to || "?")} <code>${esc(sha(p.c.commit))}</code><small title="${esc(p.c.reason || "")}">${esc(clip(p.c.reason || "", 220))}</small></span></div>`).join("")}</div>` : "";
+  }
+  function roundsView(cols, scale) {
+    const g = geometry(cols, scale, 8), n = cols.length;
+    const cells = cols.map((c, i) => `<div class="sc-slot" style="height:${CHART_H}px"><div class="sc-base" style="top:${g.base}px"></div>${bar(g.st[i], g, scale, `${c.label}: ${countsText(tallied(c.ratings), scale)}`)}</div>`).join("");
+    const lane = cols.map((c) => `<div class="sc-slot sc-lane">${c.changes.filter((ch) => ch.kind !== "kept" && ch.kind !== "added").map((ch) =>
+      `<span class="sc-chg${released(ch) ? "" : " unreleased"}" title="${esc((released(ch) ? "" : "not released · ") + (ch.reason || ""))}">${esc(glyph[ch.kind] || "•")} ${esc(sha(ch.commit).slice(0, 7))}</span>`).join("")}${kept(c)}</div>`).join("");
+    return plot(`repeat(${n}, minmax(4.5rem, 1fr))`, [`<div class="sc-axis" style="height:${CHART_H}px">${g.axis}</div>`, cells,
+      `<div></div>`, cols.map((c) => caption(c, scale, true)).join(""), `<div class="sc-axis sc-lanelabel">changes</div>`, lane]);
+  }
+  function versionsView(cols, scale, groups) {
+    const g = geometry(cols, scale, 22), { slots, template, head } = bandSlots(groups);
+    const cells = slots.map((s) => {
+      if (s.gate) return `<div class="sc-slot sc-gate${s.gate.length ? "" : " quiet"}" style="height:${CHART_H}px">${s.gate.map((p, j) => `<span class="sc-pin" style="top:${4 + j * 20}px" title="${esc(p.c.reason || "")}">${p.n}</span>`).join("")}</div>`;
+      const bg = `<div class="sc-bandbg${s.band % 2 ? " alt" : ""}"></div>`;
+      if (s.pending) return `<div class="sc-slot" style="height:${CHART_H}px">${bg}<div class="sc-empty">no ratings of ${esc(s.pending.version)} yet</div></div>`;
+      const i = cols.indexOf(s.col);
+      return `<div class="sc-slot" style="height:${CHART_H}px">${bg}<div class="sc-base" style="top:${g.base}px"></div>${bar(g.st[i], g, scale, `${s.col.label}: ${countsText(tallied(s.col.ratings), scale)}`)}<span class="sc-keptmark">${kept(s.col)}</span></div>`;
     }).join("");
-    return `<div class="spark-wrap"><svg class="spark" viewBox="0 0 100 56" preserveAspectRatio="none" role="img" aria-label="Ratings of this section per revision">
-      <line x1="0" y1="56" x2="100" y2="56" style="stroke:var(--line)" stroke-width="1" vector-effect="non-scaling-stroke"></line>${bars}</svg>
-      <div class="spark-marks" aria-hidden="true">${marks.join("")}</div></div>`;
+    const caps = slots.map((s) => s.col ? caption(s.col, scale, false) : "<div></div>").join("");
+    return plot(template, [head, `<div class="sc-axis" style="height:${CHART_H}px">${g.axis}</div>`, cells, `<div></div>`, caps]) + gateList(groups);
+  }
+  function scoreView(cols, scale, groups) {
+    const shape = shapeOf(scale);
+    if (shape.kind === "unordered") return `<div class="muted">The ${esc(scale.name)} scale has no order, so its ratings have no score. Give its labels values (CategoricalScale values=…) to chart one.</div>`;
+    const lo = shape.kind === "diverging" ? -1 : 0, top = 22, bottom = CHART_H - 12;
+    const y = (s) => top + (1 - (s - lo) / (1 - lo)) * (bottom - top);
+    const score = (c) => balance(tallied(c.ratings), scale);
+    const near = (s) => scale.labels.reduce((best, l) => Math.abs(position(scale, l) - s) < Math.abs(position(scale, best) - s) ? l : best);
+    const { slots, template, head } = bandSlots(groups);
+    const fmt = (s) => s === null || s === undefined ? "–" : (s > 0 && lo < 0 ? "+" : s < 0 ? "−" : "") + Math.abs(s).toFixed(2);
+    const cells = slots.map((s, k) => {
+      if (s.gate) {
+        if (!s.gate.length) return `<div class="sc-slot sc-gate quiet" style="height:${CHART_H}px"></div>`;
+        const before = slots.slice(0, k).reverse().find((x) => x.col), after = slots.slice(k + 1).find((x) => x.col);
+        const a = before && score(before.col)?.score, b = after && score(after.col)?.score;
+        return `<div class="sc-slot sc-gate" style="height:${CHART_H}px" title="${esc(s.gate.map((p) => `${p.n}. ${p.c.reason || p.c.kind}`).join("\n"))}"><span class="sc-delta">${after ? `${fmt(a)}→${fmt(b)}` : `→ ${esc(s.gate[0].to || "")}`}</span></div>`;
+      }
+      const bg = `<div class="sc-bandbg${s.band % 2 ? " alt" : ""}"></div>`;
+      if (s.pending) return `<div class="sc-slot" style="height:${CHART_H}px">${bg}<div class="sc-empty">no ratings of ${esc(s.pending.version)} yet</div></div>`;
+      const b = score(s.col); if (!b) return `<div class="sc-slot" style="height:${CHART_H}px">${bg}</div>`;
+      const d = 8 + Math.sqrt(b.total) * 2.2;
+      return `<div class="sc-slot" style="height:${CHART_H}px">${bg}<span class="sc-dot" style="top:${y(b.score)}px;width:${d}px;height:${d}px;background:${labelColor(scale, near(b.score))}" title="${esc(s.col.label)}: score ${fmt(b.score)} from ${b.total} ratings"></span></div>`;
+    }).join("");
+    const caps = slots.map((s) => s.col ? `<div class="sc-cap"><b>${esc(s.col.label)}</b><span>${fmt(score(s.col)?.score)}</span><span>${score(s.col)?.total || 0} ratings</span></div>` : "<div></div>").join("");
+    const guides = (lo < 0 ? [1, 0, -1] : [1, 0.5, 0]).map((v) => `<span style="top:${y(v)}px">${lo < 0 && v > 0 ? "+" : ""}${v}</span>`).join("");
+    return plot(template, [head, `<div class="sc-axis" style="height:${CHART_H}px">${guides}</div>`, cells, `<div></div>`, caps]) + gateList(groups);
+  }
+  function sectionChart(section) {
+    const scale = scaleOf(state.scale); if (!scale) return "";
+    const cols = columns(section), groups = bands(cols, section);
+    const body = state.chart === "rounds" ? roundsView(cols, scale) : state.chart === "score" ? scoreView(cols, scale, groups) : versionsView(cols, scale, groups);
+    const outside = data.graph?.runs?.length ? data.ratings.filter((r) => r.section === section.id && r.scale === state.scale && !r.run).length : 0;
+    const legend = `<div class="legend">${scale.labels.map((l) => `<span><i class="swatch" style="background:${labelColor(scale, l)}"></i>${esc(l)}</span>`).join("")}
+      <span><b style="color:var(--run)">✎</b>change</span><span>✓ kept by a round</span></div>`;
+    return `<div class="sc"><div class="chiprow sc-switch" role="group" aria-label="Chart">${CHARTS.map(([key, name]) =>
+      `<button data-chart="${key}" aria-pressed="${state.chart === key}">${name}</button>`).join("")}</div>${body}${legend}${outside ? `<div class="muted">${outside} rating(s) recorded outside a round are not drawn.</div>` : ""}</div>`;
   }
   function renderDetail() {
     const s = sectionById[state.section]; const scale = scaleOf(state.scale);
@@ -472,7 +540,7 @@ footer::before { content: "$ "; color: var(--accent); }
     const ratings = data.ratings.filter((r) => r.section === s.id);
     const items = [...changes.map((c) => ({ at: c.at, c })), ...ratings.map((r) => ({ at: r.at, r }))].sort((a, b) => time(a.at) - time(b.at));
     const counts = {}; ratings.filter((r) => r.scale === state.scale).forEach((r) => { counts[r.value] = (counts[r.value] || 0) + 1; });
-    const chips = Object.entries(counts).map(([v, n]) => { const p = position(scale, v); return `<span class="chip ${p < 0 ? "bad" : p > 0 ? "good" : ""}">${n} ${esc(v)}</span>`; }).join("");
+    const chips = Object.entries(counts).map(([v, n]) => { return `<span class="chip" ${chipStyle(scale, v)}>${n} ${esc(v)}</span>`; }).join("");
     const names = s.names.length ? `<div class="muted">Renamed: ${s.names.map((n) => `<code>${esc(n.previous)}</code> → <code>${esc(n.address)}</code>`).join("; ")}</div>` : "";
     const events = items.map(({ c, r }) => {
       if (c) {
@@ -482,16 +550,15 @@ footer::before { content: "$ "; color: var(--accent); }
           ${c.reason ? `<div class="reason">${esc(c.reason)}</div>` : ""}${body}</article>`;
       }
       const ref = data.reflections[r.reflection];
-      const p = position(scaleOf(r.scale), r.value);
       const meta = Object.keys(r.metadata || {}).length ? markdown(Object.entries(r.metadata).map(([k, v]) => `**${k}:** ${v}`).join("\n\n")) : "";
-      return `<article class="event rating"><div class="row"><span class="chip ${p < 0 ? "bad" : p > 0 ? "good" : ""}">${esc(r.value)}</span><span>${esc(r.scale)}</span>
+      return `<article class="event rating"><div class="row"><span class="chip" ${chipStyle(scaleOf(r.scale), r.value)}>${esc(r.value)}</span><span>${esc(r.scale)}</span>
         <span class="mono">${esc(short(r.revision))}</span><code>${esc(r.ref)}</code><span>${esc(when(r.at))}</span></div>${meta}
         ${ref ? `<details><summary>Reflection ${esc((r.reflection || "").slice(11, 19))} (${esc(ref.reflector?.harness || "")})</summary>${markdown(ref.markdown)}</details>`
               : `<div class="muted mono">${esc(r.item || "")}</div>`}</article>`;
     }).join("");
     $("detail").innerHTML = `<div class="head"><div class="ident"><span class="eyebrow">${esc(s.kind.replace("_", " "))}${s.removed ? " · removed" : ""}</span>
       <span class="addr">${esc(s.address)}</span><span class="mono muted">${esc(s.id)}</span></div><div class="chips">${chips}</div></div>
-      <div class="body">${names}${sparkline(s)}<div class="events">${events || `<div class="muted">No ratings or changes since the configuration was imported.</div>`}</div></div>`;
+      <div class="body">${names}${sectionChart(s)}<div class="events">${events || `<div class="muted">No ratings or changes since the configuration was imported.</div>`}</div></div>`;
   }
 
   // ---- changes -----------------------------------------------------------------------------------------------------
@@ -818,6 +885,12 @@ footer::before { content: "$ "; color: var(--accent); }
     const b = e.target.closest("button[data-sec]"); if (!b) return;
     state.section = b.dataset.sec; if (b.dataset.rev) state.revision = b.dataset.rev;
     renderGrid(); renderDetail();
+  });
+  $("detail").addEventListener("click", (e) => {
+    const b = e.target.closest("button[data-chart]"); if (!b) return;
+    state.chart = b.dataset.chart;
+    try { localStorage.setItem("thearc-report-chart", state.chart); } catch (err) { /* storage may be unavailable */ }
+    renderDetail();
   });
   $("changes").addEventListener("click", (e) => {
     const b = e.target.closest("button[data-sec]"); if (!b) return;

@@ -27,12 +27,14 @@ import re
 import tomllib
 from collections.abc import Iterable
 from dataclasses import dataclass, field
+from dataclasses import replace as dataclasses_replace
 from pathlib import Path
 from typing import Any, Literal
 
 from thearc.harnesses import Harness
 from thearc.resources.agent import MCP, SKILL_FILE, AgentResource, ContextDocument, Extension, Hook, MetaAgent, Skill
 from thearc.resources.files import skill_markdown, structured_entry
+from thearc.resources.ignore import ignored_install_path, without_ignored
 from thearc.resources.markdown import (
     render_frontmatter,
     replace_sections,
@@ -47,6 +49,7 @@ from thearc.resources.markers import (
     unstamp_file,
     unstamp_markdown,
 )
+from thearc.resources.targets import ResourceTarget
 
 RECORD = ".thearc/installed.json"
 RECORD_SCHEMA_VERSION = 1
@@ -81,6 +84,8 @@ class HarnessLayout:
     mcp_format: Literal["json", "toml"] = "json"
     mcp_type_key: str = "transport"
     locations: dict[str, str] = field(default_factory=dict)
+    context_files: tuple[str, ...] = CONTEXT_FILES  # The context documents the harness reads.
+    scripts: str | None = None  # Where hook commands find hook scripts; default ``./<base>/hooks``.
 
     def location(self, kind: str) -> str:
         """Directory of ``skills``, ``rules``, ``workflows``, or ``commands``."""
@@ -95,6 +100,7 @@ HARNESSES: dict[str, HarnessLayout] = {
         mcp_file=".mcp.json",
         hooks_format="nested",
         mcp_type_key="type",
+        context_files=("CLAUDE.md",),
     ),
     "codex": HarnessLayout(
         "codex",
@@ -104,16 +110,53 @@ HARNESSES: dict[str, HarnessLayout] = {
         hooks_format="nested",
         mcp_format="toml",
         locations={"commands": "prompts"},
+        context_files=("AGENTS.md",),
     ),
     "antigravity": HarnessLayout(
         "antigravity", ".agents", hooks_file=".agents/hooks.json", mcp_file=".agents/mcp_config.json"
     ),
-    "pi": HarnessLayout("pi", ".pi", hooks_file=None, mcp_file=None, locations={"commands": "prompts"}),
+    "pi": HarnessLayout("pi", ".pi", hooks_file=None, mcp_file=None, locations={"commands": "prompts"},
+                        context_files=("AGENTS.md",)),
     # OpenCode reads .opencode/skills (and .agents/.claude skills); hooks and MCP live in plugins and opencode.json.
     "opencode": HarnessLayout(
-        "opencode", ".opencode", hooks_file=None, mcp_file=None, locations={"commands": "command"}
+        "opencode", ".opencode", hooks_file=None, mcp_file=None, locations={"commands": "command"},
+        context_files=("AGENTS.md",),
     ),
 }
+
+
+GLOBAL_HARNESSES: tuple[Harness, ...] = ("claude", "codex", "pi", "opencode")
+
+
+def global_layout(harness: Harness, *, home: str | Path | None = None) -> tuple[Path, HarnessLayout]:
+    """Where ``harness`` keeps its configuration for every project, and its layout there: the folder to install
+    into (``~/.claude``, ``$CODEX_HOME`` or ``~/.codex``, ``~/.pi/agent``, ``~/.config/opencode``) and paths
+    inside it. Context documents go into that folder (``~/.claude/CLAUDE.md``), hook scripts are run from it by
+    their absolute path, and so is the install record (``<folder>/.thearc/installed.json``). Claude's own MCP
+    servers live in ``~/.claude.json``, outside that folder: a global install for Claude skips MCP servers."""
+    base = Path(home).expanduser() if home is not None else Path.home()
+    env = os.environ if home is None else {}
+    if harness == "claude":
+        root = Path(env["CLAUDE_CONFIG_DIR"]).expanduser() if env.get("CLAUDE_CONFIG_DIR") else base / ".claude"
+        layout = HarnessLayout("claude", ".", hooks_file="settings.json", mcp_file=None, hooks_format="nested",
+                               mcp_type_key="type", context_files=("CLAUDE.md",))
+    elif harness == "codex":
+        root = Path(env["CODEX_HOME"]).expanduser() if env.get("CODEX_HOME") else base / ".codex"
+        layout = HarnessLayout("codex", ".", hooks_file="hooks.json", mcp_file="config.toml", hooks_format="nested",
+                               mcp_format="toml", locations={"commands": "prompts"}, context_files=("AGENTS.md",))
+    elif harness == "pi":
+        root = base / ".pi" / "agent"
+        layout = HarnessLayout("pi", ".", hooks_file=None, mcp_file=None, locations={"commands": "prompts"},
+                               context_files=("AGENTS.md",))
+    elif harness == "opencode":
+        config = Path(env["XDG_CONFIG_HOME"]).expanduser() if env.get("XDG_CONFIG_HOME") else base / ".config"
+        root = config / "opencode"
+        layout = HarnessLayout("opencode", ".", hooks_file=None, mcp_file=None, locations={"commands": "command"},
+                               context_files=("AGENTS.md",))
+    else:
+        raise ValueError(f"cannot install {harness!r} globally; harnesses: {', '.join(GLOBAL_HARNESSES)}")
+    root = root.resolve()
+    return root, dataclasses_replace(layout, scripts=str(root / "hooks"))
 
 
 def get_harness(harness: Harness | HarnessLayout) -> HarnessLayout:
@@ -140,7 +183,7 @@ def _hook_command(harness: HarnessLayout, hook: Hook) -> str | None:
     if hook.command:
         return hook.command
     if hook.script:
-        return f"./{harness.base}/hooks/{hook.name}.sh"
+        return f"{harness.scripts or f'./{harness.base}/hooks'}/{hook.name}.sh"
     return None
 
 
@@ -166,8 +209,10 @@ def _flat_key(entry: Any) -> HookKey:
 
 
 def _merge_nested_hooks(
-    data: dict[str, Any], hooks: dict[str, Hook], harness: HarnessLayout, ours: _Ownership
+    data: dict[str, Any], hooks: dict[str, Hook], harness: HarnessLayout, ours: _Ownership, *, claim: bool = False
 ) -> tuple[dict[str, Any], dict[str, list]]:
+    """``data`` with ``hooks`` merged in, and the keys of those now owned. An identical hook already there stays
+    whoever's it is, unless ``claim`` (a forced install) takes it over."""
     native: dict[str, list] = {}
     for event, groups in data.get("hooks", {}).items():
         kept_groups = []
@@ -192,9 +237,11 @@ def _merge_nested_hooks(
             group = {"matcher": hook.matcher, "hooks": []} if hook.matcher is not None else {"hooks": []}
             groups.append(group)
         definition = {"type": "command", "command": command, **hook.extra}
-        if definition not in group["hooks"]:  # An identical hook already installed by someone else stays theirs.
+        if definition not in group["hooks"]:
             group["hooks"].append(definition)
-            keys[name] = [hook.event, hook.matcher, command]
+        elif not claim:  # An identical hook already installed by someone else stays theirs.
+            continue
+        keys[name] = [hook.event, hook.matcher, command]
     rest = {key: value for key, value in data.items() if key != "hooks"}
     return ({**rest, "hooks": native} if native else rest), keys
 
@@ -475,10 +522,13 @@ def install(
     agents: dict[str, Any] = record["agents"]
     mine = agents.setdefault(agent.name, {"context": {}, "harnesses": {}})
     previous = mine["harnesses"].get(harness.name, {})
-    owned_files = set(previous.get("files", []))
+    # What the agent now ignores stays where it is, owned by nobody: neither rewritten nor deleted.
+    owned_files = {path for path in previous.get("files", []) if not ignored_install_path(agent, harness, path)}
     owned_context: dict[str, list[str] | None] = mine["context"]
-    owned_hook_names: dict[str, list] = previous.get("hooks", {})
-    owned_mcps = set(previous.get("mcps", []))
+    owned_hook_names: dict[str, list] = {name: key for name, key in previous.get("hooks", {}).items()
+                                         if not agent.is_ignored(ResourceTarget(kind="hook", name=name))}
+    owned_mcps = {name for name in previous.get("mcps", [])
+                  if not agent.is_ignored(ResourceTarget(kind="mcp", name=name))}
 
     skipped = [f"hook:{name}" for name, hook in agent.hooks.items()
                if harness.hooks_file is None and hook.installs_into(harness.name)]
@@ -540,7 +590,7 @@ def install(
     hook_keys: dict[str, list] = {}
     if harness.hooks_file is not None:
         if harness.hooks_format == "nested":
-            data, hook_keys = _merge_nested_hooks(hook_data, hooks, harness, ours)
+            data, hook_keys = _merge_nested_hooks(hook_data, hooks, harness, ours, claim=force)
         else:
             data = {
                 name: value
@@ -648,6 +698,15 @@ def _install_context(
             text = unstamp_markdown(text, name)
         return text
 
+    def ignored(filename: str, title: str | None = None) -> bool:
+        return agent.is_ignored(ResourceTarget(kind="context", name=filename, section=title))
+
+    def ignores_sections(filename: str) -> bool:  # Then only the agent's own sections are written.
+        return any(section and ResourceTarget(kind="context", name=filename).matches(whole)
+                   for whole, _, section in (pattern.partition("#") for pattern in agent.ignore))
+
+    owned = {filename: None if titles is None else [title for title in titles if not ignored(filename, title)]
+             for filename, titles in owned.items() if not ignored(filename)}
     result: dict[str, list[str] | None] = {}
     for filename in sorted(set(owned) - set(agent.context)):
         path = _destination(root, filename)
@@ -661,7 +720,8 @@ def _install_context(
                             encoding="utf-8")
     for filename, document in sorted(agent.context.items()):
         path = _destination(root, filename)
-        if not path.is_file() or (filename in owned and owned[filename] is None):
+        whole = filename in owned and owned[filename] is None and not ignores_sections(filename)
+        if not path.is_file() or whole:
             path.parent.mkdir(parents=True, exist_ok=True)
             with path.open("w", encoding="utf-8", newline="") as stream:
                 stream.write(stamp_markdown(document.content, stamp) if stamp else document.content)
@@ -696,13 +756,16 @@ def _text_files(directory: Path) -> Iterable[tuple[str, str]]:
 
 
 def read_installation(
-    harness: Harness | HarnessLayout, project_dir: str | Path, *, name: str | None = None, version: str | None = None
+    harness: Harness | HarnessLayout, project_dir: str | Path, *, name: str | None = None, version: str | None = None,
+    ignore: Iterable[str] = (),
 ) -> MetaAgent:
     """Import the configuration installed for ``harness`` in ``project_dir`` (by thearc or by hand).
 
     For a context document thearc merged into, only the sections it owns are imported. When several
     agents are installed for ``harness``, ``name`` picks one; for a project thearc did not install
-    into, ``name`` and ``version`` name the imported agent.
+    into, ``name`` and ``version`` name the imported agent, and of the context documents only those the harness
+    reads (``HarnessLayout.context_files``) are imported. Targets ``ignore`` names are left out, and the
+    agent keeps the patterns (``MetaAgent.ignore``).
     """
     harness = get_harness(harness)
     root = Path(project_dir).resolve()
@@ -746,7 +809,7 @@ def read_installation(
 
     owned_context = marker.get("context")
     context = []
-    for filename in sorted(owned_context) if owned_context is not None else CONTEXT_FILES:
+    for filename in sorted(owned_context) if owned_context is not None else harness.context_files:
         path = root / filename
         if not path.is_file():
             continue
@@ -770,11 +833,12 @@ def read_installation(
                 for hook_name, entry in data.items()
             ]
     mcps = [_decode_mcp(harness, server, data) for server, data in _read_mcp_servers(root, harness).items()]
-    return MetaAgent.model_validate(
+    return without_ignored(MetaAgent.model_validate(
         {
             "name": name or marker.get("name") or f"{harness.name}-project",
             "version": version if version is not None else marker.get("version"),
             "owns_hooks": marker.get("owns_hooks", []),
+            "ignore": list(ignore),
             "skills": skills,
             "hooks": hooks,
             "mcps": mcps,
@@ -782,4 +846,4 @@ def read_installation(
             "resources": resources,
             "extensions": extensions,
         }
-    )
+    ))

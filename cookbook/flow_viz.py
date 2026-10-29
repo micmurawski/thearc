@@ -10,19 +10,21 @@ Writes one HTML page per flow to --out (default flow-examples/):
 - failure.html      a batch item fails, so the node fails and everything after it is skipped
 - agent.html        an AsyncFlow: parallel batch research, a critique loop and a nested sub-flow
 
-No model calls; nodes sleep briefly so elapsed times are visible.
+Nodes log with Python's logging into two files per flow, logs/<flow>/app.log and logs/<flow>/worker.log, which
+the page shows as a tab each (FlowTracker(..., logs={...})). No model calls; nodes sleep briefly so elapsed times
+are visible.
 """
 
 from __future__ import annotations
 
 import argparse
 import asyncio
+import logging
 import random
 import shutil
 import sys
 import time
 from pathlib import Path
-from typing import Any
 
 if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -31,27 +33,46 @@ from thearc.flow import AsyncFlow, AsyncNode, AsyncParallelBatchNode, BatchNode,
 from thearc.flow.decorators import node
 from thearc.flow.viz import FlowTracker
 
+APP = logging.getLogger("flow_viz.app")  # What the flow does, step by step.
+WORKER = logging.getLogger("flow_viz.worker")  # Per-item work of batch nodes.
+
+
+def log_to(folder: Path) -> dict[str, Path]:
+    """Point both loggers at fresh files in ``folder``; returns them by tab name, for FlowTracker(logs=...)."""
+    folder.mkdir(parents=True, exist_ok=True)
+    files = {"app": folder / "app.log", "worker": folder / "worker.log"}
+    for logger, path in ((APP, files["app"]), (WORKER, files["worker"])):
+        for handler in list(logger.handlers):
+            handler.close()
+            logger.removeHandler(handler)
+        path.unlink(missing_ok=True)
+        handler = logging.FileHandler(path, encoding="utf-8")
+        handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)-7s %(message)s"))
+        logger.addHandler(handler)
+        logger.setLevel(logging.DEBUG)
+        logger.propagate = False
+    return files
+
 
 # ---- etl: branching, a back edge and a batch ------------------------------------------------------------------------
 @node(metadata={"source": "s3://example/orders.csv", "owner": "data-eng"})
-def fetch_orders(log: Any) -> dict:
+def fetch_orders() -> dict:
     time.sleep(0.2)
     rows = [{"id": i, "amount": round(random.uniform(5, 500), 2)} for i in range(8)]
     rows[3]["amount"] = None
-    log.info(f"fetched {len(rows)} rows")
+    APP.info(f"fetched {len(rows)} rows from s3://example/orders.csv")
     return {"rows": rows, "repairs": 0}
 
 
 class ValidateOrders(Node):
     def prep(self, shared):
-        return shared["rows"], shared["log"]
+        return shared["rows"]
 
-    def exec(self, prep_res):
-        rows, log = prep_res
+    def exec(self, rows):
         time.sleep(0.1)
         bad = [r["id"] for r in rows if r["amount"] is None]
         if bad:
-            log.warning(f"rows with missing amount: {bad}")
+            APP.warning(f"rows with missing amount: {bad}")
         return bad
 
     def post(self, shared, prep_res, exec_res):
@@ -60,9 +81,9 @@ class ValidateOrders(Node):
 
 
 @node(metadata={"strategy": "fill missing amount with 0.0"})
-def repair_orders(rows: list[dict], repairs: int, log: Any) -> dict:
+def repair_orders(rows: list[dict], repairs: int) -> dict:
     time.sleep(0.15)
-    log.info("filling missing amounts")
+    APP.info("filling missing amounts with 0.0")
     return {"rows": [{**r, "amount": r["amount"] or 0.0} for r in rows], "repairs": repairs + 1}
 
 
@@ -76,19 +97,20 @@ class ConvertCurrency(BatchNode):
 
     def exec(self, row):
         time.sleep(0.08)
+        WORKER.debug(f"row {row['id']}: {row['amount']} USD")
         if self.snapshot and row["id"] == 4:
             shutil.copy(*self.snapshot)
         return {**row, "amount_eur": round(row["amount"] * 0.92, 2)}
 
     def post(self, shared, prep_res, exec_res):
         shared["converted"] = exec_res
-        shared["log"].info(f"converted {len(exec_res)} rows")
+        APP.info(f"converted {len(exec_res)} rows to EUR")
 
 
 @node(metadata={"table": "warehouse.orders_eur"})
-def load_warehouse(converted: list[dict], log: Any) -> dict:
+def load_warehouse(converted: list[dict]) -> dict:
     time.sleep(0.2)
-    log.info(f"loaded {len(converted)} rows into warehouse.orders_eur")
+    APP.info(f"loaded {len(converted)} rows into warehouse.orders_eur")
     return {"loaded": len(converted)}
 
 
@@ -124,8 +146,13 @@ class ParseFiles(BatchNode):
 
     def exec(self, name):
         time.sleep(0.06)
+        WORKER.info(f"parsing {name}")
         if name == "broken.md":
-            raise ValueError(f"{name}: unexpected front-matter at line 3")
+            try:
+                raise ValueError(f"{name}: unexpected front-matter at line 3")
+            except ValueError:
+                WORKER.exception(f"cannot parse {name}")
+                raise
         return name.upper()
 
 
@@ -151,7 +178,7 @@ class Plan(AsyncNode):
 
     async def post_async(self, shared, prep_res, exec_res):
         shared["topics"] = exec_res
-        shared["log"].info(f"planned {len(exec_res)} research topics")
+        APP.info(f"planned {len(exec_res)} research topics")
 
 
 class Research(AsyncParallelBatchNode):
@@ -160,27 +187,28 @@ class Research(AsyncParallelBatchNode):
 
     async def exec_async(self, topic):
         await asyncio.sleep(random.uniform(0.1, 0.3))
+        WORKER.info(f"researched {topic}")
         return f"notes on {topic}"
 
     async def post_async(self, shared, prep_res, exec_res):
         shared["notes"] = exec_res
-        shared["log"].debug(f"collected {len(exec_res)} notes in parallel")
+        APP.debug(f"collected {len(exec_res)} notes in parallel")
 
 
 class Draft(AsyncNode):
     async def post_async(self, shared, prep_res, exec_res):
         await asyncio.sleep(0.15)
         shared["drafts"] = shared.get("drafts", 0) + 1
-        shared["log"].info(f"draft v{shared['drafts']}")
+        APP.info(f"draft v{shared['drafts']}")
 
 
 class Critique(AsyncNode):
     async def post_async(self, shared, prep_res, exec_res):
         await asyncio.sleep(0.1)
         if shared["drafts"] < 2:
-            shared["log"].warning("draft too vague; requesting revision")
+            APP.warning("draft too vague; requesting revision")
             return "revise"
-        shared["log"].info("approved")
+        APP.info("approved")
         return "approve"
 
 
@@ -192,7 +220,7 @@ class FormatReport(Node):
 class Upload(Node):
     def post(self, shared, prep_res, exec_res):
         time.sleep(0.1)
-        shared["log"].info("uploaded report.pdf")
+        APP.info("uploaded report.pdf")
 
 
 def agent_flow() -> AsyncFlow:
@@ -215,21 +243,25 @@ def main() -> None:
     out.mkdir(parents=True, exist_ok=True)
     random.seed(7)
 
-    FlowTracker(etl_flow(), output=str(out / "etl.html"), title="Orders ETL").run({})
+    logs = out / "logs"
+    FlowTracker(etl_flow(), output=str(out / "etl.html"), title="Orders ETL", logs=log_to(logs / "etl")).run({})
 
     live = out / "etl-live.tmp.html"
     tracker = FlowTracker(
-        etl_flow(snapshot=(str(live), str(out / "etl-live.html"))), output=str(live), title="Orders ETL (live)"
+        etl_flow(snapshot=(str(live), str(out / "etl-live.html"))), output=str(live), title="Orders ETL (live)",
+        logs=log_to(logs / "etl-live"),
     )
     tracker.run({})
     live.unlink()
 
     try:
-        FlowTracker(failure_flow(), output=str(out / "failure.html"), title="Docs digest").run({})
+        FlowTracker(failure_flow(), output=str(out / "failure.html"), title="Docs digest",
+                    logs=log_to(logs / "failure")).run({})
     except ValueError as exc:
         print(f"failure.html: flow stopped as intended ({exc})")
 
-    asyncio.run(FlowTracker(agent_flow(), output=str(out / "agent.html"), title="Research agent").run_async({}))
+    asyncio.run(FlowTracker(agent_flow(), output=str(out / "agent.html"), title="Research agent",
+                            logs=log_to(logs / "agent")).run_async({}))
 
     for page in sorted(out.glob("*.html")):
         print(page.resolve())

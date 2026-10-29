@@ -7,15 +7,15 @@ commit where it first appears and to its configuration files (without markers).
 
     {
       "agent": {"name", "version"}, "generated_at", "head",
-      "scales": [{"name", "labels", "ordered"}],
+      "scales": [{"name", "labels", "ordered", "meanings", "values", "colors"}],   (values/colors: CategoricalScale)
       "files": {hash: text},   every distinct file text once
       "revisions": [{"revision", "commit", "at", "message", "branches", "files": {path: hash},
                      "spans": {section id: [path, line]}}],
       "branches": [{"name", "head", "current", "commits": [{"commit", "at", "message", "revision"}]}],
       "sections": [{"id", "address", "kind", "name", "section", "depth", "path", "removed", "names"}],
       "cells": {section id: {revision: {"ratings": {scale: {value: count}}, "events": [kind, …]}}},
-      "changes": [{"section", "kind", "revision", "commit", "at", "reason", "author", "diff", "branches", …}],
-      "ratings": [{"section", "revision", "scale", "value", "item", "reflection", "ref", "at", "metadata"}],
+      "changes": [{"section", "kind", "revision", "commit", "at", "reason", "author", "diff", "branches", "run", …}],
+      "ratings": [{"section", "revision", "scale", "value", "item", "reflection", "ref", "at", "metadata", "run"}],
       "reflections": {id: {"markdown", "revision", "at", "reflector", "evidence"}},
       "graph": {"trunk", "bases", "runs", "releases"}   (thearc.resources.graph)
     }
@@ -25,14 +25,24 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from thearc.resources.git import GitError, _git, agent_at
+from thearc.resources.git import GitError, _git, agent_at, branch_prefix
 from thearc.resources.graph import _utc
-from thearc.resources.journal import Entry, Journal, Kept, Modified, Moved, Rated, _unified, load_journal
+from thearc.resources.journal import (
+    Entry,
+    Journal,
+    Kept,
+    Modified,
+    Moved,
+    Rated,
+    Reflected,
+    _unified,
+    load_journal_records,
+)
 from thearc.resources.ratings import CategoricalScale, RatingScale, rank_labels
 from thearc.resources.targets import ResourceTarget
 from thearc.resources.workspace import JOURNAL_FILE
@@ -48,24 +58,29 @@ def evolution(
     """The evolution dataset of ``workspace`` across ``refs`` (default: every local branch).
 
     ``scales`` give label order and meaning; without them, labels are ordered by common sentiment
-    words (harmful … helpful). ``reflections`` is a folder of saved reflections
-    (``Reflection.dump_items_to_json``) to include as Markdown.
+    words (harmful … helpful). The whole reflections kept in the journals are included as Markdown;
+    ``reflections`` adds a folder of saved ones (``Reflection.dump_items_to_json``), as older workspaces kept them.
     """
     root = Path(workspace).resolve()
     head = _git(root, "rev-parse", "--abbrev-ref", "HEAD").decode().strip()
     refs = list(refs) if refs is not None else _branches(root)
     entries: dict[str, Entry] = {}
+    whole: dict[str, Reflected] = {}
     found_in: dict[str, set[str]] = {}
     for ref in refs:
         try:
             text = _git(root, "show", f"{ref}:{JOURNAL_FILE}").decode()
         except GitError:
             continue
-        for entry in load_journal(text):
+        loaded, kept = load_journal_records(text)
+        whole |= {reflection.id: reflection for reflection in kept}
+        for entry in loaded:
             entries.setdefault(entry.id, entry)
             found_in.setdefault(entry.id, set()).add(ref)
     if (root / JOURNAL_FILE).is_file():  # Lines appended since the last commit, e.g. by add_reflection.
-        for entry in Journal.load(root / JOURNAL_FILE).entries:
+        pending = Journal.load(root / JOURNAL_FILE)
+        whole |= {reflection.id: reflection for reflection in pending.reflections}
+        for entry in pending.entries:
             entries.setdefault(entry.id, entry)
             found_in.setdefault(entry.id, set()).add(head)
     journal = Journal(entries=sorted(entries.values(), key=lambda entry: entry.id))
@@ -141,13 +156,15 @@ def evolution(
         "cells": cells,
         "changes": changes,
         "ratings": ratings,
-        "reflections": _reflections(reflections) if reflections else {},
+        "reflections": _journal_reflections(whole.values()) | (_reflections(reflections) if reflections else {}),
         "graph": evolution_graph(root, refs, head, changes, ratings, targets),
     }
 
 
 def _branches(root: Path) -> list[str]:
-    names = _git(root, "for-each-ref", "--format=%(refname:short)", "refs/heads").decode().split()
+    """Every local branch of the workspace: in a project's repository, only those with the workspace's prefix."""
+    prefix = branch_prefix(root)
+    names = _git(root, "for-each-ref", "--format=%(refname:short)", f"refs/heads/{prefix}").decode().split()
     return names or ["HEAD"]
 
 
@@ -234,13 +251,25 @@ def _scales(scales: Sequence[RatingScale], ratings: list[dict[str, Any]]) -> lis
     result = []
     for name in sorted(set(seen) | set(given)):
         scale = given.get(name)
-        if isinstance(scale, CategoricalScale):
-            result.append({"name": name, "labels": list(scale.labels), "ordered": scale.ordered,
-                           "meanings": scale.meanings})
-            continue
-        labels, ordered, numeric = rank_labels(seen.get(name, []))
-        result.append({"name": name, "labels": labels, "ordered": ordered, "numeric": numeric, "meanings": {}})
+        if not isinstance(scale, CategoricalScale):
+            labels, ordered, numeric = rank_labels(seen.get(name, []))
+            if not numeric:
+                scale = CategoricalScale(name, labels, ordered=ordered)
+            else:
+                result.append({"name": name, "labels": labels, "ordered": True, "numeric": True, "meanings": {},
+                               "values": {label: float(label) for label in labels}, "colors": {}})
+                continue
+        result.append({"name": name, "labels": list(scale.labels), "ordered": scale.ordered,
+                       "meanings": scale.meanings, "values": scale.positions, "colors": scale.colors})
     return result
+
+
+def _journal_reflections(kept: Iterable[Reflected]) -> dict[str, Any]:
+    from thearc.reflection.markdown import to_markdown
+
+    return {r.id: {"markdown": to_markdown(r.output, level=3) if r.output is not None else "",
+                   "revision": r.revision, "at": r.at.isoformat(), "reflector": r.reflector, "evidence": r.evidence}
+            for r in kept}
 
 
 def _reflections(folder: str | Path) -> dict[str, Any]:

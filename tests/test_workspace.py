@@ -12,6 +12,7 @@ from thearc.resources import (
 )
 from thearc.resources.git import _git
 from thearc.resources.journal import Rated
+from thearc.resources.targets import ResourceTarget, target_pattern
 
 
 def test_round_trip_with_journal(agent, human, tmp_path):
@@ -25,6 +26,31 @@ def test_without_journal_for_reflection(agent, human, tmp_path):
     root = agent.to_workspace(tmp_path / "ws", journal=False)
     assert not (root / "journal").exists()
     assert len(read_workspace(root).journal) == 0
+
+
+def test_frozen_and_ignored_patterns_are_kept_in_the_manifest_and_leave_the_revision(agent, tmp_path):
+    root = agent.to_workspace(tmp_path / "plain")
+    assert set(json.loads((root / "agent.json").read_text())) == {"schema_version", "name", "version"}
+    evolving = agent.model_copy(update={"frozen": ["skill:retry"], "ignore": ["context:AGENTS.md#Rules"]})
+    assert evolving.revision == agent.revision  # Policy, not configuration.
+    saved = read_workspace(evolving.to_workspace(tmp_path / "ws"))
+    assert saved.frozen == ["skill:retry"] and saved.ignore == ["context:AGENTS.md#Rules"]
+    with pytest.raises(ValueError, match="kind:name"):
+        MetaAgent.model_validate(agent.model_dump() | {"frozen": ["retry"]})
+
+
+def test_patterns_name_targets_their_sections_and_a_skills_files():
+    skill = ResourceTarget(kind="skill", name="evolve", section="Evolve > Commands")
+    assert skill.matches("skill:evolve") and skill.matches("skill:evo*") and not skill.matches("skill:other")
+    assert skill.matches("skill:evolve#Evolve") and skill.matches("skill:evolve#Evolve > Commands")
+    assert not skill.matches("skill:evolve#Commands") and not skill.matches("context:evolve")
+    assert ResourceTarget(kind="skill_file", name="evolve/prompts/curate.md").matches("skill:evolve")
+    assert not ResourceTarget(kind="skill", name="evolve").matches("skill:evolve#Evolve")
+    assert ResourceTarget(kind="context", name="CLAUDE.md", section="Private notes > Keys").matches(
+        "context:CLAUDE.md#Private notes")
+    for bad in ["evolve", "skills:evolve", "skill:", "hook:guard#Section", " skill:x"]:
+        with pytest.raises(ValueError):
+            target_pattern(bad)
 
 
 def test_hand_edited_skill_is_read(agent, tmp_path):
@@ -217,9 +243,16 @@ def test_add_reflection_appends_to_the_workspace_journal(agent, tmp_path):
     reflection = _reflection(workspace)
     (entry,) = workspace.add_reflection(reflection)
     after = journal.read_text().splitlines()
-    assert after[: len(before)] == before and len(after) == len(before) + 1  # Appended, nothing rewritten.
+    assert after[: len(before)] == before and len(after) == len(before) + 2  # Appended, nothing rewritten:
+    assert '"kind":"reflected"' in after[-1]  # the rating, and the whole reflection.
     assert workspace.add_reflection(reflection) == () and len(journal.read_text().splitlines()) == len(after)
-    assert MetaAgent.from_workspace(tmp_path / "ws").journal.ratings() == [entry]
+    from thearc.reflection import Reflection
+
+    from .test_reflection import SCHEMA
+
+    saved = MetaAgent.from_workspace(tmp_path / "ws").journal
+    assert saved.ratings() == [entry] and [r.id for r in saved.reflections] == [reflection.id]
+    assert Reflection.from_dict(saved.reflections[0].model_dump(mode="json"), SCHEMA).output == reflection.output
 
 
 def test_a_configuration_only_workspace_appends_without_reading_the_journal(agent, tmp_path):

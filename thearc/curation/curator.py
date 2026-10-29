@@ -24,12 +24,12 @@ from thearc.reflection import Reflection
 from thearc.reflection.mcp import ToolSpec, serve
 from thearc.reflection.runtimes import RUNTIMES, ReflectionError, Runtime
 from thearc.resources.agent import MetaAgent
-from thearc.resources.changes import detect_changes
-from thearc.resources.git import _git, agent_at, commit, commit_journal, is_worktree, record_commits
+from thearc.resources.changes import detect_changes, frozen_changes
+from thearc.resources.git import _git, agent_at, branch_name, commit, commit_journal, is_worktree, record_commits
 from thearc.resources.journal import Entry, Journal, Kept
 from thearc.resources.ratings import RatingPolicy, RatingScale, since_last_modification
 from thearc.resources.reflection import ReflectionItem
-from thearc.resources.targets import ResourceTarget
+from thearc.resources.targets import STRUCTURED_KINDS, ResourceTarget
 from thearc.resources.views import agent_outline
 from thearc.resources.workspace import JOURNAL_FILE, MANIFEST, mark_new_targets, read_workspace
 
@@ -49,6 +49,9 @@ entry's key. Keep a section's marker on its heading when you edit, move,
 or rename it: that is how the section's history follows it. A new section needs no marker; deleting a
 section deletes its marker; never copy a marker. `journal.jsonl` (the history of every section) may be
 read but not edited; neither may `agent.json`."""
+
+FROZEN = """These parts are frozen: they belong to the configuration but are not yours to change, and your edits to
+them are undone: {patterns}."""
 
 COMMITTING = """Commit every change with `commit_change(message)`: it commits everything you edited since the
 last commit. Make **one change per commit** — one section or resource — and write **the reason as the
@@ -97,10 +100,11 @@ class Curation:
 
 
 class CurationTools:
-    """``commit_change`` and ``finish``, acting on the curator's clone."""
+    """``commit_change`` and ``finish``, acting on the curator's clone. A person amending a workspace uses them too,
+    with ``frozen_allowed``: frozen parts are only kept from curators and mergers."""
 
-    def __init__(self, clone: Path, author: str):
-        self.clone, self.author = clone, author
+    def __init__(self, clone: Path, author: str, *, email: str = "curator@thearc.local", frozen_allowed: bool = False):
+        self.clone, self.author, self.email, self.frozen_allowed = clone, author, email, frozen_allowed
         self.commits: list[Commit] = []
         self.summary: str | None = None
 
@@ -114,10 +118,38 @@ class CurationTools:
             _git(self.clone, "checkout", "-q", "HEAD", "--", path)
         return touched
 
+    def _discard_frozen(self) -> list[str]:
+        """Restore the files of frozen resources the edits touched; refuse edits to frozen sections of other files."""
+        before = agent_at(self.clone, "HEAD")
+        if before is None or not before.frozen or self.frozen_allowed:
+            return []
+        try:
+            after = read_workspace(self.clone, journal=False)
+        except ValueError:
+            return []  # The read-back check reports it.
+        restored: list[str] = []
+        for entry in frozen_changes(before, after):
+            resource = entry.target.resource
+            if not before.is_frozen(resource) or resource.kind in STRUCTURED_KINDS:
+                continue
+            owner = before if resource in before.files().targets else after
+            path = owner.files().span(resource).path
+            if path in restored:
+                continue
+            if path in before.files().files:
+                _git(self.clone, "checkout", "-q", "HEAD", "--", path)
+            else:
+                (self.clone / path).unlink(missing_ok=True)
+            restored.append(path)
+        if left := frozen_changes(before, read_workspace(self.clone, journal=False)):
+            raise ValueError("Nothing was committed: these are frozen and may not be changed; undo your edits to "
+                             "them: " + ", ".join(str(entry.target) for entry in left))
+        return restored
+
     def commit_change(self, message: str) -> str:
         if not message.strip():
             raise ValueError("The message must give the reason for the change.")
-        discarded = self._discard_protected()
+        discarded = self._discard_protected() + self._discard_frozen()
         note = f"{', '.join(discarded)} may not be edited; your edits to it were discarded. " if discarded else ""
         if not self._pending():
             raise ValueError(note + "There are no edits to commit.")
@@ -131,7 +163,7 @@ class CurationTools:
                      + "; keep these markers. ")
         before = agent_at(self.clone, "HEAD")
         _git(self.clone, "add", "-A")
-        sha = commit(self.clone, message.strip(), author=self.author, email="curator@thearc.local")
+        sha = commit(self.clone, message.strip(), author=self.author, email=self.email)
         after = agent_at(self.clone, sha)
         changed = tuple(f"{entry.kind.capitalize()} {entry.target}"
                         for entry in (detect_changes(before, after) if after is not None else []))
@@ -206,7 +238,7 @@ class Curator:
         journal = Journal.load(root / JOURNAL_FILE)
         items = _items(reflections, journal)
         identifier = "curation_" + uuid.uuid4().hex
-        branch = f"curation/{identifier.removeprefix('curation_')[:12]}"
+        branch = branch_name(root, "curation", identifier.removeprefix("curation_")[:12])
         stamp = {"curation": identifier, "curator": self.harness,
                  **({"model": self.runtime.model} if self.runtime.model else {}), **extra}
         with tempfile.TemporaryDirectory(prefix="thearc-curation-") as directory:
@@ -215,7 +247,7 @@ class Curator:
             _git(clone, "checkout", "-q", "-b", branch, base)
             tools = CurationTools(clone, f"curator ({self.harness})")
             with serve(tools.specs()) as endpoint, self.runtime.conversation(clone, endpoint, edit=True) as talk:
-                talk.send(_message(prompt, reflections, items, clone, outline))
+                talk.send(_message(prompt, reflections, items, clone, outline, agent.frozen))
             if tools.summary is None:
                 raise CurationError("no_finish", f"The curator ended without calling finish "
                                     f"({len(tools.commits)} commit(s) made)")
@@ -271,7 +303,7 @@ def _kept_targets(items: list[_Item], journal: Journal) -> list[ResourceTarget]:
 
 
 def _message(prompt: str, reflections: Sequence[Reflection], items: list[_Item], workspace: Path,
-             outline: str | None = None) -> str:
+             outline: str | None = None, frozen: Sequence[str] = ()) -> str:
     blocks = []
     for reflection in reflections:
         lines = [f"### `{reflection.id}` (on revision {reflection.revision})", "",
@@ -289,4 +321,8 @@ def _message(prompt: str, reflections: Sequence[Reflection], items: list[_Item],
     ratings = (f"\n\n## Ratings so far\n\nEvery section with its ID and the ratings of its current text:\n\n"
                f"{outline.rstrip()}") if outline else ""
     return (f"{INSTRUCTIONS}\n\n## Task\n\n{prompt}\n\n## Reflections\n\n{listed}\n\n## The configuration\n\n"
-            f"{WORKSPACE.format(workspace=workspace)}{ratings}\n\n## Committing\n\n{COMMITTING}")
+            f"{WORKSPACE.format(workspace=workspace)}{frozen_note(frozen)}{ratings}\n\n## Committing\n\n{COMMITTING}")
+
+
+def frozen_note(frozen: Sequence[str]) -> str:
+    return "\n\n" + FROZEN.format(patterns=", ".join(f"`{pattern}`" for pattern in frozen)) if frozen else ""

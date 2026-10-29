@@ -44,6 +44,7 @@ nav:
       - Curate changes: guides/curation.md
       - Merge candidates: guides/merging.md
       - See how an agent evolved: guides/report.md
+      - Evolve a project with /evolve: guides/evolve-skill.md
       - Cookbook: examples/index.md
   - Reference:
       - Runtime support: reference/runtimes.md

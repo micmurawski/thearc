@@ -100,6 +100,8 @@ class SearchFilters(BaseModel):
     action_kinds: list[str] = Field(default_factory=list)
     tool_names: list[str] = Field(default_factory=list)
     statuses: list[str] = Field(default_factory=list)
+    cwd: str | None = None  # Sessions run in this folder or below it.
+    without_call: str | None = None  # Sessions with no tool call whose arguments contain this text.
 
     @field_validator("started_before", "started_after")
     @classmethod

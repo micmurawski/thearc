@@ -7,6 +7,7 @@ const fs = require("fs");
 const html = fs.readFileSync(process.argv[2], "utf8");
 const data = html.match(/<script type="application\/json" id="thearc-data">([\s\S]*?)<\/script>/)[1];
 const code = html.match(/<script>\n(\(function \(\) \{[\s\S]*?\}\)\(\);)\n<\/script>/)[1];
+const theme = html.match(/<script id="thearc-theme">([\s\S]*?)<\/script>/)[1];  // thearc.ui's toggle
 
 const elements = {};
 const handlers = {};
@@ -21,6 +22,7 @@ global.window = { matchMedia: () => ({ matches: false }) };
 global.document = { documentElement: root, getElementById: element, querySelector: () => ({ addEventListener() {} }) };
 global.localStorage = { getItem: (k) => store[k] ?? null, setItem: (k, v) => { store[k] = v; } };
 
+eval(theme);  // eslint-disable-line no-eval
 eval(code);  // eslint-disable-line no-eval
 
 const count = (id, pattern) => (elements[id]?.innerHTML.match(pattern) || []).length;
@@ -38,6 +40,19 @@ const row = elements.graph.innerHTML.match(/data-commit="([0-9a-f]+)"/);
 if (row) {  // Select a row: the graph re-renders with it selected.
   handlers["graph:click"]({ target: { closest: (sel) => sel === "button[data-commit]" ? { dataset: { commit: row[1] } } : null } });
   result.selected = elements.graph.innerHTML.includes(`class="grow on`) ? row[1] : null;
+}
+const cell = elements.grid.innerHTML.match(/class="rated[^"]*" style="[^"]*" data-sec="([^"]+)" data-rev="([^"]+)"/);
+if (cell) {  // Open a section: its chart renders in each view.
+  handlers["grid:click"]({ target: { closest: (sel) => sel === "button[data-sec]" ? { dataset: { sec: cell[1], rev: cell[2] } } : null } });
+  result.charts = {};
+  for (const view of ["rounds", "versions", "score"]) {
+    handlers["detail:click"]({ target: { closest: (sel) => sel === "button[data-chart]" ? { dataset: { chart: view } } : null } });
+    const html = elements.detail.innerHTML;
+    result.charts[view] = { pressed: html.includes(`data-chart="${view}" aria-pressed="true"`), bars: (html.match(/class="sc-bar up"/g) || []).length,
+      dots: (html.match(/class="sc-dot"/g) || []).length, bands: (html.match(/class="sc-band/g) || []).length };
+  }
+  result.chartStored = store["thearc-report-chart"] || null;
+  result.scoreChart = elements.detail.innerHTML.slice(0, elements.detail.innerHTML.indexOf('<div class="events">'));
 }
 handlers["theme:click"]();
 result.theme = root.attrs["data-theme"] || null;

@@ -3,7 +3,7 @@
 The configuration uses the agent-files layout (see ``thearc.resources.files``), so
 file references, workspace paths, and git diffs agree. Next to it:
 
-    agent.json                  {"schema_version", "name", "version"}
+    agent.json                  {"schema_version", "name", "version"}, and "frozen" / "ignore" when set
     hooks.jsonc, mcp.jsonc,     the agent files' ``hooks.json`` / ``mcp.json`` / ``owned_hooks.json``,
     owned_hooks.jsonc           as JSONC so their entries can carry markers
     journal.jsonl               one journal entry per line, in ID (= recording) order
@@ -40,7 +40,7 @@ from thearc.resources.agent import (
     MetaAgent,
 )
 from thearc.resources.files import HOOKS_FILE, MCP_FILE, OWNED_HOOKS_FILE
-from thearc.resources.journal import Journal, dump_journal, load_journal
+from thearc.resources.journal import Entry, Journal, Reflected, dump_journal, load_journal_records
 from thearc.resources.markdown import split_frontmatter
 from thearc.resources.targets import ResourceTarget
 
@@ -93,18 +93,20 @@ def mark_new_targets(path: str | Path) -> dict[ResourceTarget, str]:
 def workspace_files(agent: MetaAgent, *, journal: bool = True) -> dict[str, str]:
     """Every workspace file as text, with a marker holding each target's lineage ID."""
     manifest: dict[str, Any] = {"schema_version": SCHEMA_VERSION, "name": agent.name, "version": agent.version}
+    manifest.update({key: patterns for key in ("frozen", "ignore") if (patterns := getattr(agent, key))})
     annotated = markers.annotate(agent.files(), lineage_ids(agent))
     files = {
         MANIFEST: json.dumps(manifest, indent=2, ensure_ascii=False) + "\n",
         **{JSONC.get(path, path): text for path, text in annotated.items()},
     }
-    if journal and agent.journal.entries:
-        files[JOURNAL_FILE] = dump_journal(agent.journal.entries)
+    if journal and (agent.journal.entries or agent.journal.reflections):
+        files[JOURNAL_FILE] = dump_journal(agent.journal.entries, agent.journal.reflections)
     return files
 
 
 def init_workspace(
-    agent: MetaAgent, path: str | Path, *, branch: str = "main", reason: str = "Initialize MetaAgent workspace"
+    agent: MetaAgent, path: str | Path, *, branch: str = "main", reason: str = "Initialize MetaAgent workspace",
+    repository: str | Path | None = None, prefix: str = "",
 ) -> MetaAgent:
     """Initialize or resume a workspace without mutating the supplied agent.
 
@@ -112,14 +114,25 @@ def init_workspace(
     An existing workspace must have the same name, version and configuration.
     Its journal is retained, and an already committed repository is left alone,
     including pending changes. A plain workspace can be adopted into git.
+
+    With ``repository``, the workspace lives in that existing repository (a project's) instead of one of its
+    own: its history starts on an orphan branch ``<prefix><branch>``, checked out as a worktree at ``path``, and
+    every branch thearc makes there carries ``prefix`` (``thearc/`` → ``thearc/main``, ``thearc/release/…``), so
+    the project's own branches stay apart and the workspace is shared by pushing ``<prefix>*``.
     """
     from thearc.resources.changes import detect_changes
-    from thearc.resources.git import GitError, _git, commit
+    from thearc.resources.git import GitError, _git, commit, prefix_key
 
     if agent.version is None:
         raise ValueError(f"A workspace needs a versioned MetaAgent; give {agent.name!r} a version first")
     root = _root(path)
-    if root.exists() and (not root.is_dir() or any(root.iterdir())):
+    if repository is not None and not (root / ".git").exists():
+        if root.exists() and any(root.iterdir()):
+            raise ValueError(f"a workspace in a repository needs a new or empty folder: {root}")
+        repo = _root(repository)
+        _git(repo, "config", prefix_key(agent.name), prefix)
+        _git(repo, "worktree", "add", "-q", "--orphan", "-b", prefix + branch, str(root))
+    if root.exists() and (not root.is_dir() or any(p.name != ".git" for p in root.iterdir())):
         saved = read_workspace(root)
         identity = ("name", "version", "owns_hooks", "revision")
         if any(getattr(saved, field) != getattr(agent, field) for field in identity):
@@ -175,11 +188,12 @@ def write_workspace(
         raise FileExistsError(f"workspace already exists: {root}")
     journal_path = root / JOURNAL_FILE
     if journal and journal_path.is_file():
-        recorded = {entry.id: entry for entry in load_journal(journal_path.read_text(encoding="utf-8"))}
-        for entry in agent.journal.entries:
-            if entry.id in recorded and recorded[entry.id] != entry:
-                raise ValueError(f"journal entry {entry.id} differs from the recorded one")
-        files[JOURNAL_FILE] = dump_journal([*recorded.values(), *agent.journal.entries])
+        recorded, kept = load_journal_records(journal_path.read_text(encoding="utf-8"))
+        saved = Journal(entries=recorded, reflections=kept)
+        saved.merge(*agent.journal.entries)  # Refuses an entry that differs from the recorded one.
+        for reflection in agent.journal.reflections:
+            saved.record_reflection(reflection)
+        files[JOURNAL_FILE] = dump_journal(saved.entries, saved.reflections)
     if overwrite and root.exists():
         for item in sorted(root.rglob("*"), reverse=True):
             relative = item.relative_to(root).as_posix()
@@ -279,7 +293,8 @@ def parse_workspace(texts: dict[str, str]) -> tuple[MetaAgent, dict[ResourceTarg
     if MANIFEST not in texts:
         raise ValueError(f"missing {MANIFEST}")
     manifest = _object(texts.pop(MANIFEST), MANIFEST)
-    if set(manifest) != {"schema_version", "name", "version"} or manifest["schema_version"] != SCHEMA_VERSION:
+    required, optional = {"schema_version", "name", "version"}, {"frozen", "ignore"}
+    if not required <= set(manifest) <= required | optional or manifest["schema_version"] != SCHEMA_VERSION:
         raise ValueError(f"unsupported {MANIFEST}")
     found: dict[str, dict[int, str]] = {}
     for plain, workspace_name in JSONC.items():
@@ -291,7 +306,9 @@ def parse_workspace(texts: dict[str, str]) -> tuple[MetaAgent, dict[ResourceTarg
         if relative != JOURNAL_FILE:
             texts[relative], found[relative] = markers.strip(relative, texts[relative])
     skills: dict[str, dict[str, Any]] = {}
-    context, resources, extensions, entries = [], [], [], []
+    context, resources, extensions = [], [], []
+    entries: list[Entry] = []
+    reflections: list[Reflected] = []
     hooks = [Hook(name=name, **fields) for name, fields in _object(texts.pop(HOOKS_FILE, "{}"), HOOKS_FILE).items()]
     mcps = [MCP(name=name, **fields) for name, fields in _object(texts.pop(MCP_FILE, "{}"), MCP_FILE).items()]
     owned = json.loads(texts.pop(OWNED_HOOKS_FILE, "[]"))
@@ -321,7 +338,7 @@ def parse_workspace(texts: dict[str, str]) -> tuple[MetaAgent, dict[ResourceTarg
             harness, _, path = rest.partition("/")
             extensions.append(Extension.model_validate({"harness": harness, "path": path, "content": text}))
         elif relative == JOURNAL_FILE:
-            entries = load_journal(text)
+            entries, reflections = load_journal_records(text)
         elif "/" in relative and top in CONFIG_DIRS:
             raise ValueError(f"unexpected workspace file: {relative}")
         # Anything else (a README, a LICENSE, a docs folder) belongs to the repository, not the agent.
@@ -333,13 +350,15 @@ def parse_workspace(texts: dict[str, str]) -> tuple[MetaAgent, dict[ResourceTarg
             "name": manifest["name"],
             "version": manifest["version"],
             "owns_hooks": owned,
+            "frozen": manifest.get("frozen", []),
+            "ignore": manifest.get("ignore", []),
             "skills": list(skills.values()),
             "hooks": hooks,
             "mcps": mcps,
             "context": context,
             "resources": resources,
             "extensions": extensions,
-            "journal": Journal(entries=entries),
+            "journal": Journal(entries=entries, reflections=reflections),
         }
     )
     return agent, markers.identities(agent.files(), found)

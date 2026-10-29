@@ -53,6 +53,34 @@ def commit_journal(root: str | Path, message: str = "Record ratings") -> str | N
     return commit(root, message)
 
 
+def prefix_key(name: str) -> str:
+    """The git config key holding the branch prefix of agent ``name``'s workspace."""
+    return f"thearc.{name}.prefix"
+
+
+def branch_prefix(root: str | Path) -> str:
+    """The prefix of the workspace's branch names (``thearc/claude/`` for a workspace inside a project's repository,
+    so ``thearc/claude/main``, ``thearc/claude/release/1.2.0``, …); empty for a repository of its own.
+
+    Kept in the repository's git config under the agent's name (``prefix_key``), so several workspaces — one per
+    harness — can share a repository, and every worktree of one workspace finds the same prefix.
+    """
+    import json
+
+    from thearc.resources.workspace import MANIFEST
+
+    try:
+        name = json.loads((Path(root) / MANIFEST).read_text(encoding="utf-8"))["name"]
+        return _git(root, "config", "--get", prefix_key(name)).decode().strip()
+    except (OSError, ValueError, KeyError, TypeError, GitError):
+        return ""
+
+
+def branch_name(root: str | Path, kind: str, rest: str) -> str:
+    """A workspace branch: ``<prefix><kind>/<rest>``, e.g. ``thearc/merge/1a2b3c4d5e6f``."""
+    return f"{branch_prefix(root)}{kind}/{rest}"
+
+
 def is_worktree(root: str | Path) -> bool:
     """Whether ``root`` is a linked git worktree (its ``.git`` is a file), not the main checkout."""
     return (Path(root) / ".git").is_file()
@@ -188,3 +216,35 @@ def record_commits(
         journal.record(*entries)
         recorded += entries
     return recorded
+
+
+def commit_configuration(
+    agent: MetaAgent, message: str, *, author: str = "thearc", email: str = "thearc@localhost", **extra: Any
+) -> list[Entry]:
+    """Write ``agent``'s configuration over its workspace, commit it as one change with ``message`` as its reason,
+    and record that commit in the journal (committed too); returns the entries. Nothing changed, nothing recorded.
+
+    The workspace is the one ``agent`` is bound to; it must have no pending edits. Its journal is kept, and ``extra``
+    is stored on every entry, with the commit's author.
+    """
+    from thearc.resources.workspace import write_workspace
+
+    root = agent.workspace
+    if root is None:
+        raise ValueError("commit_configuration needs an agent bound to a workspace")
+    commit_journal(root)
+    if pending := _git(root, "status", "--porcelain").decode().strip():
+        raise ValueError(f"commit or undo the workspace's pending edits first: {pending.splitlines()}")
+    base = _git(root, "rev-parse", "HEAD").decode().strip()
+    write_workspace(agent, root, journal=False, overwrite=True)
+    _git(root, "add", "-A")
+    if not _git(root, "status", "--porcelain").strip():
+        return []
+    commit(root, message, author=author, email=email)
+    journal = Journal.load(root / JOURNAL_FILE)
+    entries = record_commits(root, journal, since=base, **extra)
+    if entries:
+        Journal.append(root / JOURNAL_FILE, entries)
+        _git(root, "add", JOURNAL_FILE)
+        commit(root, f"Record {message.splitlines()[0]}", author=author, email=email)
+    return entries

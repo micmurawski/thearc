@@ -142,6 +142,32 @@ def test_a_new_section_gets_its_marker_so_a_later_rename_is_a_move(agent, tmp_pa
     assert "Marked" not in replies[1]
 
 
+def test_frozen_files_are_restored_and_frozen_sections_refused(agent, tmp_path):
+    frozen = agent.model_copy(update={"frozen": ["skill:retry", "context:AGENTS.md#Rules"]})
+    workspace = frozen.init_workspace(tmp_path / "ws")
+    replies = []
+
+    def script(root, tool):
+        edit(root, "max 3", "max 9")
+        (root / "skills/retry/extra.md").write_text("# Extra\n")
+        edit(root, "No emoji.", "No emoji, ever.", path="rules/style.md")
+        replies.append(tool("commit_change", message="Tighten the style rule"))
+        edit(root, "Be brief.", "Be verbose.", path="context/AGENTS.md")
+        replies.append(tool("commit_change", message="Change the rules"))
+        edit(root, "Be verbose.", "Be brief.", path="context/AGENTS.md")
+        replies.append(tool("finish", summary="Done."))
+
+    runtime = ScriptedCurator(script)
+    curation = Curator(runtime=runtime).curate("Fix it.", [], workspace)
+    committed, refused, finished = replies
+    assert not committed["error"] and "skills/retry/SKILL.md" in committed["text"]
+    assert "skills/retry/extra.md" in committed["text"] and "Modified rule:style.md" in committed["text"]
+    assert refused["error"] and "context:AGENTS.md#Rules" in refused["text"] and not finished["error"]
+    candidate = curation.candidate()
+    assert "max 3" in candidate.skills["retry"].instructions and "extra.md" not in candidate.skills["retry"].files
+    assert "`skill:retry`" in runtime.sent[0]
+
+
 def test_nothing_changed_is_recorded_as_kept(reviewed):
     workspace, reflection = reviewed
     curation = Curator(runtime=ScriptedCurator(lambda root, tool: tool("finish", summary="One loop is not enough."))
@@ -210,3 +236,18 @@ def test_cli_runtimes_can_edit_when_asked(monkeypatch, tmp_path):
         "mcp__thearc__commit_change,mcp__thearc__finish,Edit,Write")
     assert pi[pi.index("--tools") + 1] == (
         "read,grep,find,ls,edit,write,mcp__thearc__commit_change,mcp__thearc__finish")
+
+
+def test_a_runtime_started_inside_a_harness_session_is_not_nested(monkeypatch, tmp_path):
+    seen = {}
+
+    def run(command, **kwargs):
+        seen.update(kwargs)
+        return subprocess.CompletedProcess(command, 0, stdout="ok", stderr="")
+
+    monkeypatch.setenv("CLAUDECODE", "1")
+    monkeypatch.setenv("KEEP_ME", "yes")
+    monkeypatch.setattr(runtime_module.shutil, "which", lambda name: f"/bin/{name}")
+    monkeypatch.setattr(runtime_module.subprocess, "run", run)
+    assert runtime_module._run(["claude", "-p"], cwd=tmp_path, timeout=5) == "ok"
+    assert "CLAUDECODE" not in seen["env"] and seen["env"]["KEEP_ME"] == "yes"

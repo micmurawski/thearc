@@ -1,9 +1,16 @@
 import hashlib
 import html as _html
 import json as _json
+import os
 import pathlib
+import re
+import threading
 import time
 from collections import deque
+from collections.abc import Mapping
+from contextlib import contextmanager
+
+from thearc.ui import FONTS, THEME_CSS, THEME_JS
 
 from . import AsyncNode, AsyncParallelBatchNode, BatchNode, Flow
 
@@ -51,8 +58,8 @@ def _extract_graph(start_node):
 
 
 # HTML
-# Styled like resources/report.html: viz.css holds the theme tokens and the SVG only carries classes, so the graph
-# follows the light/dark toggle too.
+# The look of thearc's pages (thearc.ui: tokens, header, stats, tabs, panels, theme toggle), shared with the evolution
+# report; viz.css adds the flow's own rules. The SVG only carries classes, so the graph follows the theme too.
 
 _NW, _NH = 176, 64
 _SO = 5  # offset of the stacked cards behind a batch node
@@ -62,11 +69,6 @@ _PAD = 44
 _LABEL_CHARS = 21
 _DASH, _DOT = "\u2013", " \u00b7 "
 _STATUSES = ("pending", "running", "success", "failed", "skipped")
-_FONTS = (
-    '<link rel="preconnect" href="https://fonts.googleapis.com">\n'
-    '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>\n'
-    '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap">\n'
-)
 
 
 def _bezier(x1, y1, x2, y2):
@@ -325,26 +327,65 @@ def _render_svg(graph, state, done, pos, back):
     return "\n".join(p)
 
 
-_LOG_LEVELS = {"debug": "debug", "info": "info", "warning": "warning", "error": "error",
-               "critical": "error", "exception": "error"}  # fmt: skip
+# Log files: each one a tab showing its tail, as it is when the page is written.
+LOG_TAIL_LINES = 1000
+_LOG_TAIL_BYTES = 1_000_000
+_ERROR = re.compile(r"\b(CRITICAL|FATAL|ERROR|Traceback|Exception)\b|\b[A-Za-z]+Error:")
+_WARNING = re.compile(r"\bWARN(ING)?\b")
+_DEBUG = re.compile(r"\bDEBUG\b")
 
 
-def _render_logs(logs):
+def log_files(logs):
+    """``{tab name: path}`` from a mapping, or from paths (each named after its file, its folder added to tell two
+    files of the same name apart)."""
     if not logs:
-        return '<div class="log-empty">No log entries yet.</div>'
-    lines = []
-    for entry in logs:
-        level = _LOG_LEVELS.get(entry["level"], "info")
-        ts = time.strftime("%H:%M:%S", time.localtime(entry["ts"]))
-        node = _html.escape(entry["node"] or "")
-        msg = _html.escape(entry["message"])
-        node_html = f'<span class="log-node">[{node}]</span>' if node else ""
-        lines.append(
-            f'<div class="log-entry {level}"><span class="log-ts">{ts}</span>'
-            f'<span class="log-lvl">{_html.escape(entry["level"])}</span>'
-            f'{node_html}<span class="log-msg">{msg}</span></div>'
-        )
-    return "".join(lines)
+        return {}
+    if isinstance(logs, Mapping):
+        return {str(name): pathlib.Path(path).expanduser() for name, path in logs.items()}
+    paths = [pathlib.Path(path).expanduser() for path in ([logs] if isinstance(logs, (str, pathlib.Path)) else logs)]
+    names = [path.name for path in paths]
+    return {(f"{path.parent.name}/{path.name}" if names.count(path.name) > 1 else path.name): path for path in paths}
+
+
+def _read_tail(path):
+    """The last ``LOG_TAIL_LINES`` lines of ``path``, and whether earlier ones were left out; None if it cannot be read.
+    Only the file's last megabyte is read, so a large log costs no more than a small one."""
+    try:
+        with open(path, "rb") as stream:
+            start = max(0, stream.seek(0, 2) - _LOG_TAIL_BYTES)
+            stream.seek(start)
+            data = stream.read()
+    except OSError:
+        return None
+    lines = data.decode("utf-8", errors="replace").splitlines()
+    if start:
+        lines = lines[1:]  # The first line read may be cut.
+    return lines[-LOG_TAIL_LINES:], bool(start) or len(lines) > LOG_TAIL_LINES
+
+
+def _level(line):
+    if _ERROR.search(line):
+        return "error"
+    if _WARNING.search(line):
+        return "warning"
+    return "debug" if _DEBUG.search(line) else ""
+
+
+def _render_log(path):
+    """A log file's tail as lines, how many it shows, how many look like errors, and whether earlier ones were left
+    out; the body says so when the file does not exist yet."""
+    tail = _read_tail(path)
+    if tail is None:
+        return '<div class="log-empty">Not created yet.</div>', 0, 0, False
+    lines, cut = tail
+    if not lines:
+        return '<div class="log-empty">Empty.</div>', 0, 0, False
+    out, errors = [], 0
+    for line in lines:
+        level = _level(line)
+        errors += level == "error"
+        out.append(f'<div class="log-line {level}"><span class="log-msg">{_html.escape(line) or " "}</span></div>')
+    return "".join(out), len(lines), errors, cut
 
 
 def _render_stats(counts, total):
@@ -363,7 +404,7 @@ def _render_stats(counts, total):
 
 
 def _render_html(graph, state, refresh_interval, done, logs=None, title="Flow run"):
-    logs = logs or []
+    files = log_files(logs)
     pos, back = _layout(graph)
     svg = _render_svg(graph, state, done, pos, back)
 
@@ -378,7 +419,6 @@ def _render_html(graph, state, refresh_interval, done, logs=None, title="Flow ru
         else f'<span class="live">live · refresh {refresh_interval}s</span>'
     )
     updated = time.strftime("%Y-%m-%d %H:%M:%S")
-    n_errors = sum(1 for e in logs if _LOG_LEVELS.get(e["level"]) == "error")
 
     rows = []
     for n in graph["nodes"]:
@@ -410,7 +450,18 @@ def _render_html(graph, state, refresh_interval, done, logs=None, title="Flow ru
             "</tr>"
         )
     legend = "".join(f'<span><i class="swatch {st}"></i>{st}</span>' for st in _STATUSES)
-    log_html = _render_logs(logs)
+    log_tabs, log_panels = [], []
+    for index, (name, path) in enumerate(files.items()):
+        body, shown, errors, cut = _render_log(path)
+        count = f"{shown}" + (f" · {errors} error{'s' if errors != 1 else ''}" if errors else "")
+        log_tabs.append(f'<button role="tab" type="button" data-tab="log-{index}" aria-selected="false">'
+                        f'{_html.escape(name)} ({count})</button>')
+        since = f"the last {shown} lines" if cut else ""
+        log_panels.append(
+            f'<section id="tab-log-{index}" class="panel tab-panel" hidden><div class="head"><h2>{_html.escape(name)}</h2>'
+            f'<span class="muted mono">{_html.escape(str(path))}{f" · {since}" if since else ""}</span></div>'
+            f'<div class="body"><div class="log-box">{body}</div></div></section>\n'
+        )
     esc_title = _html.escape(title)
     return (
         '<!DOCTYPE html>\n<html lang="en">\n<head>\n'
@@ -418,8 +469,8 @@ def _render_html(graph, state, refresh_interval, done, logs=None, title="Flow ru
         '<meta name="viewport" content="width=device-width, initial-scale=1">\n'
         f"<title>{esc_title}</title>\n"
         f"{meta_refresh}\n"
-        f"{_FONTS}"
-        f"<style>\n{_CSS}\n</style>\n"
+        f"{FONTS}"
+        f"<style>\n{THEME_CSS}\n{_CSS}\n</style>\n"
         "</head>\n<body>\n"
         '<div class="page">\n'
         '<header class="top"><div>'
@@ -447,73 +498,42 @@ def _render_html(graph, state, refresh_interval, done, logs=None, title="Flow ru
         " · hover a node for its metadata</div></div></section>\n"
         '<nav class="tabs" role="tablist">'
         '<button role="tab" type="button" data-tab="status" aria-selected="true">Status</button>'
-        f'<button role="tab" type="button" data-tab="logs" aria-selected="false">Logs ({len(logs)}'
-        f"{f' · {n_errors} error' + ('s' if n_errors > 1 else '') if n_errors else ''})</button>"
+        f"{''.join(log_tabs)}"
         "</nav>\n"
         '<section id="tab-status" class="panel tab-panel"><div class="head"><h2>Node status</h2>'
         '<span class="muted">One row per node, in graph order</span></div>'
         '<div class="body"><div class="scroll"><table class="status">'
         "<thead><tr><th>Node</th><th>Status</th><th>Elapsed</th><th>Items</th><th>Details</th></tr></thead>"
         f"<tbody>{''.join(rows)}</tbody></table></div></div></section>\n"
-        '<section id="tab-logs" class="panel tab-panel" hidden><div class="head"><h2>Logs</h2>'
-        '<span class="muted">shared["log"].info(...) from any node</span></div>'
-        f'<div class="body"><div class="log-box">{log_html}</div></div></section>\n'
+        f"{''.join(log_panels)}"
         f"<footer>thearc.flow · {esc_title} · {updated}</footer>\n"
         "</div>\n"
+        f'<script id="thearc-theme">{THEME_JS}</script>\n'
         f"<script>{_JS}</script>\n"
         "</body>\n</html>"
     )
 
 
-# flow logger
-
-
-class FlowLogger:
-    def __init__(self, tracker):
-        self._tracker = tracker
-
-    def _emit(self, level, message, node=None):
-        tracker = self._tracker
-        tracker._logs.append(
-            {
-                "ts": time.time(),
-                "level": level,
-                "message": message,
-                "node": node or tracker._current_node_label,
-            }
-        )
-
-    def debug(self, message, node=None):
-        self._emit("debug", message, node)
-
-    def info(self, message, node=None):
-        self._emit("info", message, node)
-
-    def warning(self, message, node=None):
-        self._emit("warning", message, node)
-
-    def error(self, message, node=None):
-        self._emit("error", message, node)
-
-    def critical(self, message, node=None):
-        self._emit("critical", message, node)
-
-    def exception(self, message, node=None):
-        self._emit("exception", message, node)
-
-
 # flow tracker
 class FlowTracker:
-    def __init__(self, flow: Flow, output="flow_status.html", refresh_interval=2, title=None):
+    """Writes ``output``, a page showing ``flow`` as it runs: its graph, each node's status, and a tab per log file.
+
+    ``logs`` names the log files to show: ``{"stdout": "/tmp/logs/stdout.log", "agent": "logs/agent.log"}``, or a
+    list of paths (each tab named after its file). Nodes write them however they like (``logging``, a subprocess's
+    output, …); the page shows each one's last ``LOG_TAIL_LINES`` lines. While the flow runs the page is rewritten
+    every ``refresh_interval`` seconds, and reloads itself as often.
+    """
+
+    def __init__(self, flow: Flow, output="flow_status.html", refresh_interval=2, title=None, logs=None):
         self._flow = flow
         self._title = title or type(flow).__name__
         self._output = output
         self._refresh_interval = refresh_interval
         self._flow_done = False
         self._graph = _extract_graph(flow.start_node)
-        self._logs = []
-        self._current_node_label = None
-        self.logger = FlowLogger(self)
+        self._logs = log_files(logs)
+        self._lock = threading.Lock()
+        self._live = None
         self._state = {
             n["id"]: {
                 "label": n["label"],
@@ -535,8 +555,6 @@ class FlowTracker:
             return
         s["status"] = status
         s["error"] = error
-        if status == "failed":
-            self._logs.append({"ts": time.time(), "level": "error", "message": error or "failed", "node": s["label"]})
         if status == "running":
             s["start_ts"] = time.time()
         elif status in ("success", "failed", "skipped"):
@@ -556,9 +574,31 @@ class FlowTracker:
 
     def _write_html(self):
         done = self._flow_done or all(s["status"] in ("success", "failed") for s in self._state.values())
-        html = _render_html(self._graph, self._state, self._refresh_interval, done, self._logs, self._title)
-        with open(self._output, "w", encoding="utf-8") as f:
-            f.write(html)
+        with self._lock:
+            html = _render_html(self._graph, self._state, self._refresh_interval, done, self._logs, self._title)
+            temporary = f"{self._output}.tmp"
+            with open(temporary, "w", encoding="utf-8") as f:
+                f.write(html)
+            os.replace(temporary, self._output)  # A reloading page never reads a half-written file.
+
+    @contextmanager
+    def _running(self):
+        """Rewrite the page every ``refresh_interval`` while the flow runs, so log files show between node changes."""
+        stop = threading.Event()
+
+        def rewrite():
+            while not stop.wait(self._refresh_interval):
+                self._write_html()
+
+        self._live = threading.Thread(target=rewrite, name="flow-tracker", daemon=True)
+        self._live.start()
+        try:
+            yield
+        finally:
+            stop.set()
+            self._live.join()
+            self._flow_done = True
+            self._write_html()
 
     def _instrument(self, node_id, is_batch, is_async):
         node = self._find_node(node_id)
@@ -573,7 +613,6 @@ class FlowTracker:
             class TrackerNode(original_cls):
                 async def _run_async(self, shared):
                     tracker._set_status(node_id, "running")
-                    tracker._current_node_label = tracker._state[node_id]["label"]
                     tracker._write_html()
                     try:
                         r = await super()._run_async(shared)
@@ -613,7 +652,6 @@ class FlowTracker:
 
                 def _run(self, shared):
                     tracker._set_status(node_id, "running")
-                    tracker._current_node_label = tracker._state[node_id]["label"]
                     tracker._write_html()
                     try:
                         r = super()._run(shared)
@@ -629,7 +667,6 @@ class FlowTracker:
             class TrackerNode(original_cls):
                 def _run(self, shared):
                     tracker._set_status(node_id, "running")
-                    tracker._current_node_label = tracker._state[node_id]["label"]
                     tracker._write_html()
                     try:
                         r = super()._run(shared)
@@ -667,21 +704,11 @@ class FlowTracker:
         return found[0]
 
     def run(self, shared):
-        if isinstance(shared, dict):
-            shared.setdefault("log", self.logger)
-        try:
+        with self._running():
             return self._flow.run(shared)
-        finally:
-            self._flow_done = True
-            self._write_html()
 
     async def run_async(self, shared):
         if not hasattr(self._flow, "run_async"):
             raise RuntimeError("Flow does not support run_async; use an AsyncFlow.")
-        if isinstance(shared, dict):
-            shared.setdefault("log", self.logger)
-        try:
+        with self._running():
             return await self._flow.run_async(shared)
-        finally:
-            self._flow_done = True
-            self._write_html()

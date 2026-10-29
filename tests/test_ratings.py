@@ -61,3 +61,21 @@ def test_scales_describe_themselves_in_json_schema():
     assert NumericScale("score", maximum=5, description="Higher is better.").json_schema()["description"] == (
         "Higher is better.")
     assert LabelScale("tags", description="Free-form tags.").json_schema()["description"] == "Free-form tags."
+
+
+def test_a_scale_gives_its_labels_values_and_colours():
+    importance = CategoricalScale("importance", ["meaningless", "significant", "critical"],
+                                  values={"meaningless": 0, "significant": 1, "critical": 4},
+                                  colors={"critical": "red"})
+    assert importance.ordered and importance.positions == {"meaningless": 0.0, "significant": 1.0, "critical": 4.0}
+    assert importance.colors == {"critical": "red"}
+    assert usefulness.positions == {"harmful": -1.0, "neutral": 0.0, "helpful": 1.0}  # Evenly around zero.
+    assert CategoricalScale("tags", ["a", "b"]).positions is None
+    with pytest.raises(ValueError, match="rise with the label order"):
+        CategoricalScale("s", ["low", "high"], values={"low": 2, "high": 1})
+    with pytest.raises(ValueError, match="a number for each label"):
+        CategoricalScale("s", ["low", "high"], values={"low": 0})
+    with pytest.raises(ValueError, match="does not have"):
+        CategoricalScale("s", ["low", "high"], colors={"mid": "red"})
+    with pytest.raises(ValueError, match="colour names"):
+        CategoricalScale("s", ["low", "high"], colors={"low": "red;background:url(x)"})

@@ -9,12 +9,13 @@ stays in its own loop until the tool accepts — there are no extra turns.
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from typing import Any
 
 from thearc.resources.files import AgentFiles
 from thearc.resources.reflection import ReflectionItem, ReflectionSchema
+from thearc.resources.targets import ResourceTarget
 
 from .mcp import ToolSpec, serve
 from .runtimes import TOOL, ToolEndpoint
@@ -23,8 +24,9 @@ from .runtimes import TOOL, ToolEndpoint
 class Submission:
     """Checks submitted reflections; ``output`` and ``items`` hold the last accepted one (``None`` until then)."""
 
-    def __init__(self, files: AgentFiles, schema: ReflectionSchema):
-        self.files, self.schema = files, schema
+    def __init__(self, files: AgentFiles, schema: ReflectionSchema,
+                 frozen: Callable[[ResourceTarget], bool] = lambda target: False):
+        self.files, self.schema, self.frozen = files, schema, frozen
         self.output: Any = None
         self.items: list[ReflectionItem] | None = None
         self.attempts = 0
@@ -39,6 +41,11 @@ class Submission:
         self.attempts += 1
         try:
             output, items = self.schema.check(raw, self.files)
+            resolved = [(item, self.files.resolve(item.ref)) for item in items]
+            if frozen := [f"{item.path or '/'}: {item.ref} rates frozen lines ({', '.join(map(str, targets))}); "
+                          "they are not yours to rate: cite them without a rating, or remove the rating"
+                          for item, targets in resolved if all(map(self.frozen, targets))]:
+                raise ValueError("\n".join(frozen))
         except ValueError as exc:
             problems = "\n".join(f"- {line}" for line in str(exc).splitlines())
             raise ValueError(f"Nothing was accepted. Fix these and submit the complete reflection again:\n{problems}")

@@ -151,6 +151,31 @@ class Rated(_Entry):
 Entry = Annotated[Added | Modified | Moved | Removed | Rated | Kept, Field(discriminator="kind")]
 
 
+class Reflected(BaseModel):
+    """A whole reflection, as ``Reflection.to_dict`` gives it: what the reflector answered, on which revision, from
+    which evidence. Its ratings are recorded apart, as Rated entries; this keeps the rest of what it said.
+
+    Kept in the journal file next to the entries, but not one of them: it has no target.
+    """
+
+    model_config = {"frozen": True, "extra": "forbid"}
+    kind: Literal["reflected"] = "reflected"
+    id: str
+    revision: str
+    at: datetime
+    reflector: dict[str, Any] = Field(default_factory=dict)
+    evidence: dict[str, Any] = Field(default_factory=dict)
+    attempts: int = 1
+    notes: list[str] = Field(default_factory=list)
+    extra: dict[str, Any] = Field(default_factory=dict)
+    output: Any = None
+
+    @property
+    def session(self) -> str | None:
+        """The indexed ID of the session it reviewed, when it was handed one."""
+        return self.evidence.get("session")
+
+
 @dataclass(frozen=True)
 class Lineage:
     """One target's history across moves, oldest entry first. ``id`` is the ID the target had when the
@@ -172,6 +197,20 @@ class Journal(BaseModel):
 
     model_config = {"extra": "forbid"}
     entries: list[Entry] = Field(default_factory=list)
+    reflections: list[Reflected] = Field(default_factory=list)  # Whole reflections, in the order they came.
+
+    def record_reflection(self, reflection: Reflected) -> bool:
+        """Keep a whole reflection; False when it is already kept (by ID). Never rewritten."""
+        for known in self.reflections:
+            if known.id == reflection.id:
+                if known != reflection:
+                    raise ValueError(f"reflection {reflection.id} differs from the recorded one")
+                return False
+        self.reflections = sorted([*self.reflections, reflection], key=lambda r: (r.at, r.id))
+        return True
+
+    def reflection(self, identifier: str) -> Reflected | None:
+        return next((r for r in self.reflections if r.id == identifier), None)
 
     def record(self, *entries: Entry) -> None:
         known = {entry.id for entry in self.entries}
@@ -200,17 +239,20 @@ class Journal(BaseModel):
     def load(cls, path: str | Path) -> Journal:
         """Read a journal file; a missing file is an empty journal."""
         path = Path(path)
-        return cls(entries=load_journal(path.read_text(encoding="utf-8"), name=path.name) if path.is_file() else [])
+        if not path.is_file():
+            return cls()
+        entries, reflections = load_journal_records(path.read_text(encoding="utf-8"), name=path.name)
+        return cls(entries=entries, reflections=reflections)
 
     def dump(self, path: str | Path) -> None:
         """Write the whole journal, sorted by ID, replacing the file at once (never half-written)."""
         path = Path(path)
         temporary = path.with_name(f".{path.name}.tmp")
-        temporary.write_text(dump_journal(self.entries), encoding="utf-8")
+        temporary.write_text(dump_journal(self.entries, self.reflections), encoding="utf-8")
         temporary.replace(path)
 
     @staticmethod
-    def append(path: str | Path, entries: Iterable[Entry]) -> None:
+    def append(path: str | Path, entries: Iterable[Entry | Reflected]) -> None:
         """Add entries to the end of a journal file without reading it; one write, one line per entry.
 
         Appending an entry that is already there is harmless: reading collapses repeated lines.
@@ -389,31 +431,42 @@ class Journal(BaseModel):
         return result
 
 
-_ENTRY: TypeAdapter[Entry] = TypeAdapter(Entry)
+_RECORD: TypeAdapter[Any] = TypeAdapter(
+    Annotated[Added | Modified | Moved | Removed | Rated | Kept | Reflected, Field(discriminator="kind")])
 
 
-def dump_journal(entries: Iterable[Entry]) -> str:
-    """One compact JSON entry per line, sorted by ID."""
-    return "".join(entry.model_dump_json() + "\n" for entry in sorted(entries, key=lambda entry: entry.id))
+def dump_journal(entries: Iterable[Entry], reflections: Iterable[Reflected] = ()) -> str:
+    """One compact JSON entry per line, sorted by ID, then the whole reflections in the order they came."""
+    lines = [entry.model_dump_json() for entry in sorted(entries, key=lambda entry: entry.id)]
+    lines += [reflection.model_dump_json() for reflection in sorted(reflections, key=lambda r: (r.at, r.id))]
+    return "".join(line + "\n" for line in lines)
 
 
 def load_journal(text: str, *, name: str = "journal.jsonl") -> list[Entry]:
-    """Parse journal lines. Lines may be out of order or repeated (as after a union merge or a replayed
-    append); the same ID with different content is an error, since entries are never rewritten. An
-    unfinished last line — an append cut short — is skipped with a warning."""
+    """Parse journal lines into entries (see ``load_journal_records``; whole reflections are left out)."""
+    return load_journal_records(text, name=name)[0]
+
+
+def load_journal_records(text: str, *, name: str = "journal.jsonl") -> tuple[list[Entry], list[Reflected]]:
+    """Parse journal lines: the entries, and the whole reflections. Lines may be out of order or repeated (as after a
+    union merge or a replayed append); the same ID with different content is an error, since entries are never
+    rewritten. An unfinished last line — an append cut short — is skipped with a warning."""
     entries: dict[str, Entry] = {}
+    reflections: dict[str, Reflected] = {}
     lines = text.splitlines()
     for number, line in enumerate(lines, start=1):
         if not line.strip():
             continue
         try:
-            entry = _ENTRY.validate_json(line)
+            record = _RECORD.validate_json(line)
         except ValidationError as error:
             if number == len(lines) and not text.endswith("\n"):
                 warnings.warn(f"{name}:{number}: skipping an unfinished last line", stacklevel=2)
                 continue
             raise ValueError(f"{name}:{number}: invalid entry: {error}") from None
-        if entry.id in entries and entries[entry.id] != entry:
-            raise ValueError(f"{name}:{number}: entry {entry.id} differs from an earlier line")
-        entries[entry.id] = entry
-    return sorted(entries.values(), key=lambda entry: entry.id)
+        found: dict[str, Any] = reflections if isinstance(record, Reflected) else entries
+        if record.id in found and found[record.id] != record:
+            raise ValueError(f"{name}:{number}: entry {record.id} differs from an earlier line")
+        found[record.id] = record
+    return (sorted(entries.values(), key=lambda entry: entry.id),
+            sorted(reflections.values(), key=lambda r: (r.at, r.id)))

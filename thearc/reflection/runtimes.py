@@ -18,6 +18,7 @@ context files) where the harness allows it.
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 import tempfile
@@ -87,6 +88,11 @@ class Runtime(ABC):
         """
 
 
+# Set by a harness inside its own sessions. A runtime started from one (e.g. by /evolve) must not inherit them, or the
+# harness takes it for a nested session of the user's.
+NESTING = ("CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT", "CLAUDE_CODE_SSE_PORT")
+
+
 def _run(command: list[str], *, cwd: Path, timeout: float, stdin: str | None = None) -> str:
     executable = shutil.which(command[0])
     if executable is None:
@@ -95,6 +101,7 @@ def _run(command: list[str], *, cwd: Path, timeout: float, stdin: str | None = N
         result = subprocess.run(
             [executable, *command[1:]],
             cwd=cwd,
+            env={name: value for name, value in os.environ.items() if name not in NESTING},
             input=stdin or "",  # Always close stdin: Pi otherwise waits for piped input on ours.
             capture_output=True,
             text=True,
@@ -199,7 +206,16 @@ class ClaudeRuntime(Runtime):
     ) -> Iterator[Conversation]:
         if fork is not None and not Path(fork.path).is_file():
             raise ReflectionError("missing_history", f"Installed Claude session not found: {fork.path}")
-        yield _ClaudeConversation(self, workspace, tool, fork, edit)
+        conversation = _ClaudeConversation(self, workspace, tool, fork, edit)
+        try:
+            yield conversation
+        finally:
+            if fork is not None and conversation.id is not None:
+                # Claude records the fork beside the copy, in the store of the folder the session ran in, where it
+                # would count as a session of that project.
+                transcript = Path(fork.path).with_name(conversation.id)
+                transcript.with_suffix(".jsonl").unlink(missing_ok=True)
+                shutil.rmtree(transcript, ignore_errors=True)  # Its tool results and subagents, if any.
 
 
 class _ClaudeConversation(Conversation):

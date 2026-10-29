@@ -7,7 +7,9 @@ into the summary of their union.
 
 from __future__ import annotations
 
+import itertools
 import math
+import re
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
@@ -136,14 +138,34 @@ class RatingScale(ABC):
         return f"{type(self).__name__}({self.name!r})"
 
 
+_COLOR = re.compile(r"^(#[0-9a-fA-F]{3,8}|[a-zA-Z]+)$")
+
+
 class CategoricalScale(RatingScale):
     """A fixed set of labels, optionally ordered (e.g. ``harmful < neutral < helpful``).
 
     ``labels`` may map each label to what it means; reflectors see those meanings.
+
+    How the report draws the labels (reflectors never see these):
+
+    - ``values``: a number per label, rising with the label order (and making the scale ordered). Below zero is
+      bad, zero is neither, above zero is good: ``{"catastrophic": -2, "harmful": -1, "neutral": 0, "useful": 1}``
+      is drawn diverging around ``neutral``. Values that are all zero or above, ``{"meaningless": 0, …,
+      "critical": 4}``, make a sequential scale, drawn from its first label up. An ordered scale without values
+      is diverging, its labels evenly spaced around zero.
+    - ``colors``: a CSS colour per label (``#rgb``, ``#rrggbb`` or a colour name); labels left out get one from
+      their value.
     """
 
     def __init__(
-        self, name: str, labels: Sequence[str] | Mapping[str, str], *, ordered: bool = False, description: str = ""
+        self,
+        name: str,
+        labels: Sequence[str] | Mapping[str, str],
+        *,
+        ordered: bool = False,
+        values: Mapping[str, float] | None = None,
+        colors: Mapping[str, str] | None = None,
+        description: str = "",
     ):
         super().__init__(name, description=description)
         self.meanings = dict(labels) if isinstance(labels, Mapping) else {}
@@ -155,7 +177,35 @@ class CategoricalScale(RatingScale):
         ):
             raise ValueError("labels must be distinct, non-empty strings")
         self.labels = tuple(labels)
-        self.ordered = ordered
+        self.ordered = ordered or values is not None
+        self.values = self._checked_values(values)
+        self.colors = dict(colors or {})
+        if unknown := set(self.colors) - set(self.labels):
+            raise ValueError(f"colors name labels the scale does not have: {sorted(unknown)}")
+        if bad := [color for color in self.colors.values() if not isinstance(color, str) or not _COLOR.match(color)]:
+            raise ValueError(f"colors must be #rgb, #rrggbb or colour names, not {bad}")
+
+    def _checked_values(self, values: Mapping[str, float] | None) -> dict[str, float] | None:
+        if values is None:
+            return None
+        if set(values) != set(self.labels):
+            raise ValueError(f"values must give a number for each label: {list(self.labels)}")
+        numbers = [values[label] for label in self.labels]
+        if any(isinstance(n, bool) or not isinstance(n, int | float) or not math.isfinite(n) for n in numbers):
+            raise ValueError("values must be finite numbers")
+        if any(a >= b for a, b in itertools.pairwise(numbers)):
+            raise ValueError(f"values must rise with the label order {list(self.labels)}")
+        return {label: float(values[label]) for label in self.labels}
+
+    @property
+    def positions(self) -> dict[str, float] | None:
+        """Each label's value, or an ordered scale's evenly spaced around zero; None for an unordered scale."""
+        if self.values is not None:
+            return dict(self.values)
+        if not self.ordered:
+            return None
+        middle = (len(self.labels) - 1) / 2
+        return {label: index - middle for index, label in enumerate(self.labels)}
 
     def validate(self, value: Any) -> str:
         if value not in self.labels or not isinstance(value, str):

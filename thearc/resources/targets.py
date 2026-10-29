@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from fnmatch import fnmatchcase
 from pathlib import PurePosixPath
 from typing import Literal
 
@@ -112,3 +113,30 @@ class ResourceTarget(BaseModel):
 
     def __str__(self) -> str:
         return f"{self.kind}:{self.name}" + (f"#{self.section}" if self.section else "")
+
+    def matches(self, pattern: str) -> bool:
+        """Whether this target is one ``pattern`` names (see ``target_pattern``)."""
+        kind, _, rest = pattern.partition(":")
+        name, _, section = rest.partition("#")
+        if kind == "skill" and self.kind == "skill_file":
+            if not fnmatchcase(self.name.partition("/")[0], name):  # A skill holds its files.
+                return False
+        elif kind != self.kind or not fnmatchcase(self.name, name):
+            return False
+        if not section:
+            return True
+        path = (self.section or "").split(SECTION_SEPARATOR) if self.section else []
+        return any(fnmatchcase(SECTION_SEPARATOR.join(path[:depth]), section) for depth in range(1, len(path) + 1))
+
+
+def target_pattern(value: str) -> str:
+    """Validate a pattern over target addresses: ``kind:name`` or ``kind:name#section``, where ``name`` and
+    ``section`` may use ``fnmatch`` wildcards. A pattern names its targets' sections and subsections too, and
+    ``skill:<name>`` its skill's files: ``skill:evolve``, ``skill:vendor-*``, ``context:CLAUDE.md#Private notes``."""
+    kind, colon, rest = value.partition(":")
+    name, _, section = rest.partition("#")
+    if not colon or kind not in Kind.__args__ or not name or value != value.strip():  # type: ignore[attr-defined]
+        raise ValueError(f"invalid target pattern {value!r}: expected kind:name[#section]")
+    if kind in STRUCTURED_KINDS and section:
+        raise ValueError(f"invalid target pattern {value!r}: hooks and MCPs have no sections")
+    return value

@@ -24,12 +24,12 @@ from thearc.reflection.mcp import serve
 from thearc.reflection.runtimes import RUNTIMES, Runtime
 from thearc.resources.agent import MetaAgent
 from thearc.resources.files import AgentFiles
-from thearc.resources.git import _git, agent_at, commit, commit_journal, record_commits
+from thearc.resources.git import _git, agent_at, branch_name, commit, commit_journal, record_commits
 from thearc.resources.journal import Change, Entry, Journal, Rated, load_journal
 from thearc.resources.targets import ResourceTarget
 from thearc.resources.workspace import JOURNAL_FILE
 
-from .curator import WORKSPACE, Commit, CurationError, CurationTools
+from .curator import WORKSPACE, Commit, CurationError, CurationTools, frozen_note
 
 INSTRUCTIONS = """You are merging several improved versions — candidates — of an AI agent's configuration. Each
 was produced independently from the same base by a curator acting on reviews of how the agent behaved.
@@ -128,9 +128,10 @@ class Merger:
                 if _git(roots[0], "merge-base", heads[index], heads[other]).decode().strip() != base:
                     raise ValueError("candidates do not share one base; branch them from the same commit")
         proposals, ratings = _proposals(roots[0], base, list(zip(names, roots, heads, strict=True)))
+        frozen = (agent_at(roots[0], base) or MetaAgent(name="base")).frozen
 
         identifier = "merge_" + uuid.uuid4().hex
-        branch = f"merge/{identifier.removeprefix('merge_')[:12]}"
+        branch = branch_name(roots[0], "merge", identifier.removeprefix("merge_")[:12])
         stamp = {"merge": identifier, "merger": self.harness, "candidates": names,
                  **({"model": self.runtime.model} if self.runtime.model else {}), **extra}
         with tempfile.TemporaryDirectory(prefix="thearc-merge-") as directory:
@@ -139,7 +140,7 @@ class Merger:
             _git(clone, "checkout", "-q", "-b", branch, base)
             tools = CurationTools(clone, f"merger ({self.harness})")
             with serve(tools.specs()) as endpoint, self.runtime.conversation(clone, endpoint, edit=True) as talk:
-                talk.send(_message(prompt, proposals, clone))
+                talk.send(_message(prompt, proposals, clone, frozen))
             if tools.summary is None:
                 raise CurationError("no_finish", f"The merger ended without calling finish "
                                     f"({len(tools.commits)} commit(s) made)")
@@ -218,7 +219,7 @@ def _fenced(text: str | None) -> str:
     return f"{fence}text\n{text}\n{fence}"
 
 
-def _message(prompt: str, proposals: list[Proposal], workspace: Path) -> str:
+def _message(prompt: str, proposals: list[Proposal], workspace: Path, frozen: Sequence[str] = ()) -> str:
     blocks = []
     for proposal in proposals:
         address = proposal.target or next(v.target for v in proposal.versions if v.target is not None)
@@ -241,4 +242,4 @@ def _message(prompt: str, proposals: list[Proposal], workspace: Path) -> str:
         blocks.append("\n".join(lines))
     listed = "\n\n".join(blocks) or "(no candidate changed anything)"
     return (f"{INSTRUCTIONS}\n\n## Task\n\n{prompt}\n\n## Proposals\n\n{listed}\n\n## The configuration\n\n"
-            f"{WORKSPACE.format(workspace=workspace)}\n\n## Committing\n\n{COMMITTING}")
+            f"{WORKSPACE.format(workspace=workspace)}{frozen_note(frozen)}\n\n## Committing\n\n{COMMITTING}")

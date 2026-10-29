@@ -358,10 +358,32 @@ the caller attaches (for example who or what caused it). Each entry is one of:
 | Removed | A target ceased to exist. |
 | Rated | A validated reflection item: target, rating, reference, and metadata (see Reflection schema). |
 
+Next to the entries, the journal keeps **whole reflections** (`journal.reflections`, lines of kind `reflected`):
+what each reflector answered, on which revision, from which session. They have no target, so they are not entries;
+`add_reflection` keeps one with its Rated entries.
+
 Current state is derived from the journal: which targets exist and since when,
 how often each has changed, and every rating summary. Because target IDs come
 from addresses, a section keeps its history across edits; a rename gets a new
 address, and the Moved entry links the old ID to the new one.
+
+### Frozen and ignored
+
+Patterns over target addresses (`kind:name[#section]`, with `*` wildcards; a pattern names its targets' subsections
+too, and `skill:<name>` its files), kept in `agent.json`. Neither is configuration, so neither changes the revision.
+
+- **Frozen** (`MetaAgent.frozen`): part of the configuration, versioned and installed with it, that evolution
+  leaves as it is: a reflection may not rate it, a curator's or merger's edits to it are undone. A person may still
+  change it.
+- **Ignored** (`MetaAgent.ignore`): left out of the configuration. Importing an installation leaves it out
+  (`from_installation(…, ignore=)`), installing neither writes nor deletes it, and `agent.ignore_targets(patterns)`
+  removes it from a workspace as a recorded change.
+
+### Drift
+
+Edits made to an installation since thearc installed it, by hand or by another tool. `agent.sync_installation(
+project, harnesses)` imports each harness's copy and commits what differs to the workspace, with its author, so the
+next install keeps it.
 
 ### Version control
 
@@ -842,4 +864,23 @@ release becomes `main` or is installed is the pipeline's decision.
 | Candidate worktree | `agent.to_worktree(path, branch=…)` → an agent bound to a new worktree on its own branch |
 | Merging | `curation.Merger(harness).merge(prompt, [candidate, …], into=…)` → `Merge` (`agent`, `branch`, `base`, `commits`, `entries`, `proposals`, `summary`) |
 | Versioning | `agent.release(version=None, part="patch", branch=None, include_scales=False, push=None)` → the agent at its new version; `resources.bump_version` |
+
+## /evolve
+
+Evolving a project's configuration for one harness from that harness's sessions run in it (see
+`docs/guides/evolve-skill.md`).
+
+- **Evolve skill**: the skill `thearc skills install self-evolve --harness H` installs into H's skills folder:
+  `SKILL.md`, the **recipe** `evolve.py` (`propose(evolution)`; `HARNESS` and `RUNTIME` set at install), and its
+  prompts in `prompts/`. It is not part of the MetaAgent, which ignores it (`skill:evolve`); it is recorded as agent
+  `thearc-evolve` and never evolved.
+- **Workspace submodule**: the MetaAgent's workspace is a repository of its own, a git submodule of the project at
+  `.thearc/workspace` (`main`, `candidate/…`, `merge/…`, `release/…`, `proposal/…`), so each project commit pins the
+  workspace commit its installed files came from. A project evolves one harness. (A workspace kept inside another
+  repository instead uses a **branch prefix**, git config `thearc.<agent>.prefix`, before every branch thearc makes.)
+- **Runtime**: the harness that runs a round's reflections and curation.
+- **Round**: drift, then the recipe, then a **proposal**: a new version on `proposal/<version>`, not
+  installed until it is **applied**. An **amendment** is a person's commit to an open proposal.
+- **Evolution**: what the recipe is given: the project's sessions (`evolution.sessions(harness=…, since=…)`), a
+  candidate (`evolution.candidate()`), and where a stopped round left off.
 

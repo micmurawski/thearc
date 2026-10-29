@@ -445,6 +445,16 @@ class SessionIndex:
         if filters.session_ids:
             conditions.append(f"id IN ({','.join('?' for _ in filters.session_ids)})")
             params.extend(filters.session_ids)
+        if filters.cwd is not None:
+            folder = filters.cwd.rstrip("/") or "/"
+            escaped = folder.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+            conditions.append("(cwd = ? OR cwd LIKE ? ESCAPE '\\')")
+            params.extend([folder, escaped.rstrip("/") + "/%"])
+        if filters.without_call:
+            escaped = filters.without_call.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+            conditions.append("id NOT IN (SELECT session_id FROM events WHERE kind = 'tool_call' "
+                              "AND text LIKE ? ESCAPE '\\')")
+            params.append(f"%{escaped}%")
         return " AND ".join(conditions) or "1", params
 
     def iter_sessions(self, filters: SearchFilters | None = None) -> Iterator[SessionMetadata]:
