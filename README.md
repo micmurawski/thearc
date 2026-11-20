@@ -69,7 +69,7 @@ from typing import Annotated
 from pydantic import BaseModel
 from thearc.curation import Curator
 from thearc.reflection import Reflector
-from thearc.resources import CategoricalScale, AgentConfig, Ref, ReflectionSchema
+from thearc.resources import CategoricalScale, AgentConfig, Ref
 from thearc.sessions import Sessions
 
 usefulness = CategoricalScale("usefulness", ["harmful", "neutral", "helpful"], ordered=True)
@@ -88,7 +88,7 @@ agent = agent.init_workspace("artifacts/my-agent")       # git-tracked, with a j
 with Sessions("sessions.sqlite") as sessions:
     session = sessions.get()                                  # the most recent session
 reflection = Reflector("codex").handoff("Review the configuration against this session.",
-                                        session, agent, ReflectionSchema(Lesson))
+                                        session, agent, Lesson)
 agent.add_reflection(reflection)                          # ratings → journal
 
 curation = Curator("codex").curate("Address the reflections.", [reflection], agent, scales=[usefulness])

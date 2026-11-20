@@ -28,7 +28,7 @@ class WorkGraphReflector:
         prompt: str,
         history: EventSequence,
         agent: AgentConfig,
-        schema: ReflectionSchema,
+        schema: ReflectionSchema | Any,
         *,
         provenance: str | None = None,
         **extra: Any,

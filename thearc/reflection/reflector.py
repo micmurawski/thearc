@@ -152,9 +152,9 @@ class Reflection(Sequence[ReflectionItem]):
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any], schema: ReflectionSchema) -> Reflection:
+    def from_dict(cls, data: dict[str, Any], schema: ReflectionSchema | Any) -> Reflection:
         """The reflection ``to_dict`` gave, read with the schema it was made with (e.g. to replay it)."""
-        output, items, _ = schema.validate(data["output"])
+        output, items, _ = ReflectionSchema.of(schema).validate(data["output"])
         return cls(
             id=data["id"],
             output=output,
@@ -182,7 +182,7 @@ class Reflection(Sequence[ReflectionItem]):
         Path(path).write_text(json.dumps(self.to_dict(), indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
     @classmethod
-    def load(cls, path: Path | str, schema: ReflectionSchema) -> Reflection:
+    def load(cls, path: Path | str, schema: ReflectionSchema | Any) -> Reflection:
         return cls.from_dict(json.loads(Path(path).read_text(encoding="utf-8")), schema)
 
     def __getitem__(self, index: Any) -> Any:
@@ -228,10 +228,13 @@ class Reflector:
         return self.runtime.harness
 
     def reflect(
-        self, prompt: str | Prompt, agent: AgentConfig, schema: ReflectionSchema, *, evidence: str | None = None,
+        self, prompt: str | Prompt, agent: AgentConfig, schema: ReflectionSchema | Any, *, evidence: str | None = None,
         **extra: Any
     ) -> Reflection:
-        """Reflect on evidence given in the prompt (or as ``evidence`` text appended to it, redacted)."""
+        """Reflect on evidence given in the prompt (or as ``evidence`` text appended to it, redacted).
+
+        ``schema`` is a ``ReflectionSchema`` or what one is built from, such as the output model itself."""
+        schema = ReflectionSchema.of(schema)
         counts: Counter[str] = Counter()
         if evidence is not None:
             evidence = self.redaction.text(evidence, counts)
@@ -244,13 +247,14 @@ class Reflector:
         self,
         prompt: str | Prompt,
         agent: AgentConfig,
-        schema: ReflectionSchema,
+        schema: ReflectionSchema | Any,
         *,
         mcp_tools: Sequence[ToolSpec],
         evidence: str | None = None,
         **extra: Any,
     ) -> Reflection:
         """Reflect in a fresh session with additional, per-reflection MCP tools."""
+        schema = ReflectionSchema.of(schema)
         counts: Counter[str] = Counter()
         if evidence is not None:
             evidence = self.redaction.text(evidence, counts)
@@ -265,7 +269,7 @@ class Reflector:
         prompt: str | Prompt,
         history: EventSequence,
         agent: AgentConfig,
-        schema: ReflectionSchema,
+        schema: ReflectionSchema | Any,
         *,
         provenance: str | None = None,
         focus: str | None = None,
@@ -285,6 +289,7 @@ class Reflector:
         after earlier reflections): its segment (``evidence["from_event"]`` to ``["to_event"]``) and digest start
         there; the reflector still reads the whole history.
         """
+        schema = ReflectionSchema.of(schema)
         if not self.runtime.can_fork:
             raise ReflectionError("capability", f"{self.harness} cannot continue a session; use reflect()")
         installed = history.install(self.harness, home=self.home, overwrite=True, strict=False)

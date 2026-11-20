@@ -22,7 +22,8 @@ two kinds of fields, by type and never by name:
 Every object holding a rating yields a ``ReflectionItem`` per rating field: its ref, value,
 scale, location in the output, and the object's other fields. Everything else stays in the
 reflection's output. ``ReflectionSchema(scale, Metadata)`` is shorthand for a list of
-``{ref, rating, …Metadata}`` items.
+``{ref, rating, …Metadata}`` items. APIs that take a schema (``Reflector.handoff``, …) also take what
+``ReflectionSchema`` is built from and wrap it, so passing ``Lesson`` alone is enough.
 """
 
 from __future__ import annotations
@@ -184,6 +185,12 @@ class ReflectionSchema:
                 scale = roles[name][1]
                 if self.scales.setdefault(scale.name, scale) is not scale:
                     raise ValueError(f"two different scales are named {scale.name!r}")
+
+    @classmethod
+    def of(cls, schema: Any) -> ReflectionSchema:
+        """``schema`` if it is a ``ReflectionSchema``, else ``ReflectionSchema(schema)`` — so a model, a type such as
+        ``list[Model]``, or a scale can be passed wherever a schema is expected."""
+        return schema if isinstance(schema, cls) else cls(schema)
 
     @property
     def scale(self) -> RatingScale:
